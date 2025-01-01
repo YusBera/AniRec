@@ -1,5 +1,3 @@
-#user_data.py
-
 import requests
 import pandas as pd
 
@@ -7,16 +5,16 @@ API_BASE_URL = "https://api.myanimelist.net/v2"
 
 def get_user_completed_animes(username, access_token):
     """
-    Fetch the list of completed animes for a specific user and return it as a pandas DataFrame.
+    Fetch the list of completed animes for a user and return relevant data, including the user score.
     """
     url = f"{API_BASE_URL}/users/{username}/animelist"
     headers = {
         "Authorization": f"Bearer {access_token}"
     }
     params = {
-        "status": "completed",
-        "fields": "list_status,title,genres",
-        "limit": 1000  # Adjust as needed
+        "status": "completed",  # Focus on completed anime
+        "fields": "list_status,title,genres,score",  # Fetch only relevant fields
+        "limit": 1000  # You can adjust this limit if needed
     }
 
     response = requests.get(url, headers=headers, params=params)
@@ -29,11 +27,13 @@ def get_user_completed_animes(username, access_token):
             title = anime["node"]["title"]
             genres = anime["node"]["genres"]
             genres_list = [genre["name"] for genre in genres]  # Extract genre names
+            user_score = anime["list_status"].get("score", None)  # Get the user score if available
             # Add status as "Completed"
             animes.append({
                 "Title": title,
                 "Genres": genres_list,
-                "Status": "Completed"
+                "Status": "Completed",
+                "User Score": user_score
             })
 
         # Convert the list of completed animes to a pandas DataFrame
