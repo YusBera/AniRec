@@ -2,13 +2,14 @@ import requests
 import base64
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlencode, urlparse, parse_qs
 
 # Constants
 CLIENT_ID = "712ff6e42fbd8756fd23bd5f7fd6a5c8"
 CLIENT_SECRET = "d40ad01a4553cf313ba373783a121b794d773cf714ca30eec7a6607a2897847a"
-REDIRECT_URI = "http://localhost:8080"
-BASE_URL = "https://api.myanimelist.net/v2"
-
+REDIRECT_URI = "http://localhost:8080/auth_page.html"
+AUTH_BASE_URL = "https://myanimelist.net/v1/oauth2"
+API_BASE_URL = "https://api.myanimelist.net/v2"
 
 def generate_code_challenge():
     """
@@ -18,23 +19,17 @@ def generate_code_challenge():
     code_verifier = base64.urlsafe_b64encode(random_bytes).decode("utf-8").rstrip("=")
     return code_verifier
 
-
 class OAuthHandler(BaseHTTPRequestHandler):
     """
     HTTP server handler to capture the authorization code.
     """
     def do_GET(self):
-        # Parse the authorization code from the query parameters
-        query = self.path.split("?")[-1]
-        params = {k: v for k, v in [pair.split("=") for pair in query.split("&")]}
-        self.server.auth_code = params.get("code")
-
-        # Respond to the user
+        parsed_url = urlparse(self.path)
+        params = parse_qs(parsed_url.query)
+        self.server.auth_code = params.get("code", [None])[0]
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"Authorization code received. You can close this tab.")
-        return
-
 
 def start_http_server():
     """
@@ -44,22 +39,18 @@ def start_http_server():
     server.handle_request()  # Only handle one request
     return server.auth_code
 
-
 def get_access_token():
     """
     Retrieve an access token using MyAnimeList's OAuth2 API.
     """
     code_challenge = generate_code_challenge()
 
-    print("Go to the following URL and authorize the application:")
+    # Generate the authorization URL
     auth_url = (
-        f"https://myanimelist.net/v1/oauth2/authorize"
-        f"?response_type=code"
-        f"&client_id={CLIENT_ID}"
-        f"&redirect_uri={REDIRECT_URI}"
-        f"&code_challenge={code_challenge}"
-        f"&code_challenge_method=plain"
+        f"{AUTH_BASE_URL}/authorize?"
+        f"{urlencode({'response_type': 'code', 'client_id': CLIENT_ID, 'redirect_uri': REDIRECT_URI, 'code_challenge': code_challenge, 'code_challenge_method': 'plain'})}"
     )
+    print("Go to the following URL and authorize the application:")
     print(auth_url)
 
     # Start the local server to capture the authorization code
@@ -70,7 +61,7 @@ def get_access_token():
         raise Exception("Failed to capture authorization code.")
 
     # Exchange the authorization code for an access token
-    token_url = "https://myanimelist.net/v1/oauth2/token"
+    token_url = f"{AUTH_BASE_URL}/token"
     data = {
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
@@ -83,16 +74,16 @@ def get_access_token():
     response = requests.post(token_url, data=data)
 
     if response.status_code == 200:
+        print("Access token obtained successfully!")
         return response.json()["access_token"]
     else:
         raise Exception(f"Failed to obtain access token: {response.status_code} {response.text}")
-
 
 def get_user_completed_animes(username, access_token):
     """
     Fetch the list of completed animes for a specific user.
     """
-    url = f"{BASE_URL}/users/{username}/animelist"
+    url = f"{API_BASE_URL}/users/{username}/animelist"
     headers = {
         "Authorization": f"Bearer {access_token}"
     }
@@ -109,7 +100,6 @@ def get_user_completed_animes(username, access_token):
         return [anime["node"]["title"] for anime in data.get("data", [])]
     else:
         raise Exception(f"Failed to fetch user animelist: {response.status_code} {response.text}")
-
 
 def main():
     """
@@ -134,7 +124,6 @@ def main():
 
     except Exception as e:
         print(f"Error: {e}")
-
 
 if __name__ == "__main__":
     main()
