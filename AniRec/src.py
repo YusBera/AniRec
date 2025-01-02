@@ -1,65 +1,37 @@
-#src.py
-
-from oauth_handler import initiate_oauth_flow
-from oauth_handler import get_access_token
+import os
+import pandas as pd
+from oauth_handler import initiate_oauth_flow, get_access_token
 from anime_data import get_top_anime
 from user_data import get_user_completed_animes
-from anime_comparator import  remove_completed_animes_from_top
-
-def save_top_anime_to_csv(top_anime, filename="top_anime.csv"):
-    """
-    Save the top anime list to a CSV file.
-    """
-    if top_anime.empty:
-        print("No data to save.")
-        return
-    top_anime.to_csv(filename, index=False)
-    print(f"Top anime list saved to {filename}.")
-
-def save_user_completed_animes_to_csv(completed_animes, filename="completed_animes.csv"):
-    """
-    Save the user completed anime list to a CSV file.
-    """
-    if completed_animes.empty:
-        print("No completed anime data to save.")
-        return
-    completed_animes.to_csv(filename, index=False)
-    print(f"User completed anime list saved to {filename}.")
+from handle_missing_scores import handle_missing_scores_with_user_mean
+from genre_importance import calculate_genre_importance, calculate_genre_medians
 
 
-from oauth_handler import initiate_oauth_flow
-from oauth_handler import get_access_token
-from anime_data import get_top_anime
-from user_data import get_user_completed_animes
-from anime_comparator import remove_completed_animes_from_top  # Import the new function
+def save_user_completed_animes_to_csv(completed_animes_df, username):
+    file_name = f"{username}CompletedAnimeList.csv"
+    completed_animes_df.to_csv(file_name, index=False)
+    print(f"Data successfully saved to '{file_name}'!")
 
 
-def save_top_anime_to_csv(top_anime, filename="top_anime.csv"):
-    """
-    Save the top anime list to a CSV file.
-    """
-    if top_anime.empty:
-        print("No data to save.")
-        return
-    top_anime.to_csv(filename, index=False)
-    print(f"Top anime list saved to {filename}.")
+def save_top_anime_to_csv(top_anime_df):
+    file_name = "TopAnimeList.csv"
+    top_anime_df.to_csv(file_name, index=False)
+    print(f"Top anime data successfully saved to '{file_name}'!")
 
 
-def save_user_completed_animes_to_csv(completed_animes, filename="completed_animes.csv"):
+def validate_file_exists(filename, fetch_option=None):
     """
-    Save the user completed anime list to a CSV file.
+    Check if the specified file exists. If not, prompt the user to fetch the data first.
     """
-    if completed_animes.empty:
-        print("No completed anime data to save.")
-        return
-    completed_animes.to_csv(filename, index=False)
-    print(f"User completed anime list saved to {filename}.")
+    if not os.path.exists(filename):
+        print(f"Error: File '{filename}' not found.")
+        if fetch_option:
+            print(f"Please run Option {fetch_option} in the main menu to generate the required file.")
+        return False
+    return True
 
 
 def main():
-    """
-    Main function to handle the program flow with debugging options.
-    """
     try:
         while True:
             print("\nWelcome to the MyAnimeList Anime Fetcher!")
@@ -67,22 +39,19 @@ def main():
             print("1. Fetch top anime list")
             print("2. Fetch user completed anime data")
             print("3. Generate a new authorization code")
-            print("4. Remove completed animes from top anime list")
-            print("5. Exit")
+            print("4. Handle missing scores")
+            print("5. Calculate genre importance")
+            print("6. Exit")
 
-            choice = input("Enter your choice (1/2/3/4/5): ").strip()
+            choice = input("Enter your choice (1-6): ").strip()
 
             if choice == "1":
-                # Obtain access token using OAuth (this will load the token from file if available)
                 access_token = get_access_token()
-                # Get the number of top animes to fetch
                 limit = int(input("How many top anime would you like to fetch? (Max 500): ").strip())
                 top_anime_df = get_top_anime(limit, access_token)
-
                 if not top_anime_df.empty:
                     print(f"\nTop {limit} anime fetched successfully:")
-                    print(top_anime_df.head())  # Display the first few rows for inspection
-                    # Optionally save the data
+                    print(top_anime_df.head())
                     save_data = input("Do you want to save the top anime data to a CSV file? (y/n): ").strip().lower()
                     if save_data == "y":
                         save_top_anime_to_csv(top_anime_df)
@@ -90,47 +59,56 @@ def main():
                     print("Failed to fetch top anime list.")
 
             elif choice == "2":
-                # Obtain access token using OAuth (this will load the token from file if available)
                 access_token = get_access_token()
-                # Fetch user completed anime data
-                username = input(
-                    "Enter the username of the user whose completed anime data you want to fetch: ").strip()
+                username = input("Enter the username of the user: ").strip()
                 completed_animes_df = get_user_completed_animes(username, access_token)
-
                 if not completed_animes_df.empty:
                     print(f"\nCompleted anime list for user '{username}':")
-                    print(completed_animes_df.head())  # Display the first few rows for inspection
-                    # Optionally save the data
-                    save_data = input(
-                        "Do you want to save the completed anime data to a CSV file? (y/n): ").strip().lower()
-                    if save_data == "y":
-                        save_user_completed_animes_to_csv(completed_animes_df)
+                    print(completed_animes_df.head())
+                    save_user_completed_animes_to_csv(completed_animes_df, username)
                 else:
                     print("Failed to fetch user completed anime data.")
 
-            elif choice == "3":
-                try:
-                    print("Starting the process to fetch a new authorization code...")
-                    new_access_token = initiate_oauth_flow()
-                    print("New authorization code obtained and saved successfully.")
-                except Exception as e:
-                    print(f"Failed to fetch new authorization code: {e}")
-
             elif choice == "4":
-                # Remove completed animes from the top anime list
-                remove_completed_animes_from_top()
+                username = input("Enter the username of the user: ").strip()
+                input_file = f"{username}CompletedAnimeList.csv"
+
+                if not validate_file_exists(input_file, fetch_option=2):
+                    continue
+
+                df = pd.read_csv(input_file)
+                genre_medians = calculate_genre_medians(df)
+                df = handle_missing_scores_with_user_mean(df, genre_medians)
+                file_name = f"{username}_Completed_Animes_Imputed.csv"
+                df.to_csv(file_name, index=False)
+                print(f"Processed data saved to '{file_name}'.")
+
 
             elif choice == "5":
+                username = input("Enter the username of the user: ").strip()
+                input_file = f"{username}CompletedAnimeList.csv"
+                if not validate_file_exists(input_file, fetch_option=2):
+                    continue
+                df = pd.read_csv(input_file)
+                genre_medians = calculate_genre_medians(df)
+                genre_importance = calculate_genre_importance(df, genre_medians)
+                # Save Genre Importance to File
+                output_file = f"{username}_Genre_Importance.csv"
+                pd.DataFrame([
+                    {"Genre": genre, "Importance": importance}
+                    for genre, importance in genre_importance.items()
+                ]).to_csv(output_file, index=False)
+                print(f"Genre importance scores saved to '{output_file}'.")
+
+            elif choice == "6":
                 print("Exiting the program. Goodbye!")
                 break
 
             else:
-                print("Invalid choice. Please try again.")
-
+                print("Invalid choice. Please select a valid option.")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"An error occurred: {e}")
 
 
 if __name__ == "__main__":
     main()
-

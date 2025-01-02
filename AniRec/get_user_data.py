@@ -1,13 +1,21 @@
-#user_data.py
+#get_user_data.py
 
 import requests
 import pandas as pd
 
 API_BASE_URL = "https://api.myanimelist.net/v2"
 
+
 def get_user_completed_animes(username, access_token):
     """
     Fetch the list of completed animes for a user and return relevant data, including the user score.
+
+    Parameters:
+    username (str): The username of the MyAnimeList user.
+    access_token (str): The access token for API authentication.
+
+    Returns:
+    pd.DataFrame: A DataFrame with anime titles, genres, user scores, and completion status.
     """
     url = f"{API_BASE_URL}/users/{username}/animelist"
     headers = {

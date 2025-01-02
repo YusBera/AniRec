@@ -1,3 +1,5 @@
+#anime_data.py
+
 import requests
 import pandas as pd
 from oauth_handler import get_access_token
