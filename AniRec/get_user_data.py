@@ -1,7 +1,7 @@
 #get_user_data.py
 
-import requests
 import pandas as pd
+import requests
 
 API_BASE_URL = "https://api.myanimelist.net/v2"
 

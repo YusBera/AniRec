@@ -1,12 +1,13 @@
 #oauth_handler.py
 
-import os
-import json
-import requests
 import base64
-from urllib.parse import urlencode, urlparse, parse_qs
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+import os
 import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlencode, urlparse, parse_qs
+
+import requests
 
 CLIENT_ID = "712ff6e42fbd8756fd23bd5f7fd6a5c8"  # Replace with your client ID
 CLIENT_SECRET = "d40ad01a4553cf313ba373783a121b794d773cf714ca30eec7a6607a2897847a"  # Replace with your client secret

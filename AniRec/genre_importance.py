@@ -1,33 +1,7 @@
-import pandas as pd
+# genre_importance.py
+
 import numpy as np
-
-
-def calculate_genre_medians(df):
-    """
-    Calculate the median score for each genre in the completed anime data.
-
-    Parameters:
-    - df: DataFrame with user completed anime data including 'Genres' and 'User Score'
-
-    Returns:
-    - genre_medians: Dictionary of genre medians
-    """
-    genre_scores = {}
-
-    # Extracting the genre and corresponding scores for each anime
-    for idx, row in df.iterrows():
-        score = row['User Score']
-        genres = eval(row['Genres'])  # Convert genre string to list
-
-        for genre in genres:
-            if genre not in genre_scores:
-                genre_scores[genre] = []
-            genre_scores[genre].append(score)
-
-    # Calculate median for each genre
-    genre_medians = {genre: np.median(scores) for genre, scores in genre_scores.items()}
-
-    return genre_medians
+from handle_missing_scores import calculate_genre_medians
 
 
 def calculate_genre_importance(df, genre_medians):
@@ -66,7 +40,7 @@ def calculate_genre_importance(df, genre_medians):
         median_score = genre_medians.get(genre, 0)  # Genre median (default to 0 if not found)
 
         if median_score > 0:  # Only calculate GI if the median score is available
-            raw_score = ((frequency / total_animes) * 100) * (avg_score / median_score)
-            genre_importance[genre] = round(raw_score, 2)  # Round to 2 decimal places
+            gi = ((frequency / total_animes) * 100) * (avg_score / median_score)
+            genre_importance[genre] = round(gi, 2)  # Round to 2 decimal places
 
     return genre_importance
