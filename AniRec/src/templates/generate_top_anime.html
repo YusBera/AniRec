@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generate Top Anime</title>
+</head>
+<body>
+    <h1>Generate Top Anime List</h1>
+    <form method="POST" action="{{ url_for('generate_top_anime') }}">
+        <label for="limit">Number of Anime to Fetch:</label>
+        <input type="number" name="limit" value="100" required>
+        <button type="submit">Generate</button>
+    </form>
+</body>
+</html>

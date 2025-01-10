@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authorization Code Received</title>
+    <script>
+        // Extract the "code" parameter from the URL
+        function extractAuthCode() {
+            const params = new URLSearchParams(window.location.search);
+            const authCode = params.get("code");
+            if (authCode) {
+                fetch(`/capture_code?code=${authCode}`).then(() => {
+                    document.getElementById("message").innerText =
+                        "Authorization code received successfully. You can close this tab.";
+                });
+            } else {
+                document.getElementById("message").innerText =
+                    "Authorization code not found in the URL.";
+            }
+        }
+    </script>
+</head>
+<body onload="extractAuthCode()">
+    <h1 id="message">Processing...</h1>
+</body>
+</html>
