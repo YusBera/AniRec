@@ -1,25 +1,129 @@
-#oauth_handler.py
-
 import base64
 import json
 import os
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlencode, urlparse, parse_qs
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
 
-CLIENT_ID = "712ff6e42fbd8756fd23bd5f7fd6a5c8"  # Replace with your client ID
-CLIENT_SECRET = "d40ad01a4553cf313ba373783a121b794d773cf714ca30eec7a6607a2897847a"  # Replace with your client secret
-REDIRECT_URI = "http://localhost:8080/auth_page.html"
 AUTH_BASE_URL = "https://myanimelist.net/v1/oauth2"
-API_BASE_URL = "https://api.myanimelist.net/v2"
-TOKEN_FILE = "token.json"  # Token file location
+REQUEST_TIMEOUT_SECONDS = 15
+
+
+def get_access_token():
+    """Get a cached access token, refresh it, or start OAuth if needed."""
+    token_data = load_token_from_file()
+
+    if token_data and "access_token" in token_data:
+        if token_data.get("expires_at", 0) > int(time.time()):
+            print("Using existing access token.")
+            return token_data["access_token"]
+
+        if token_data.get("refresh_token"):
+            print("Access token expired. Refreshing...")
+            return refresh_access_token(token_data["refresh_token"])
+
+    print("No valid access token found. Starting OAuth.")
+    return initiate_oauth_flow()
+
+
+def initiate_oauth_flow():
+    """Start the MyAnimeList OAuth flow and cache the returned token."""
+    client_id = _get_client_id()
+    client_secret = _get_client_secret()
+    redirect_uri = _get_redirect_uri()
+    code_verifier = generate_code_challenge()
+    auth_url = (
+        f"{AUTH_BASE_URL}/authorize?"
+        f"{urlencode({'response_type': 'code', 'client_id': client_id, 'redirect_uri': redirect_uri, 'code_challenge': code_verifier, 'code_challenge_method': 'plain'})}"
+    )
+    print("Go to the following URL and authorize the application:")
+    print(auth_url)
+
+    print("\nWaiting for authorization code...")
+    auth_code = start_http_server(redirect_uri)
+
+    if not auth_code:
+        raise RuntimeError("Failed to capture authorization code.")
+
+    data = {
+        "client_id": client_id,
+        "grant_type": "authorization_code",
+        "code": auth_code,
+        "redirect_uri": redirect_uri,
+        "code_verifier": code_verifier,
+    }
+    if client_secret:
+        data["client_secret"] = client_secret
+
+    response = requests.post(
+        f"{AUTH_BASE_URL}/token",
+        data=data,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+
+    print("Access token obtained successfully.")
+    token_data = _add_expiration(response.json())
+    save_token_to_file(token_data)
+    return token_data["access_token"]
+
+
+def refresh_access_token(refresh_token):
+    """Refresh the access token using the cached refresh token."""
+    client_id = _get_client_id()
+    client_secret = _get_client_secret()
+    data = {
+        "client_id": client_id,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    }
+    if client_secret:
+        data["client_secret"] = client_secret
+
+    response = requests.post(
+        f"{AUTH_BASE_URL}/token",
+        data=data,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+
+    print("Access token refreshed successfully.")
+    token_data = _add_expiration(response.json())
+    save_token_to_file(token_data)
+    return token_data["access_token"]
+
 
 def generate_code_challenge():
     random_bytes = os.urandom(32)
-    code_verifier = base64.urlsafe_b64encode(random_bytes).decode("utf-8").rstrip("=")
-    return code_verifier
+    return base64.urlsafe_b64encode(random_bytes).decode("utf-8").rstrip("=")
+
+
+def start_http_server(redirect_uri):
+    parsed_redirect_uri = urlparse(redirect_uri)
+    host = parsed_redirect_uri.hostname or "localhost"
+    port = parsed_redirect_uri.port or 8080
+    server = HTTPServer((host, port), OAuthHandler)
+    server.handle_request()
+    return getattr(server, "auth_code", None)
+
+
+def save_token_to_file(token_data):
+    token_file = _get_token_file()
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    with token_file.open("w", encoding="utf-8") as file:
+        json.dump(token_data, file)
+
+
+def load_token_from_file():
+    token_file = _get_token_file()
+    if token_file.exists():
+        with token_file.open("r", encoding="utf-8") as file:
+            return json.load(file)
+    return None
+
 
 class OAuthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -30,101 +134,30 @@ class OAuthHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"Authorization code received. You can close this tab.")
 
-def start_http_server():
-    server = HTTPServer(("localhost", 8080), OAuthHandler)
-    server.handle_request()
-    return server.auth_code
+    def log_message(self, format, *args):
+        return
 
-def save_token_to_file(token_data):
-    with open(TOKEN_FILE, "w") as file:
-        json.dump(token_data, file)
 
-def load_token_from_file():
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "r") as file:
-            return json.load(file)
-    return None
+def _get_client_id():
+    client_id = os.environ.get("MAL_CLIENT_ID")
+    if not client_id:
+        raise RuntimeError("MAL_CLIENT_ID is required. Set it before starting OAuth.")
+    return client_id
 
-def get_access_token():
-    """
-    Get access token from the file or use refresh token if expired.
-    If no token exists, initiate the OAuth flow.
-    """
-    token_data = load_token_from_file()
 
-    if token_data and "access_token" in token_data:
-        # Check if token is expired
-        access_token = token_data["access_token"]
-        expiration_time = token_data.get("expires_at", 0)
-        current_time = int(time.time())
+def _get_client_secret():
+    return os.environ.get("MAL_CLIENT_SECRET")
 
-        if expiration_time > current_time:
-            print("Using existing access token.")
-            return access_token
-        else:
-            print("Access token expired. Refreshing token...")
-            return refresh_access_token(token_data["refresh_token"])
 
-    print("No valid access token found. Starting OAuth process.")
-    return initiate_oauth_flow()
+def _get_redirect_uri():
+    return os.environ.get("MAL_REDIRECT_URI", "http://localhost:8080/callback")
 
-def initiate_oauth_flow():
-    """
-    Initiates the OAuth flow to get the access token.
-    """
-    code_challenge = generate_code_challenge()
-    auth_url = (
-        f"{AUTH_BASE_URL}/authorize?"
-        f"{urlencode({'response_type': 'code', 'client_id': CLIENT_ID, 'redirect_uri': REDIRECT_URI, 'code_challenge': code_challenge, 'code_challenge_method': 'plain'})}"
-    )
-    print("Go to the following URL and authorize the application:")
-    print(auth_url)
 
-    print("\nWaiting for authorization code...")
-    auth_code = start_http_server()
+def _get_token_file():
+    return Path(os.environ.get("MAL_TOKEN_FILE", "token.json"))
 
-    if not auth_code:
-        raise Exception("Failed to capture authorization code.")
 
-    token_url = f"{AUTH_BASE_URL}/token"
-    data = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "authorization_code",
-        "code": auth_code,
-        "redirect_uri": REDIRECT_URI,
-        "code_verifier": code_challenge,
-    }
-
-    response = requests.post(token_url, data=data)
-
-    if response.status_code == 200:
-        print("Access token obtained successfully!")
-        token_data = response.json()
-        save_token_to_file(token_data)
-        return token_data["access_token"]
-    else:
-        raise Exception(f"Failed to obtain access token: {response.status_code} {response.text}")
-
-def refresh_access_token(refresh_token):
-    """
-    Refresh the access token using the refresh token.
-    """
-    print("Refreshing access token...")
-    token_url = f"{AUTH_BASE_URL}/token"
-    data = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
-    }
-
-    response = requests.post(token_url, data=data)
-
-    if response.status_code == 200:
-        print("Access token refreshed successfully!")
-        token_data = response.json()
-        save_token_to_file(token_data)
-        return token_data["access_token"]
-    else:
-        raise Exception(f"Failed to refresh access token: {response.status_code} {response.text}")
+def _add_expiration(token_data):
+    expires_in = int(token_data.get("expires_in", 0))
+    token_data["expires_at"] = int(time.time()) + max(expires_in - 60, 0)
+    return token_data

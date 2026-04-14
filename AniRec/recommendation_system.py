@@ -1,47 +1,69 @@
-#recommendation_system.py
-
 import random
-import os
+from pathlib import Path
+
 import pandas as pd
+
+from genre_utils import parse_genres
 
 
 def recommend_animes_with_randomness(
     recommendation_candidates_file, genre_importance_file, username,
     num_recommendations, top_anime_count, randomness_factor, output_dir
 ):
-    try:
-        # Load the recommendation candidates and genre importance
-        recommendation_candidates_df = pd.read_csv(recommendation_candidates_file)
-        genre_importance_df = pd.read_csv(genre_importance_file)
+    """Generate recommendations from candidate anime and user genre weights."""
+    candidates_df = pd.read_csv(recommendation_candidates_file)
+    genre_importance_df = pd.read_csv(genre_importance_file)
 
-        # Ensure the 'Genres' column exists before proceeding
-        if 'Genres' not in recommendation_candidates_df.columns:
-            raise KeyError("'Genres' column is missing from the recommendation candidates data.")
+    required_candidate_columns = {"Title", "Genres"}
+    missing_candidate_columns = required_candidate_columns - set(candidates_df.columns)
+    if missing_candidate_columns:
+        missing = ", ".join(sorted(missing_candidate_columns))
+        raise ValueError(f"Recommendation candidates are missing columns: {missing}")
 
-        # Select the top anime based on genre importance scores
-        recommendation_candidates_df['Weighted_Score'] = recommendation_candidates_df['Genres'].map(
-            genre_importance_df.set_index('Genre')['Importance_Score']
-        )
+    if not {"Genre", "Importance_Score"}.issubset(genre_importance_df.columns):
+        raise ValueError("Genre importance file must include Genre and Importance_Score columns.")
 
-        # Sort by weighted score and select the top 'top_anime_count'
-        top_recommendations = recommendation_candidates_df.sort_values(
-            by='Weighted_Score', ascending=False
-        ).head(top_anime_count)
-
-        # Shuffle the top recommendations based on the randomness factor
-        shuffled_recommendations = top_recommendations.sample(
-            frac=randomness_factor / 10, random_state=random.randint(1, 1000)
-        )
-
-        # Select the specified number of recommendations from the shuffled pool
-        final_recommendations = shuffled_recommendations.head(num_recommendations)
-
-        # Save the recommendations to a CSV file in the specified output directory
-        output_file = os.path.join(output_dir, f"{username}_Recommended_Anime.csv")
-        final_recommendations.to_csv(output_file, index=False)
-        print(f"Recommendations saved to '{output_file}'")
-        return final_recommendations['Title'].tolist()  # Return the list of recommended anime titles
-
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    if candidates_df.empty or genre_importance_df.empty:
         return []
+
+    genre_weights = dict(
+        zip(
+            genre_importance_df["Genre"],
+            genre_importance_df["Importance_Score"].astype(float),
+        )
+    )
+    recommendations_df = candidates_df.copy()
+    recommendations_df["Recommendation Score"] = recommendations_df["Genres"].apply(
+        lambda genres: _score_genres(genres, genre_weights)
+    )
+
+    sort_columns = ["Recommendation Score"]
+    ascending = [False]
+    if "Mean Score" in recommendations_df.columns:
+        sort_columns.append("Mean Score")
+        ascending.append(False)
+
+    ranked_df = recommendations_df.sort_values(sort_columns, ascending=ascending)
+    ranked_df = ranked_df.head(max(top_anime_count, num_recommendations))
+
+    randomness_factor = min(max(randomness_factor, 1), 10)
+    pool_size = max(num_recommendations, round(len(ranked_df) * randomness_factor / 10))
+    recommendation_pool = ranked_df.head(pool_size)
+
+    if len(recommendation_pool) > num_recommendations:
+        final_recommendations = recommendation_pool.sample(
+            n=num_recommendations,
+            random_state=random.randint(1, 1_000_000),
+        ).sort_values(sort_columns, ascending=ascending)
+    else:
+        final_recommendations = recommendation_pool
+
+    output_path = Path(output_dir) / f"{username}_recommendations.csv"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    final_recommendations.to_csv(output_path, index=False)
+    return final_recommendations["Title"].tolist()
+
+
+def _score_genres(genres, genre_weights):
+    matched_scores = [genre_weights.get(genre, 0) for genre in parse_genres(genres)]
+    return round(sum(matched_scores), 2)

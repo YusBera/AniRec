@@ -1,44 +1,41 @@
-#anime_data.py
-
 import pandas as pd
 import requests
 
 API_BASE_URL = "https://api.myanimelist.net/v2"
+REQUEST_TIMEOUT_SECONDS = 15
+
 
 def get_top_anime(limit=100, access_token=None):
-    """
-    Fetch a list of top anime and return relevant data, including the median score.
-    """
-    url = f"{API_BASE_URL}/anime/ranking"
-    params = {
-        "limit": limit,
-        "fields": "title,genres,mean",  # Fetch only relevant fields
-    }
-    headers = {
-        "Authorization": f"Bearer {access_token}" if access_token else "",
-    }
+    """Fetch top anime from MyAnimeList and return title, genres, and mean score."""
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+    anime_rows = []
 
-    response = requests.get(url, params=params, headers=headers)
-    if response.status_code == 200:
+    for offset in range(0, limit, 500):
+        page_limit = min(500, limit - offset)
+        params = {
+            "ranking_type": "all",
+            "limit": page_limit,
+            "offset": offset,
+            "fields": "title,genres,mean",
+        }
+
+        response = requests.get(
+            f"{API_BASE_URL}/anime/ranking",
+            params=params,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
         data = response.json()
-        anime_data = []
 
         for anime in data.get("data", []):
-            title = anime["node"]["title"]
-            genres = [genre["name"] for genre in anime["node"]["genres"]]
-            average_score = anime["node"].get("mean", None)  # Default to None if not available
+            node = anime["node"]
+            anime_rows.append(
+                {
+                    "Title": node["title"],
+                    "Genres": [genre["name"] for genre in node.get("genres", [])],
+                    "Mean Score": node.get("mean"),
+                }
+            )
 
-            # For simplicity, we'll treat the average score as the median score since no per-user data is available here
-            median_score = average_score
-
-            anime_data.append({
-                "Title": title,
-                "Genres": genres,
-                "Median Score": median_score
-            })
-
-        # Create a DataFrame with only the required fields
-        df = pd.DataFrame(anime_data)
-        return df
-    else:
-        raise Exception(f"Error: {response.status_code} - {response.text}")
+    return pd.DataFrame(anime_rows)

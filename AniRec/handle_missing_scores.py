@@ -1,71 +1,50 @@
-# handle_missing_scores.py
-
-import numpy as np
 import pandas as pd
+from statistics import mean, median
+
+from genre_utils import parse_genres
 
 
 def calculate_genre_medians(df):
-    """
-    Calculate the median score for each genre in the completed anime data.
-
-    Parameters:
-    - df: DataFrame with user completed anime data including 'Genres' and 'User Score'
-
-    Returns:
-    - genre_medians: Dictionary of genre medians
-    """
+    """Calculate the median user score for each genre."""
     genre_scores = {}
 
-    # Extracting the genre and corresponding scores for each anime
-    for idx, row in df.iterrows():
-        score = row['User Score']
-        genres = eval(row['Genres'])  # Convert genre string to list
+    for _, row in df.iterrows():
+        score = _to_score(row["User Score"])
+        if score <= 0:
+            continue
 
-        for genre in genres:
-            if genre not in genre_scores:
-                genre_scores[genre] = []
+        for genre in parse_genres(row["Genres"]):
+            genre_scores.setdefault(genre, [])
             genre_scores[genre].append(score)
 
-    # Calculate median for each genre
-    genre_medians = {genre: np.median(scores) for genre, scores in genre_scores.items()}
-
-    return genre_medians
+    return {genre: median(scores) for genre, scores in genre_scores.items()}
 
 
 def handle_missing_scores_with_genre_medians(df, genre_medians):
-    """
-    Impute missing scores in the DataFrame using genre medians.
+    """Fill missing or zero user scores using the user's genre medians."""
+    updated_df = df.copy()
+    updated_df["User Score"] = updated_df["User Score"].apply(_to_score)
+    fallback_score = median(genre_medians.values()) if genre_medians else 0
 
-    Parameters:
-    - df: DataFrame with user completed anime data, including 'Genres' and 'User Score'.
-    - genre_medians: Dictionary of genre medians used for imputing missing scores.
+    for index, row in updated_df.iterrows():
+        if row["User Score"] > 0:
+            continue
 
-    Returns:
-    - df: The DataFrame with missing scores imputed.
-    """
+        genre_scores = [
+            genre_medians[genre]
+            for genre in parse_genres(row["Genres"])
+            if genre in genre_medians
+        ]
+        imputed_score = mean(genre_scores) if genre_scores else fallback_score
+        updated_df.at[index, "User Score"] = round(imputed_score, 2)
 
-    # Ensure the 'User Score' column is of type float to avoid dtype warnings
-    df['User Score'] = df['User Score'].astype(float)
+    return updated_df
 
-    for idx, row in df.iterrows():
-        score = row['User Score']
 
-        # Check if the score is missing (NaN) or zero
-        if pd.isna(score) or score == 0:  # Check for NaN or 0 scores
-            genres = eval(row['Genres'])  # Convert genres string to a list
-            genre_scores = [genre_medians.get(genre, None) for genre in genres]
-
-            # Filter out None values (genres that don't have a median)
-            valid_scores = [score for score in genre_scores if score is not None]
-
-            if valid_scores:
-                # If there are valid genre medians, impute with the average of those medians
-                imputed_score = np.mean(valid_scores)
-            else:
-                # If no valid medians, fallback to 0 (or any other strategy you prefer)
-                imputed_score = 0
-
-            # Assign the imputed score, rounded to 2 decimal places
-            df.at[idx, 'User Score'] = round(imputed_score, 2)
-
-    return df
+def _to_score(value):
+    if pd.isna(value):
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0

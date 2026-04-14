@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+
+# Local configuration and credentials
+.env
+token.json
+tokens/
+
+# Generated project data
+profiles/
+*_Profile/
+*Profile/
+*_Recommended_Anime.csv
+*_RecommendationCandidates.csv
+*_Genre_Importance.csv
+*_Completed_Animes_Imputed.csv
+
+# Tooling and OS noise
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.DS_Store
+Thumbs.db

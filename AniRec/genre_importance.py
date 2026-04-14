@@ -1,46 +1,47 @@
-# genre_importance.py
+import math
 
-import numpy as np
-from handle_missing_scores import calculate_genre_medians
+from genre_utils import parse_genres
 
 
 def calculate_genre_importance(df, genre_medians):
-    """
-    Calculate Genre Importance Score for each genre based on the user's completed anime data.
-
-    Parameters:
-    - df: DataFrame containing completed anime data with genres and scores
-    - genre_medians: Dictionary of genre medians
-
-    Returns:
-    - genre_importance: Dictionary of genre importance scores for each genre
-    """
+    """Calculate how strongly each genre appears in the user's completed list."""
     genre_scores = {}
-    total_animes = len(df)
+    scored_anime_count = 0
 
-    # Calculate frequency and average score for each genre
-    for idx, row in df.iterrows():
-        score = row['User Score']
-        genres = eval(row['Genres'])  # Convert genre string to list
+    for _, row in df.iterrows():
+        score = _to_score(row["User Score"])
+        if score <= 0:
+            continue
 
-        for genre in genres:
-            if genre not in genre_scores:
-                genre_scores[genre] = {'frequency': 0, 'total_score': 0}
+        scored_anime_count += 1
 
-            genre_scores[genre]['frequency'] += 1
-            genre_scores[genre]['total_score'] += score
+        for genre in parse_genres(row["Genres"]):
+            genre_scores.setdefault(genre, {"frequency": 0, "total_score": 0})
+            genre_scores[genre]["frequency"] += 1
+            genre_scores[genre]["total_score"] += score
+
+    if scored_anime_count == 0:
+        return {}
 
     genre_importance = {}
-
-    # Calculate Genre Importance Score (GI) for each genre
     for genre, data in genre_scores.items():
-        frequency = data['frequency']
-        total_score = data['total_score']
+        frequency = data["frequency"]
+        total_score = data["total_score"]
         avg_score = total_score / frequency
-        median_score = genre_medians.get(genre, 0)  # Genre median (default to 0 if not found)
+        median_score = genre_medians.get(genre, 0)
 
-        if median_score > 0:  # Only calculate GI if the median score is available
-            gi = ((frequency / total_animes) * 100) * (avg_score / median_score)
-            genre_importance[genre] = round(gi, 2)  # Round to 2 decimal places
+        if median_score > 0:
+            genre_importance_score = (
+                (frequency / scored_anime_count) * 100 * (avg_score / median_score)
+            )
+            genre_importance[genre] = round(genre_importance_score, 2)
 
     return genre_importance
+
+
+def _to_score(value):
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if math.isnan(score) else score
