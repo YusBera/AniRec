@@ -1,13 +1,28 @@
 import pandas as pd
 import requests
 
+try:
+    from .core.mal_mapping import ANIME_CSV_COLUMNS, ANIME_FIELDS, anime_from_node, anime_to_row
+    from .infrastructure.mal_client import MALClient
+except ImportError:  # Backward compatibility for direct script-style imports.
+    from core.mal_mapping import ANIME_CSV_COLUMNS, ANIME_FIELDS, anime_from_node, anime_to_row
+    from infrastructure.mal_client import MALClient
+
 API_BASE_URL = "https://api.myanimelist.net/v2"
 REQUEST_TIMEOUT_SECONDS = 15
 
 
-def get_top_anime(limit=100, access_token=None):
+def get_top_anime(
+    limit=100,
+    access_token=None,
+    *,
+    client_id=None,
+    http_get=None,
+    client=None,
+    cancellation=None,
+):
     """Fetch top anime from MyAnimeList and return title, genres, and mean score."""
-    headers = {"Authorization": f"Bearer {access_token}"} if access_token else {}
+    api_client = client or MALClient(http_get=http_get or requests.get)
     anime_rows = []
 
     for offset in range(0, limit, 500):
@@ -16,26 +31,23 @@ def get_top_anime(limit=100, access_token=None):
             "ranking_type": "all",
             "limit": page_limit,
             "offset": offset,
-            "fields": "title,genres,mean",
+            "fields": ANIME_FIELDS,
         }
 
-        response = requests.get(
+        data = api_client.get_json(
             f"{API_BASE_URL}/anime/ranking",
             params=params,
-            headers=headers,
-            timeout=REQUEST_TIMEOUT_SECONDS,
+            access_token=access_token,
+            client_id=client_id,
+            cancellation=cancellation,
         )
-        response.raise_for_status()
-        data = response.json()
 
         for anime in data.get("data", []):
-            node = anime["node"]
-            anime_rows.append(
-                {
-                    "Title": node["title"],
-                    "Genres": [genre["name"] for genre in node.get("genres", [])],
-                    "Mean Score": node.get("mean"),
-                }
-            )
+            if not isinstance(anime, dict) or not isinstance(anime.get("node"), dict):
+                continue
+            model = anime_from_node(anime["node"])
+            if model is None:
+                continue
+            anime_rows.append(anime_to_row(model))
 
-    return pd.DataFrame(anime_rows)
+    return pd.DataFrame(anime_rows, columns=ANIME_CSV_COLUMNS)
