@@ -1,24 +1,50 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
-import pandas as pd
 import requests
 
-from anime_data import get_top_anime
-from candidate_generation import generate_recommendation_candidates
-from genre_importance import calculate_genre_importance
-from handle_missing_scores import (
-    calculate_genre_medians,
-    handle_missing_scores_with_genre_medians,
-)
-from oauth_handler import get_access_token, initiate_oauth_flow
-from recommendation_system import recommend_animes_with_randomness
-from user_data import get_user_completed_animes
+try:
+    from .application.pipeline import PipelineOrchestrator
+    from .application.operations import (
+        calculate_genre_importance_file,
+        create_recommendation_candidates_file,
+        fetch_completed_anime_to_file,
+        fetch_top_anime_to_file,
+        generate_recommendations_file,
+        impute_missing_scores_file,
+        require_file,
+    )
+    from .errors import AniRecError, presentable_error
+    from .infrastructure.csv_storage import CsvStorage
+    from .infrastructure.logging_config import configure_logging
+    from .infrastructure.paths import profile_dir
+    from .models import PipelineSettings
+    from .services import AnimeDataService, ProfileService, RecommendationService
+except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
+    from application.pipeline import PipelineOrchestrator
+    from application.operations import (
+        calculate_genre_importance_file,
+        create_recommendation_candidates_file,
+        fetch_completed_anime_to_file,
+        fetch_top_anime_to_file,
+        generate_recommendations_file,
+        impute_missing_scores_file,
+        require_file,
+    )
+    from errors import AniRecError, presentable_error
+    from infrastructure.csv_storage import CsvStorage
+    from infrastructure.logging_config import configure_logging
+    from infrastructure.paths import profile_dir
+    from models import PipelineSettings
+    from services import AnimeDataService, ProfileService, RecommendationService
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PROFILES_DIR = PROJECT_ROOT / "profiles"
+try:
+    from .oauth_handler import get_access_token, initiate_oauth_flow
+except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
+    from oauth_handler import get_access_token, initiate_oauth_flow
 
 DEFAULT_TOP_ANIME_LIMIT = 500
 DEFAULT_RECOMMENDATION_COUNT = 10
@@ -49,14 +75,34 @@ def print_main_menu():
     print("3. Exit")
 
 
-def run_full_pipeline():
+def build_cli_runtime():
+    logger = configure_logging(logger_name="AniRec.cli")
+    orchestrator = PipelineOrchestrator(
+        anime_data=AnimeDataService(),
+        profiles=ProfileService(),
+        recommendations=RecommendationService(),
+        storage=CsvStorage(),
+        access_token_provider=get_access_token,
+    )
+    return orchestrator, logger
+
+
+def _resolve_cli_runtime(orchestrator=None, logger=None):
+    if orchestrator is None:
+        return build_cli_runtime()
+    if logger is None:
+        logger = logging.getLogger("AniRec.cli.injected")
+        if not logger.handlers:
+            logger.addHandler(logging.NullHandler())
+        logger.propagate = False
+    return orchestrator, logger
+
+
+def run_full_pipeline(orchestrator=None, logger=None):
     print_header("Full Recommendation Pipeline")
     username = prompt_username()
     if not username:
         return
-
-    profile_dir = prepare_profile_dir(username)
-    print_info(f"Output folder: {profile_dir}")
 
     top_anime_limit = prompt_int(
         "Top anime to fetch",
@@ -81,75 +127,114 @@ def run_full_pipeline():
         maximum=10,
     )
 
-    steps = [
-        ("Fetch top anime", lambda: fetch_top_anime(profile_dir, top_anime_limit)),
-        ("Fetch completed anime", lambda: fetch_completed_anime(username, profile_dir)),
-        ("Handle missing scores", lambda: impute_missing_scores(profile_dir)),
-        ("Calculate genre importance", lambda: calculate_and_save_genre_importance(profile_dir)),
-        ("Generate recommendation candidates", lambda: create_recommendation_candidates(profile_dir)),
-        (
-            "Generate recommendations",
-            lambda: generate_recommendations(
-                username,
-                profile_dir,
-                num_recommendations,
-                top_anime_count,
-                randomness_factor,
-            ),
-        ),
-    ]
+    settings = PipelineSettings(
+        top_anime_limit=top_anime_limit,
+        recommendation_count=num_recommendations,
+        candidate_pool_size=top_anime_count,
+        randomness_factor=randomness_factor,
+    )
+    orchestrator, logger = _resolve_cli_runtime(orchestrator, logger)
+    try:
+        result = orchestrator.run_full(
+            username,
+            settings,
+            progress_callback=print_pipeline_progress,
+        )
+    except Exception as error:
+        logger.exception("Full recommendation pipeline failed")
+        print_user_friendly_error(error)
+        print("Pipeline stopped. Fix the issue above, then run the pipeline again.")
+        return None
 
-    for index, (label, action) in enumerate(steps, start=1):
-        try:
-            print_step_start(index, len(steps), label)
-            action()
-            print_step_success(label)
-        except (requests.RequestException, RuntimeError, ValueError, FileNotFoundError) as error:
-            print_step_failure(label, error)
-            print("Pipeline stopped. Fix the issue above, then run the pipeline again.")
-            return
-
-    print("\nPipeline complete. Review your recommendation CSV in:")
-    print(f"  {profile_dir}")
+    print("\nPipeline complete.")
+    if result.generated_files:
+        print_info(f"Output folder: {Path(result.generated_files[-1]).parent}")
+    print("\nRecommendations:")
+    for index, recommendation in enumerate(result.recommendations, start=1):
+        print(f"  {index}. {recommendation.anime.display_title}")
+    return result
 
 
-def run_step_by_step_mode():
+def run_step_by_step_mode(orchestrator=None, logger=None):
     print_header("Step-By-Step Mode")
     username = prompt_username()
     if not username:
         return
 
-    profile_dir = prepare_profile_dir(username)
-    print_info(f"Output folder: {profile_dir}")
+    orchestrator, logger = _resolve_cli_runtime(orchestrator, logger)
+    step_ids = {
+        "1": "fetch_top",
+        "2": "fetch_completed",
+        "3": "oauth",
+        "4": "impute_scores",
+        "5": "genre_importance",
+        "6": "generate_candidates",
+        "7": "generate_recommendations",
+    }
 
     while True:
         print_step_by_step_menu()
         choice = input("Choose an option (1-8): ").strip()
 
+        if choice == "8":
+            print("Returning to main menu.")
+            break
+        if choice not in step_ids:
+            print("Please choose a number from 1 to 8.")
+            continue
+
+        settings = _prompt_step_settings(choice)
         try:
-            if choice == "1":
-                fetch_top_anime(profile_dir)
-            elif choice == "2":
-                fetch_completed_anime(username, profile_dir)
-            elif choice == "3":
-                print_info("Opening MyAnimeList OAuth flow.")
-                initiate_oauth_flow()
-                print_success("OAuth token saved.")
-            elif choice == "4":
-                impute_missing_scores(profile_dir)
-            elif choice == "5":
-                calculate_and_save_genre_importance(profile_dir)
-            elif choice == "6":
-                create_recommendation_candidates(profile_dir)
-            elif choice == "7":
-                generate_recommendations(username, profile_dir)
-            elif choice == "8":
-                print("Returning to main menu.")
-                break
-            else:
-                print("Please choose a number from 1 to 8.")
-        except (requests.RequestException, RuntimeError, ValueError, FileNotFoundError) as error:
+            result = orchestrator.run_step(
+                step_ids[choice],
+                username,
+                settings,
+                progress_callback=print_pipeline_progress,
+            )
+        except Exception as error:
+            logger.exception("Single pipeline step failed: %s", step_ids[choice])
             print_user_friendly_error(error)
+            continue
+
+        print_success("Operation completed.")
+        for output in result.generated_files:
+            print_info(f"Output: {output}")
+        if result.recommendations:
+            print("\nRecommendations:")
+            for index, recommendation in enumerate(result.recommendations, start=1):
+                print(f"  {index}. {recommendation.anime.display_title}")
+
+
+def _prompt_step_settings(choice):
+    top_limit = DEFAULT_TOP_ANIME_LIMIT
+    recommendation_count = DEFAULT_RECOMMENDATION_COUNT
+    candidate_pool_size = DEFAULT_CANDIDATE_POOL_SIZE
+    randomness = DEFAULT_RANDOMNESS_FACTOR
+    if choice == "1":
+        top_limit = prompt_int("Top anime to fetch", top_limit, minimum=1)
+    elif choice == "7":
+        recommendation_count = prompt_int(
+            "Recommendations to generate",
+            recommendation_count,
+            minimum=1,
+        )
+        candidate_pool_size = prompt_int(
+            "Ranked candidates to consider",
+            max(candidate_pool_size, recommendation_count),
+            minimum=recommendation_count,
+        )
+        randomness = prompt_int(
+            "Randomness factor, 1-10",
+            randomness,
+            minimum=1,
+            maximum=10,
+        )
+    return PipelineSettings(
+        top_anime_limit=top_limit,
+        recommendation_count=recommendation_count,
+        candidate_pool_size=candidate_pool_size,
+        randomness_factor=randomness,
+    )
 
 
 def print_step_by_step_menu():
@@ -170,92 +255,51 @@ def fetch_top_anime(profile_dir, limit=None):
 
     print_info("Requesting top anime from MyAnimeList...")
     access_token = get_access_token()
-    top_anime_df = get_top_anime(limit=limit, access_token=access_token)
-
-    if top_anime_df.empty:
-        raise RuntimeError("MyAnimeList returned no top anime data.")
-
-    output_file = profile_dir / "top_anime.csv"
-    top_anime_df.to_csv(output_file, index=False)
-    print_success(f"Saved {len(top_anime_df)} anime.")
-    print_info(f"Output: {output_file}")
-    return output_file
+    result = fetch_top_anime_to_file(
+        profile_dir,
+        limit=limit,
+        access_token=access_token,
+    )
+    print_success(f"Saved {result.row_count} anime.")
+    print_info(f"Output: {result.path}")
+    return result.path
 
 
 def fetch_completed_anime(username, profile_dir):
     print_info(f"Requesting completed anime for '{username}'...")
     access_token = get_access_token()
-    completed_anime_df = get_user_completed_animes(username, access_token)
-
-    if completed_anime_df.empty:
-        raise RuntimeError(
-            "No completed anime were returned. Check the username and MyAnimeList list privacy settings."
-        )
-
-    output_file = profile_dir / "completed_anime.csv"
-    completed_anime_df.to_csv(output_file, index=False)
-    print_success(f"Saved {len(completed_anime_df)} completed anime.")
-    print_info(f"Output: {output_file}")
-    return output_file
+    result = fetch_completed_anime_to_file(
+        username,
+        profile_dir,
+        access_token=access_token,
+    )
+    print_success(f"Saved {result.row_count} completed anime.")
+    print_info(f"Output: {result.path}")
+    return result.path
 
 
 def impute_missing_scores(profile_dir):
-    input_file = require_file(profile_dir / "completed_anime.csv", "Run 'Fetch completed anime' first.")
-    print_info(f"Reading completed anime from {input_file}")
-    completed_anime_df = pd.read_csv(input_file)
-    genre_medians = calculate_genre_medians(completed_anime_df)
-    imputed_df = handle_missing_scores_with_genre_medians(completed_anime_df, genre_medians)
-
-    output_file = profile_dir / "completed_anime_imputed.csv"
-    imputed_df.to_csv(output_file, index=False)
+    print_info(f"Reading completed anime from {profile_dir}")
+    result = impute_missing_scores_file(profile_dir)
     print_success("Missing or zero scores handled.")
-    print_info(f"Output: {output_file}")
-    return output_file
+    print_info(f"Output: {result.path}")
+    return result.path
 
 
 def calculate_and_save_genre_importance(profile_dir):
-    input_file = profile_dir / "completed_anime_imputed.csv"
-    if not input_file.exists():
-        input_file = require_file(
-            profile_dir / "completed_anime.csv",
-            "Run 'Fetch completed anime' first.",
-        )
-
-    print_info(f"Calculating genre importance from {input_file}")
-    completed_anime_df = pd.read_csv(input_file)
-    genre_medians = calculate_genre_medians(completed_anime_df)
-    genre_importance = calculate_genre_importance(completed_anime_df, genre_medians)
-
-    if not genre_importance:
-        raise RuntimeError("No genre importance scores were generated. Check that user scores exist.")
-
-    genre_importance_df = pd.DataFrame(
-        sorted(genre_importance.items(), key=lambda item: item[1], reverse=True),
-        columns=["Genre", "Importance_Score"],
-    )
-    output_file = profile_dir / "genre_importance.csv"
-    genre_importance_df.to_csv(output_file, index=False)
-    print_success(f"Saved {len(genre_importance_df)} genre importance scores.")
-    print_info(f"Output: {output_file}")
-    return output_file
+    print_info(f"Calculating genre importance from {profile_dir}")
+    result = calculate_genre_importance_file(profile_dir)
+    print_success(f"Saved {result.row_count} genre importance scores.")
+    print_info(f"Output: {result.path}")
+    return result.path
 
 
 def create_recommendation_candidates(profile_dir):
-    completed_file = profile_dir / "completed_anime_imputed.csv"
-    if not completed_file.exists():
-        completed_file = require_file(
-            profile_dir / "completed_anime.csv",
-            "Run 'Fetch completed anime' first.",
-        )
-
-    top_anime_file = require_file(profile_dir / "top_anime.csv", "Run 'Fetch top anime list' first.")
-    output_file = profile_dir / "recommendation_candidates.csv"
-
     print_info("Filtering out anime the user has already completed...")
-    candidates_df = generate_recommendation_candidates(completed_file, top_anime_file, output_file)
-    print_success(f"Saved {len(candidates_df)} recommendation candidates.")
-    print_info(f"Output: {output_file}")
-    return output_file
+    result = create_recommendation_candidates_file(profile_dir)
+    print_success(f"Saved {result.row_count} recommendation candidates.")
+    print_info(f"Output: {result.path}")
+    return result.path
 
 
 def generate_recommendations(
@@ -265,15 +309,6 @@ def generate_recommendations(
     top_anime_count=None,
     randomness_factor=None,
 ):
-    candidates_file = require_file(
-        profile_dir / "recommendation_candidates.csv",
-        "Run 'Generate recommendation candidates' first.",
-    )
-    genre_importance_file = require_file(
-        profile_dir / "genre_importance.csv",
-        "Run 'Calculate genre importance' first.",
-    )
-
     if num_recommendations is None:
         num_recommendations = prompt_int(
             "Recommendations to generate",
@@ -296,47 +331,34 @@ def generate_recommendations(
         )
 
     print_info("Ranking candidates against the user's genre profile...")
-    recommendations = recommend_animes_with_randomness(
-        candidates_file,
-        genre_importance_file,
+    result = generate_recommendations_file(
         safe_profile_name(username),
-        num_recommendations,
-        top_anime_count,
-        randomness_factor,
         profile_dir,
+        num_recommendations=num_recommendations,
+        top_anime_count=top_anime_count,
+        randomness_factor=randomness_factor,
     )
-
-    if not recommendations:
-        raise RuntimeError("No recommendations were generated. Try fetching more top anime.")
-
-    output_file = profile_dir / f"{safe_profile_name(username)}_recommendations.csv"
-    print_success(f"Generated {len(recommendations)} recommendations.")
-    print_info(f"Output: {output_file}")
+    print_success(f"Generated {result.row_count} recommendations.")
+    print_info(f"Output: {result.path}")
     print("\nRecommendations:")
-    for index, title in enumerate(recommendations, start=1):
+    for index, title in enumerate(result.titles, start=1):
         print(f"  {index}. {title}")
-    return output_file
+    return result.path
 
 
-def prepare_profile_dir(username):
-    profile_dir = get_profile_dir(username)
-    profile_dir.mkdir(parents=True, exist_ok=True)
-    return profile_dir
+def prepare_profile_dir(username, root_override=None):
+    directory = get_profile_dir(username, root_override=root_override)
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
 
 
-def get_profile_dir(username):
-    return PROFILES_DIR / safe_profile_name(username)
+def get_profile_dir(username, root_override=None):
+    return profile_dir(safe_profile_name(username), root_override=root_override)
 
 
 def safe_profile_name(username):
     safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", username).strip("._")
     return safe_name or "mal_user"
-
-
-def require_file(path, hint):
-    if not path.exists():
-        raise FileNotFoundError(f"Missing '{path}'. {hint}")
-    return path
 
 
 def prompt_username():
@@ -402,7 +424,18 @@ def print_step_failure(label, error):
     print_user_friendly_error(error)
 
 
+def print_pipeline_progress(progress):
+    print_step_start(progress.current, progress.total, progress.message)
+
+
 def print_user_friendly_error(error):
+    if isinstance(error, AniRecError):
+        model = error.to_user_error()
+        print(f"  Error: {model.title}")
+        print(f"  {model.description}")
+        print(f"  Suggested action: {model.solution}")
+        return
+
     if isinstance(error, FileNotFoundError):
         print(f"  Error: {error}")
         return
@@ -429,8 +462,10 @@ def print_user_friendly_error(error):
         print("  Error: Could not connect to MyAnimeList. Check your internet connection.")
         return
 
-    message = str(error).strip() or error.__class__.__name__
-    print(f"  Error: {message}")
+    model = presentable_error(error)
+    print(f"  Error: {model.title}")
+    print(f"  {model.description}")
+    print(f"  Suggested action: {model.solution}")
 
 
 if __name__ == "__main__":

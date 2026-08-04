@@ -8,6 +8,11 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import requests
 
+try:
+    from .infrastructure.paths import tokens_dir
+except ImportError:  # Backward compatibility for direct script-style imports.
+    from infrastructure.paths import tokens_dir
+
 AUTH_BASE_URL = "https://myanimelist.net/v1/oauth2"
 REQUEST_TIMEOUT_SECONDS = 15
 
@@ -154,7 +159,8 @@ def _get_redirect_uri():
 
 
 def _get_token_file():
-    return Path(os.environ.get("MAL_TOKEN_FILE", "token.json"))
+    configured_path = os.environ.get("MAL_TOKEN_FILE")
+    return Path(configured_path) if configured_path else tokens_dir() / "token.json"
 
 
 def _add_expiration(token_data):

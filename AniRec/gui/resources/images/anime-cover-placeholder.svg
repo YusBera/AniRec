@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="660" viewBox="0 0 440 660">
+  <metadata>Original AniRec portrait cover placeholder, created for this GPL-3.0 project.</metadata>
+  <defs>
+    <linearGradient id="bg" x1="40" y1="20" x2="410" y2="640" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#303B64"/><stop offset="1" stop-color="#171A25"/>
+    </linearGradient>
+    <linearGradient id="a" x1="130" y1="160" x2="320" y2="470" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8DA8FF"/><stop offset="1" stop-color="#6B4EFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="440" height="660" fill="url(#bg)"/>
+  <circle cx="344" cy="126" r="82" fill="#FF7A9D" opacity=".16"/>
+  <circle cx="92" cy="548" r="108" fill="#8DA8FF" opacity=".12"/>
+  <rect x="58" y="92" width="324" height="430" rx="28" fill="#202636" stroke="#596580" stroke-width="4"/>
+  <path d="M112 446l103-254c8-20 36-20 45 0l105 254h-65l-21-55h-91l-20 55h-56zm98-114h47l-24-68-23 68z" fill="url(#a)"/>
+  <path d="M158 556h124" stroke="#98A3BC" stroke-width="12" stroke-linecap="round"/>
+  <path d="M188 586h64" stroke="#66718E" stroke-width="8" stroke-linecap="round"/>
+</svg>

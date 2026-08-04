@@ -1,6 +1,9 @@
 import math
 
-from genre_utils import parse_genres
+try:
+    from .genre_utils import parse_genres
+except ImportError:  # Backward compatibility for direct script-style imports.
+    from genre_utils import parse_genres
 
 
 def calculate_genre_importance(df, genre_medians):

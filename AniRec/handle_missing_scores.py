@@ -1,7 +1,10 @@
 import pandas as pd
 from statistics import mean, median
 
-from genre_utils import parse_genres
+try:
+    from .genre_utils import parse_genres
+except ImportError:  # Backward compatibility for direct script-style imports.
+    from genre_utils import parse_genres
 
 
 def calculate_genre_medians(df):

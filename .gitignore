@@ -10,11 +10,17 @@ env/
 
 # Local configuration and credentials
 .env
+config/
 token.json
 tokens/
 
 # Generated project data
 profiles/
+cache/
+logs/
+build/
+dist/
+release/
 *_Profile/
 *Profile/
 *_Recommended_Anime.csv
