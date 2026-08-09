@@ -1,6 +1,6 @@
 # AniRec
 
-AniRec 0.1.0 is an open-source Windows desktop application that turns a MyAnimeList history into explainable, genre-based anime recommendations. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
+AniRec 1.2.0 is an open-source Windows desktop application that turns a MyAnimeList history into explainable, genre-based anime recommendations. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
 
 AniRec is unofficial and is not affiliated with or endorsed by MyAnimeList.
 
@@ -80,7 +80,7 @@ On first launch:
 
 Client ID access is sufficient for public lists and avoids storing an OAuth token.
 If a list is private, make it public before setup; private-list OAuth is not part of
-the streamlined 0.1.0 onboarding flow.
+the streamlined 1.2.0 onboarding flow.
 
 Never commit or share a Client Secret, authorization code, access token, refresh
 token, profile directory, or log file. Follow MyAnimeList's instructions for the
@@ -111,7 +111,7 @@ The script builds [AniRec.spec](AniRec.spec) with PyInstaller and produces:
 dist\AniRec\AniRec.exe
 ```
 
-The `onedir` package includes the original application icon, light/dark QSS, placeholders, asset licensing, GPL-3.0 license, Qt runtime, and Python dependencies. `build/` and `dist/` are generated locally and ignored by Git. A `onefile` build is intentionally not shipped in 0.1.0.
+The `onedir` package includes the original application icon, light/dark QSS, placeholders, asset licensing, GPL-3.0 license, Qt runtime, and Python dependencies. `build/` and `dist/` are generated locally and ignored by Git. A `onefile` build is intentionally not shipped in 1.2.0.
 
 ## Command-line interface
 
@@ -164,7 +164,7 @@ AniRec stores writable data outside the program and repository under:
 | `cache\covers\` | Validated downloaded cover images |
 | `logs\` | Rotating, secret-redacted diagnostic logs |
 
-Client Secrets and OAuth tokens are protected by the current Windows user account and filesystem permissions, but 0.1.0 does not use Windows Credential Manager or another encrypted secret vault. Use **Settings → Data Management** for scoped cache, cover, or local-data deletion. Deletion requires an exact validated target and never follows an outside path.
+Client Secrets and OAuth tokens are protected by the current Windows user account and filesystem permissions, but 1.2.0 does not use Windows Credential Manager or another encrypted secret vault. Use **Settings → Data Management** for scoped cache, cover, or local-data deletion. Deletion requires an exact validated target and never follows an outside path.
 
 ## Tests
 
@@ -230,7 +230,7 @@ AniRec is licensed under the [GNU General Public License v3.0](LICENSE).
 - Desktop GUI contribution: a PySide6 interface built on the original AniRec project
 - Original GUI assets and their licensing: [AniRec/gui/resources/ASSET_LICENSES.md](AniRec/gui/resources/ASSET_LICENSES.md)
 
-## Known limitations in 0.1.0
+## Known limitations in 1.2.0
 
 - The algorithm is intentionally genre-based and does not use collaborative filtering.
 - Live recommendations require a user-provided MyAnimeList Client ID and a public anime list.

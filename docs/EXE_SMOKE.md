@@ -1,4 +1,4 @@
-# AniRec 0.1.0 — development-machine EXE smoke
+# AniRec 1.2.0 — development-machine EXE smoke
 
 Date: 2026-08-03 (Europe/Istanbul)
 Host: Windows 11 23H2 (`10.0.22631`), x64
@@ -9,7 +9,7 @@ All credentials and anime/profile records used below are synthetic fixtures. No 
 | Check | Status | Evidence |
 |---|---|---|
 | Windows GUI executable; no console | PASS | PE subsystem is `IMAGE_SUBSYSTEM_WINDOWS_GUI` (`2`), machine `0x8664`. |
-| Version and application icon | PASS | Windows file/product version is `0.1.0`; EXE has a resource table and the original multi-size ICO. |
+| Version and application icon | PASS | Windows file/product version is `1.2.0`; EXE has a resource table and the original multi-size ICO. |
 | QSS, placeholders, asset notice, GPL license | PASS | Seven required resource files exist below `_internal/gui/resources`; `LICENSE` also exists at the distribution root. |
 | Clean first-run launch and setup wizard | PASS | Real packaged EXE opened `AniRec` plus modal `Set up AniRec`; [first-run screenshot](images/anirec-first-run-wizard.png). |
 | First-run controlled close | PASS | Wizard received `WM_CLOSE`, then the main window received `WM_CLOSE`; process exited with code `0` and no AniRec process remained. |

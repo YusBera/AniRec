@@ -1,22 +1,22 @@
-# AniRec 0.1.0 release-candidate report
+# AniRec 1.2.0 release report
 
-Status: **READY FOR USER ACCEPTANCE**
-Prepared: 2026-08-03 (Europe/Istanbul)
+Status: **READY FOR RELEASE**
+Prepared: 2026-08-10 (Europe/Istanbul)
 Development host: Windows 11 23H2 (`10.0.22631`), x64
 
 ## Deliverable
 
-- Second-computer acceptance ZIP: `release/AniRec-0.1.0-rc6-Windows-x64.zip`
+- Windows x64 ZIP: `release/AniRec-1.2.0-Windows-x64.zip`
 - Acceptance ZIP size and SHA-256 are recorded in the external release handoff after the archive is finalized. Verify that handoff value before extraction.
 - Previous ZIPs are superseded by the visible, editable recommendation-library and modern operation-UX build.
 - Executable: `dist/AniRec/AniRec.exe`
 - Distribution directory: `dist/AniRec`
 - Package type: PyInstaller 6.21 `onedir`, Windows GUI subsystem, unsigned
-- Version resource: file/product version `0.1.0`
+- Version resource: file/product version `1.2.0`
 - Architecture: x64 (`0x8664`)
 - Files: 901
-- Total directory size: 166,953,542 bytes (159.22 MiB)
-- EXE SHA-256: `BB61A24284260F9ACF96B8F32F1E4B32B28AD816607BEAF7D9CF16ACABBCCF0B`
+- Total directory size: 166,954,194 bytes (159.22 MiB)
+- EXE SHA-256: `8C7E1AA0897EFE5C7321BCD16DEF28F9E263D81C69CF23E6E2CF6A333C02569D`
 
 The whole `dist\AniRec` directory is the artifact. `AniRec.exe` must not be separated from `_internal`.
 
@@ -44,8 +44,8 @@ For transfer to another computer, use the versioned acceptance ZIP. It contains 
 
 | Gate | Result |
 |---|---|
-| Full networkless regression | PASS — 358 tests in 109.09 seconds |
-| Clean PyInstaller build | PASS — 38.5 seconds |
+| Full networkless regression | PASS — 358 tests in 120.16 seconds |
+| Clean PyInstaller build | PASS — 47.5 seconds |
 | Packaging/README/security contract | PASS |
 | PE subsystem/version/icon/resources | PASS |
 | GPL-3.0 at dist root | PASS |
@@ -97,7 +97,7 @@ Screenshots:
 
 On a second Windows 10 or 11 computer:
 
-1. Copy `AniRec-0.1.0-rc6-Windows-x64.zip` and verify its SHA-256 against the release handoff.
+1. Copy `AniRec-1.2.0-Windows-x64.zip` and verify its SHA-256 against the GitHub release notes.
 2. Extract it, open PowerShell in the extracted root, and run `powershell -ExecutionPolicy Bypass -File .\verify_windows_acceptance.ps1 -Launch`.
 3. Confirm the preflight is completely `PASS`, then use `USER_ACCEPTANCE.md` to record the interactive checks.
 4. Start `AniRec.exe`; confirm no console opens and the icon, dark theme, and first-run wizard render.
@@ -117,7 +117,7 @@ Do not send credentials, tokens, profile data, or unredacted logs with the resul
   setup and adds the visible/editable recommendation library, responsive modern
   hierarchy, more compact cards, contextual table actions, and successful
   operation auto-close.
-- Private MAL anime lists are not supported by streamlined 0.1.0 onboarding;
+- Private MAL anime lists are not supported by streamlined 1.2.0 onboarding;
   the list must be public.
 - The executable is unsigned and has no installer, MSIX, auto-update, or SmartScreen reputation.
 - `onefile` is deliberately deferred until the user accepts the `onedir` build.
@@ -126,7 +126,6 @@ Do not send credentials, tokens, profile data, or unredacted logs with the resul
 
 ## Source-control state
 
-- Original source HEAD: `cb9b515a282af3db091e6cf506cd32767b7ef346`
-- Branch: `main`
-- The complete implementation remains as uncommitted local working-tree changes.
-- No branch, commit, push, pull request, tag, or release was created.
+- Release branch: `main`
+- Feature pull request: `#1`, merged into `main` as `6d1953f13b33e18a64d6f6708953de6326367552`.
+- Release tag: `v1.2.0`.

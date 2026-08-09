@@ -26,7 +26,7 @@ function Add-Result {
     }
 }
 
-Write-Output "AniRec 0.1.0 Windows acceptance preflight"
+Write-Output "AniRec 1.2.0 Windows acceptance preflight"
 Write-Output "Package root: $packageRoot"
 
 $os = Get-CimInstance Win32_OperatingSystem
@@ -88,7 +88,7 @@ if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
 
 if (Test-Path -LiteralPath $executable -PathType Leaf) {
     $versionInfo = (Get-Item -LiteralPath $executable).VersionInfo
-    Add-Result ($versionInfo.FileVersion -eq "0.1.0" -and $versionInfo.ProductVersion -eq "0.1.0") "EXE version" "File $($versionInfo.FileVersion), product $($versionInfo.ProductVersion)"
+    Add-Result ($versionInfo.FileVersion -eq "1.2.0" -and $versionInfo.ProductVersion -eq "1.2.0") "EXE version" "File $($versionInfo.FileVersion), product $($versionInfo.ProductVersion)"
 
     $bytes = [IO.File]::ReadAllBytes($executable)
     $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)

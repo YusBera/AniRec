@@ -6,7 +6,7 @@ from AniRec import __version__
 
 
 def test_release_version_launcher_and_spec_are_consistent(repo_root):
-    assert __version__ == "0.1.0"
+    assert __version__ == "1.2.0"
     launcher = (repo_root / "anirec_gui.py").read_text(encoding="utf-8")
     spec = (repo_root / "AniRec.spec").read_text(encoding="utf-8")
 
@@ -54,7 +54,7 @@ def test_readme_documents_only_the_verified_desktop_release(repo_root):
         "## Tests",
         "## Troubleshooting",
         "## License and attribution",
-        "## Known limitations in 0.1.0",
+        "## Known limitations in 1.2.0",
     )
 
     assert all(section in readme for section in required_sections)
