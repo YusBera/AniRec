@@ -241,6 +241,10 @@ class MainWindow(QMainWindow):
         return wizard
 
     def _on_setup_finished(self, result: int) -> None:
+        if result == int(QDialog.DialogCode.Accepted):
+            settings = self.settings_service.load()
+            self.settings_page.reload()
+            self._apply_settings(settings)
         self.refresh_dashboard()
         if result == int(QDialog.DialogCode.Accepted):
             self.navigate_to(PageId.HOME)

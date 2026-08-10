@@ -282,6 +282,7 @@ class PipelineSettings:
     randomness_factor: int = 5
     minimum_mean_score: float | None = None
     seed: int | None = None
+    include_nsfw: bool = False
 
     def __post_init__(self) -> None:
         if self.top_anime_limit <= 0:
@@ -295,6 +296,7 @@ class PipelineSettings:
         if not 1 <= self.randomness_factor <= 10:
             raise ValueError("randomness_factor must be between 1 and 10.")
         object.__setattr__(self, "minimum_mean_score", _optional_float(self.minimum_mean_score))
+        object.__setattr__(self, "include_nsfw", bool(self.include_nsfw))
         if self.minimum_mean_score is not None and not 0 <= self.minimum_mean_score <= 10:
             raise ValueError("minimum_mean_score must be between 0 and 10.")
 

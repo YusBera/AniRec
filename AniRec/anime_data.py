@@ -17,6 +17,7 @@ def get_top_anime(
     access_token=None,
     *,
     client_id=None,
+    include_nsfw=False,
     http_get=None,
     client=None,
     cancellation=None,
@@ -33,6 +34,8 @@ def get_top_anime(
             "offset": offset,
             "fields": ANIME_FIELDS,
         }
+        if include_nsfw:
+            params["nsfw"] = "true"
 
         data = api_client.get_json(
             f"{API_BASE_URL}/anime/ranking",

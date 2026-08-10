@@ -59,14 +59,15 @@ class WizardStep(IntEnum):
     WELCOME = 0
     CONNECTION = 1
     API = 1
-    OAUTH = 1
     PROFILE = 1
-    ANALYSIS = 2
+    OAUTH = 2
+    ANALYSIS = 3
 
 
 STEP_LABELS = {
     WizardStep.WELCOME: WIZARD_TEXT.welcome,
     WizardStep.CONNECTION: WIZARD_TEXT.connection,
+    WizardStep.OAUTH: WIZARD_TEXT.oauth,
     WizardStep.ANALYSIS: WIZARD_TEXT.analysis,
 }
 
@@ -472,6 +473,7 @@ class SetupWizard(QDialog):
         self.worker_controller = worker_controller or WorkerController(self)
         self.connection_operation_key = operation_key(OperationKind.API_TEST, "setup")
         self.api_operation_key = self.connection_operation_key
+        self.oauth_operation_key = operation_key(OperationKind.OAUTH, "setup")
         self.analysis_operation_key: str | None = None
         self.setObjectName("setupWizard")
         self.setWindowTitle(WIZARD_TEXT.title)
@@ -495,6 +497,10 @@ class SetupWizard(QDialog):
             elif step is WizardStep.CONNECTION:
                 page = ApiSettingsPage(onboarding.settings.load())
                 page.test_requested.connect(self._start_connection_setup)
+            elif step is WizardStep.OAUTH:
+                page = OAuthPage()
+                page.connect_requested.connect(self._start_oauth)
+                page.cancel_requested.connect(self._cancel_oauth)
             elif step is WizardStep.ANALYSIS:
                 page = AnalysisPage()
                 page.start_requested.connect(self._start_analysis)
@@ -544,6 +550,10 @@ class SetupWizard(QDialog):
         return self.pages[WizardStep.ANALYSIS]
 
     @property
+    def oauth_page(self) -> OAuthPage:
+        return self.pages[WizardStep.OAUTH]
+
+    @property
     def current_step(self) -> WizardStep:
         return WizardStep(self.stack.currentIndex())
 
@@ -582,6 +592,7 @@ class SetupWizard(QDialog):
             key
             for key in (
                 self.connection_operation_key,
+                self.oauth_operation_key,
                 self.analysis_operation_key,
             )
             if key
@@ -613,6 +624,28 @@ class SetupWizard(QDialog):
             return False
         self.connection_page._request_test()
         return self.worker_controller.is_running(self.connection_operation_key)
+
+    def _start_oauth(self) -> None:
+        if self.worker_controller.is_running(self.oauth_operation_key):
+            return
+        profile = self.onboarding.profiles.active_profile()
+        if profile is None:
+            self.oauth_page.show_failure(
+                ProfileError("A validated profile is required before OAuth.").to_user_error()
+            )
+            return
+        self.oauth_page.begin_connection()
+        self.worker_controller.start(
+            self.oauth_operation_key,
+            OAuthWorker(
+                self.auth_service,
+                profile.profile_id,
+                self.onboarding.settings.load(),
+            ),
+        )
+
+    def _cancel_oauth(self) -> None:
+        self.worker_controller.cancel(self.oauth_operation_key)
 
     def _retry_analysis(self) -> bool:
         if self.analysis_operation_key and self.worker_controller.is_running(
@@ -685,6 +718,10 @@ class SetupWizard(QDialog):
             self.connection_page.show_success(result.settings, result.profile)
             self.go_next()
             return
+        if operation_key_value == self.oauth_operation_key:
+            self.oauth_page.show_success()
+            self.go_next()
+            return
         if (
             self.analysis_operation_key is not None
             and operation_key_value == self.analysis_operation_key
@@ -707,6 +744,10 @@ class SetupWizard(QDialog):
             error, UserFacingError
         ):
             self.connection_page.show_failure(error)
+        elif operation_key_value == self.oauth_operation_key and isinstance(
+            error, UserFacingError
+        ):
+            self.oauth_page.show_failure(error)
         elif operation_key_value == self.analysis_operation_key and isinstance(
             error, UserFacingError
         ):
@@ -719,15 +760,20 @@ class SetupWizard(QDialog):
             self.analysis_page.apply_progress(progress)
 
     def _worker_step(self, operation_key_value: str, step_id: str, _message: str) -> None:
-        return None
+        if operation_key_value == self.oauth_operation_key:
+            self.oauth_page.show_status(step_id)
 
     def _worker_cancelled(self, operation_key_value: str) -> None:
-        if operation_key_value == self.analysis_operation_key:
+        if operation_key_value == self.oauth_operation_key:
+            self.oauth_page.show_cancelled()
+        elif operation_key_value == self.analysis_operation_key:
             self.analysis_page.show_cancelled()
 
     def _worker_finished(self, operation_key_value: str) -> None:
         if operation_key_value == self.connection_operation_key:
             self.connection_page.finish_test()
+        elif operation_key_value == self.oauth_operation_key:
+            self.oauth_page.finish_connection()
         elif operation_key_value == self.analysis_operation_key:
             self.analysis_page.finish_analysis()
 

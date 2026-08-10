@@ -163,7 +163,7 @@ class WizardTextCatalog:
     saved_secret: str = "A saved secret is configured. Leave blank to keep it."
     api_validation_hint: str = (
         "Enter a Client ID and a public MyAnimeList profile URL or username. "
-        "OAuth is not required for public lists."
+        "After validation, AniRec will request MyAnimeList OAuth approval."
     )
     connect_mal: str = "Connect with MyAnimeList"
     cancel_connection: str = "Cancel Connection"

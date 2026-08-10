@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from AniRec.gui.main_window import MainWindow, PageId
+from PySide6.QtWidgets import QDialog
+
 from AniRec.gui.setup_wizard import SetupWizard, WizardStep
 from AniRec.gui_main import create_application
 from AniRec.models import AppSettings, TokenRecord
@@ -85,7 +87,6 @@ def test_finish_requires_every_step_and_then_marks_completion(system_temp_dir):
         wizard.set_step_complete(step)
     wizard.go_to(WizardStep.API)
     wizard.go_to(WizardStep.OAUTH)
-    wizard.go_to(WizardStep.PROFILE)
     wizard.go_to(WizardStep.ANALYSIS)
     wizard.finish_button.click()
 
@@ -132,4 +133,27 @@ def test_completed_setup_does_not_auto_open_but_settings_can_reopen_wizard(syste
     assert window.setup_wizard.isVisible()
     window.setup_wizard.reject()
     assert onboarding.completion_flag()
+    window.close()
+
+
+def test_accepted_setup_reloads_settings_page_before_user_saves(system_temp_dir):
+    application = create_application([])
+    profiles, onboarding = services(system_temp_dir)
+    window = MainWindow(
+        profile_service=profiles,
+        result_service=ResultService(root_override=system_temp_dir),
+        onboarding_service=onboarding,
+        settings_service=onboarding.settings,
+        token_store=onboarding.tokens,
+    )
+    assert window.settings_page.client_id_input.text() == ""
+
+    onboarding.settings.save(AppSettings(client_id="fixture-client"))
+    window._on_setup_finished(int(QDialog.DialogCode.Accepted))
+    application.processEvents()
+
+    assert window.settings_page.client_id_input.text() == "fixture-client"
+    window.settings_page.include_nsfw_input.setChecked(True)
+    assert window.settings_page.save()
+    assert onboarding.settings.load().pipeline.include_nsfw
     window.close()

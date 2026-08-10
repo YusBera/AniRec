@@ -83,11 +83,10 @@ class SuccessfulPipeline:
 
 
 def move_to_analysis(wizard):
-    for step in (WizardStep.API, WizardStep.OAUTH, WizardStep.PROFILE):
+    for step in (WizardStep.API, WizardStep.OAUTH):
         wizard.set_step_complete(step)
     wizard.go_to(WizardStep.API)
     wizard.go_to(WizardStep.OAUTH)
-    wizard.go_to(WizardStep.PROFILE)
     wizard.go_to(WizardStep.ANALYSIS)
 
 

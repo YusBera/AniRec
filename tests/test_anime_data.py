@@ -65,6 +65,20 @@ def test_top_anime_empty_response_returns_empty_frame(monkeypatch):
     assert anime_data.get_top_anime(limit=1).empty
 
 
+def test_top_anime_can_explicitly_include_nsfw(monkeypatch):
+    calls = []
+
+    def fake_get(url, params, headers, timeout):
+        calls.append(params)
+        return FakeResponse({"data": []})
+
+    monkeypatch.setattr(anime_data.requests, "get", fake_get)
+
+    anime_data.get_top_anime(limit=1, include_nsfw=True)
+
+    assert calls[0]["nsfw"] == "true"
+
+
 @pytest.mark.parametrize(
     "error",
     [

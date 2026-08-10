@@ -49,8 +49,8 @@ ADVANCED_OPERATIONS = (
     ),
     AdvancedOperationDefinition(
         "oauth",
-        "Refresh the OAuth connection",
-        "Refresh an expired token when possible, or validate the current account connection.",
+        "Connect or refresh the OAuth connection",
+        "Use a stored token when available; otherwise open MyAnimeList authorization in your browser.",
         None,
     ),
     AdvancedOperationDefinition(
@@ -121,6 +121,7 @@ class AdvancedOperationsPage(QWidget):
         self._build_ui()
         self.worker_controller.started.connect(self._on_started)
         self.worker_controller.progress_changed.connect(self._on_progress)
+        self.worker_controller.step_changed.connect(self._on_step_changed)
         self.worker_controller.result_ready.connect(self._on_result)
         self.worker_controller.error_occurred.connect(self._on_error)
         self.worker_controller.cancelled.connect(self._on_cancelled)
@@ -278,7 +279,10 @@ class AdvancedOperationsPage(QWidget):
         settings = self.settings_service.load()
         if step_id == "oauth":
             worker = TokenRefreshWorker(
-                self.auth_service, self.profile.profile_id, settings
+                self.auth_service,
+                self.profile.profile_id,
+                settings,
+                interactive_if_missing=True,
             )
         else:
             worker = RecommendationWorker(
@@ -342,6 +346,13 @@ class AdvancedOperationsPage(QWidget):
         step_id = self._step_for_key(operation_key)
         if step_id is not None and isinstance(progress, PipelineProgress):
             self.widgets[step_id].status.setText(progress.message or "Running…")
+
+    def _on_step_changed(
+        self, operation_key: str, _step_id: str, message: str
+    ) -> None:
+        step_id = self._step_for_key(operation_key)
+        if step_id is not None and message:
+            self.widgets[step_id].status.setText(message)
 
     def _on_result(self, operation_key: str, result: object) -> None:
         step_id = self._step_for_key(operation_key)

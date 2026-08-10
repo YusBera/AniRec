@@ -1,6 +1,6 @@
 # AniRec
 
-AniRec 1.2.0 is an open-source Windows desktop application that turns a MyAnimeList history into explainable, genre-based anime recommendations. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
+AniRec 1.2.2 is an open-source Windows desktop application that turns a MyAnimeList history into explainable, genre-based anime recommendations. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
 
 AniRec is unofficial and is not affiliated with or endorsed by MyAnimeList.
 
@@ -68,7 +68,6 @@ form requires a redirect URL; use:
 http://localhost:8080/callback
 ```
 
-The normal AniRec setup does not open OAuth or ask for the MAL account password.
 On first launch:
 
 1. Enter the MyAnimeList Client ID.
@@ -76,11 +75,15 @@ On first launch:
    `https://myanimelist.net/profile/example_user`.
 3. Choose **Validate and Continue**. AniRec verifies both the Client ID and the
    public completed-anime list in one background operation.
-4. Review the recommendation defaults and run the initial analysis.
+4. Choose **Connect with MyAnimeList** and approve AniRec in the browser. AniRec
+   never receives or stores the MAL account password.
+5. Review the recommendation defaults and run the initial analysis.
 
-Client ID access is sufficient for public lists and avoids storing an OAuth token.
-If a list is private, make it public before setup; private-list OAuth is not part of
-the streamlined 1.2.0 onboarding flow.
+Client ID access remains sufficient for public ranking and list reads, while first-run
+setup now also records profile-scoped OAuth approval. The connection can later be
+revalidated from Advanced Operations. Enable **Include NSFW anime** in Settings when
+MAL's NSFW-labelled titles should be included in both history analysis and the Top Anime
+candidate pool.
 
 Never commit or share a Client Secret, authorization code, access token, refresh
 token, profile directory, or log file. Follow MyAnimeList's instructions for the
@@ -111,7 +114,7 @@ The script builds [AniRec.spec](AniRec.spec) with PyInstaller and produces:
 dist\AniRec\AniRec.exe
 ```
 
-The `onedir` package includes the original application icon, light/dark QSS, placeholders, asset licensing, GPL-3.0 license, Qt runtime, and Python dependencies. `build/` and `dist/` are generated locally and ignored by Git. A `onefile` build is intentionally not shipped in 1.2.0.
+The `onedir` package includes the original application icon, light/dark QSS, placeholders, asset licensing, GPL-3.0 license, Qt runtime, and Python dependencies. `build/` and `dist/` are generated locally and ignored by Git. A `onefile` build is intentionally not shipped in 1.2.2.
 
 ## Command-line interface
 
@@ -164,7 +167,7 @@ AniRec stores writable data outside the program and repository under:
 | `cache\covers\` | Validated downloaded cover images |
 | `logs\` | Rotating, secret-redacted diagnostic logs |
 
-Client Secrets and OAuth tokens are protected by the current Windows user account and filesystem permissions, but 1.2.0 does not use Windows Credential Manager or another encrypted secret vault. Use **Settings → Data Management** for scoped cache, cover, or local-data deletion. Deletion requires an exact validated target and never follows an outside path.
+Client Secrets and OAuth tokens are protected by the current Windows user account and filesystem permissions, but 1.2.2 does not use Windows Credential Manager or another encrypted secret vault. Use **Settings → Data Management** for scoped cache, cover, or local-data deletion. Deletion requires an exact validated target and never follows an outside path.
 
 ## Tests
 
@@ -230,7 +233,7 @@ AniRec is licensed under the [GNU General Public License v3.0](LICENSE).
 - Desktop GUI contribution: a PySide6 interface built on the original AniRec project
 - Original GUI assets and their licensing: [AniRec/gui/resources/ASSET_LICENSES.md](AniRec/gui/resources/ASSET_LICENSES.md)
 
-## Known limitations in 1.2.0
+## Known limitations in 1.2.2
 
 - The algorithm is intentionally genre-based and does not use collaborative filtering.
 - Live recommendations require a user-provided MyAnimeList Client ID and a public anime list.

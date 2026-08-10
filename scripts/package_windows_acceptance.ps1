@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.2.0"
+    [string]$Version = "1.2.2"
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,9 +19,25 @@ if ((Test-Path -LiteralPath $bundleRoot) -or (Test-Path -LiteralPath $archivePat
 
 New-Item -ItemType Directory -Path $bundleRoot -Force | Out-Null
 Copy-Item -LiteralPath $distRoot -Destination (Join-Path $bundleRoot "AniRec") -Recurse
-Copy-Item -LiteralPath (Join-Path $repoRoot "docs\USER_ACCEPTANCE_TEMPLATE.md") -Destination (Join-Path $bundleRoot "USER_ACCEPTANCE.md")
-Copy-Item -LiteralPath (Join-Path $repoRoot "docs\RELEASE_CANDIDATE_REPORT.md") -Destination (Join-Path $bundleRoot "RELEASE_CANDIDATE_REPORT.md")
-Copy-Item -LiteralPath (Join-Path $repoRoot "docs\EXE_SMOKE.md") -Destination (Join-Path $bundleRoot "DEVELOPMENT_MACHINE_SMOKE.md")
+$acceptanceTemplate = Join-Path $repoRoot "docs\USER_ACCEPTANCE_TEMPLATE_$Version.md"
+if (-not (Test-Path -LiteralPath $acceptanceTemplate -PathType Leaf)) {
+    $acceptanceTemplate = Join-Path $repoRoot "docs\USER_ACCEPTANCE_TEMPLATE.md"
+}
+$candidateReport = Join-Path $repoRoot "docs\RELEASE_CANDIDATE_REPORT_$Version.md"
+if (-not (Test-Path -LiteralPath $candidateReport -PathType Leaf)) {
+    $candidateReport = Join-Path $repoRoot "docs\RELEASE_CANDIDATE_REPORT.md"
+}
+$smokeReport = Join-Path $repoRoot "docs\EXE_SMOKE_$Version.md"
+if (-not (Test-Path -LiteralPath $smokeReport -PathType Leaf)) {
+    $smokeReport = Join-Path $repoRoot "docs\EXE_SMOKE.md"
+}
+$releaseNotes = Join-Path $repoRoot "docs\RELEASE_NOTES_$Version.md"
+if (Test-Path -LiteralPath $releaseNotes -PathType Leaf) {
+    Copy-Item -LiteralPath $releaseNotes -Destination (Join-Path $bundleRoot "RELEASE_NOTES.md")
+}
+Copy-Item -LiteralPath $acceptanceTemplate -Destination (Join-Path $bundleRoot "USER_ACCEPTANCE.md")
+Copy-Item -LiteralPath $candidateReport -Destination (Join-Path $bundleRoot "RELEASE_CANDIDATE_REPORT.md")
+Copy-Item -LiteralPath $smokeReport -Destination (Join-Path $bundleRoot "DEVELOPMENT_MACHINE_SMOKE.md")
 Copy-Item -LiteralPath (Join-Path $repoRoot "scripts\verify_windows_acceptance.ps1") -Destination (Join-Path $bundleRoot "verify_windows_acceptance.ps1")
 
 $entries = Get-ChildItem -LiteralPath $bundleRoot -Recurse -File |

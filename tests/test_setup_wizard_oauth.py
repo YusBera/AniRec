@@ -51,26 +51,38 @@ def fill_connection_page(wizard):
     return page
 
 
-def test_default_setup_has_three_steps_and_no_required_oauth_page(system_temp_dir):
+def test_default_setup_has_required_oauth_page_between_connection_and_analysis(
+    system_temp_dir,
+):
     create_application([])
     wizard = SetupWizard(onboarding_service(system_temp_dir))
 
     assert list(WizardStep) == [
         WizardStep.WELCOME,
         WizardStep.CONNECTION,
+        WizardStep.OAUTH,
         WizardStep.ANALYSIS,
     ]
-    assert wizard.stack.count() == 3
-    assert not hasattr(wizard, "oauth_page")
+    assert wizard.stack.count() == 4
+    assert wizard.oauth_page.connect_button.isEnabled()
     assert not hasattr(wizard, "profile_page")
 
 
-class ExplodingAuthService:
-    def authorize(self, *_args, **_kwargs):
-        raise AssertionError("Public setup must not start OAuth")
+class SuccessfulAuthService:
+    def __init__(self, tokens):
+        self.tokens = tokens
+        self.calls = []
+
+    def authorize(self, profile_id, settings, **kwargs):
+        self.calls.append((profile_id, settings))
+        kwargs["status_callback"]("oauth_waiting_approval")
+        token = TokenRecord("oauth-fixture-token", expires_at=9999999999)
+        self.tokens.save(profile_id, token)
+        kwargs["status_callback"]("oauth_success")
+        return token
 
 
-def test_public_setup_never_calls_oauth_and_removes_stale_temporary_token(
+def test_setup_validates_public_profile_then_requires_oauth_for_real_profile(
     system_temp_dir,
 ):
     application = create_application([])
@@ -79,18 +91,27 @@ def test_public_setup_never_calls_oauth_and_removes_stale_temporary_token(
         ONBOARDING_TOKEN_PROFILE_ID,
         TokenRecord("stale-fixture-token", expires_at=100),
     )
+    auth = SuccessfulAuthService(onboarding.tokens)
     wizard = SetupWizard(
         onboarding,
         api_connection=SuccessfulApiConnection(),
-        auth_service=ExplodingAuthService(),
+        auth_service=auth,
     )
     page = fill_connection_page(wizard)
 
     page.test_button.click()
-    wait_until(application, lambda: wizard.current_step is WizardStep.ANALYSIS)
+    wait_until(application, lambda: wizard.current_step is WizardStep.OAUTH)
 
     assert onboarding.tokens.load(ONBOARDING_TOKEN_PROFILE_ID) is None
-    assert onboarding.profiles.active_profile().username == "AniRecFixtureUser"
+    profile = onboarding.profiles.active_profile()
+    assert profile.username == "AniRecFixtureUser"
+
+    wizard.oauth_page.connect_button.click()
+    wait_until(application, lambda: wizard.current_step is WizardStep.ANALYSIS)
+
+    assert auth.calls[0][0] == profile.profile_id
+    assert onboarding.tokens.load(profile.profile_id) is not None
+    assert wizard.oauth_page.is_complete
 
 
 class CancellableProfileClient:

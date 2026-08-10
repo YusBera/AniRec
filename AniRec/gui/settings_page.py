@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..errors import AniRecError, UserFacingError
+from ..errors import AniRecError, ConfigError, UserFacingError
 from ..models import AppSettings, PipelineSettings, UserProfile
 from ..services import (
     ApiConnectionService,
@@ -167,6 +167,7 @@ class SettingsPage(QWidget):
         self.default_sort_input.addItem("Airing year", "year")
         self.default_sort_input.addItem("Alphabetical", "alphabetical")
         self.include_hidden_input = QCheckBox("Include hidden recommendations")
+        self.include_nsfw_input = QCheckBox("Include NSFW anime")
         form.addRow("Popular anime pool", self.top_limit_input)
         form.addRow("Recommendation count", self.recommendation_count_input)
         form.addRow("Evaluated candidate count", self.candidate_pool_input)
@@ -175,6 +176,7 @@ class SettingsPage(QWidget):
         form.addRow("Deterministic seed", self.seed_input)
         form.addRow("Default sort", self.default_sort_input)
         form.addRow("Hidden items", self.include_hidden_input)
+        form.addRow("MAL content", self.include_nsfw_input)
         return group
 
     def _build_profile_group(self) -> QGroupBox:
@@ -314,6 +316,7 @@ class SettingsPage(QWidget):
             max(0, self.default_sort_input.findData(settings.default_recommendation_sort))
         )
         self.include_hidden_input.setChecked(settings.include_hidden_recommendations)
+        self.include_nsfw_input.setChecked(pipeline.include_nsfw)
         self.client_id_input.setText(settings.client_id or "")
         self.client_secret_input.clear()
         self.client_secret_input.setPlaceholderText(
@@ -339,6 +342,7 @@ class SettingsPage(QWidget):
             randomness_factor=self.randomness_input.value(),
             minimum_mean_score=minimum_score if minimum_score > 0 else None,
             seed=seed if seed >= 0 else None,
+            include_nsfw=self.include_nsfw_input.isChecked(),
         )
         secret = self.client_secret_input.text().strip() or self._saved_secret
         return AppSettings(
@@ -360,7 +364,9 @@ class SettingsPage(QWidget):
             self.settings_service.save(settings)
         except (AniRecError, TypeError, ValueError) as error:
             message = (
-                error.to_user_error().solution
+                str(error)
+                if isinstance(error, ConfigError)
+                else error.to_user_error().solution
                 if isinstance(error, AniRecError)
                 else str(error)
             )
@@ -585,7 +591,7 @@ class SettingsPage(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
-        return result is QMessageBox.StandardButton.Yes
+        return result == QMessageBox.StandardButton.Yes
 
     def _confirm_data_delete(self, plan: DataDeletionPlan) -> bool:
         result = QMessageBox.warning(
@@ -595,4 +601,4 @@ class SettingsPage(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
-        return result is QMessageBox.StandardButton.Yes
+        return result == QMessageBox.StandardButton.Yes

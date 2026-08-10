@@ -28,6 +28,7 @@ def get_user_completed_animes(
     access_token=None,
     *,
     client_id=None,
+    include_nsfw=False,
     http_get=None,
     client=None,
     cancellation=None,
@@ -35,10 +36,15 @@ def get_user_completed_animes(
     """Fetch a user's completed anime list from MyAnimeList."""
     url = f"{API_BASE_URL}/users/{quote(str(username), safe='')}/animelist"
     params = {
-        "status": "completed",
         "fields": f"list_status,{ANIME_FIELDS}",
         "limit": 1000,
     }
+    if include_nsfw:
+        # MAL omits NSFW entries unless explicitly requested. Fetching the full
+        # list also preserves completed entries currently marked as rewatching.
+        params["nsfw"] = "true"
+    else:
+        params["status"] = "completed"
     anime_rows = []
     api_client = client or MALClient(http_get=http_get or requests.get)
 
@@ -59,6 +65,8 @@ def get_user_completed_animes(
             list_status = anime.get("list_status", {})
             if not isinstance(list_status, dict):
                 list_status = {}
+            if include_nsfw and list_status.get("status") != "completed":
+                continue
             row = anime_to_row(model)
             row.update(
                 {

@@ -33,8 +33,8 @@ class FakeAuthService:
     def __init__(self):
         self.calls = []
 
-    def get_access_token(self, profile_id, settings):
-        self.calls.append((profile_id, settings))
+    def get_access_token(self, profile_id, settings, **kwargs):
+        self.calls.append((profile_id, settings, kwargs))
         return "secret-token-never-returned-to-ui"
 
 
@@ -155,6 +155,7 @@ def test_each_action_uses_the_expected_worker_and_reaches_terminal_status(system
     ]
     assert len(auth.calls) == 1
     assert auth.calls[0][0] == profile.profile_id
+    assert auth.calls[0][2]["interactive"] is True
     assert "secret-token-never-returned-to-ui" not in " ".join(
         widgets.status.text() for widgets in page.widgets.values()
     )

@@ -93,6 +93,49 @@ def test_completed_anime_empty_response_returns_empty_frame(monkeypatch):
     assert user_data.get_user_completed_animes("fixture-user", "fake-token").empty
 
 
+def test_include_nsfw_fetches_full_list_and_locally_keeps_completed_rewatches(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_get(url, headers, params, timeout):
+        calls.append(params)
+        return FakeResponse(
+            {
+                "data": [
+                    {
+                        "node": {"id": 1, "title": "Completed", "genres": []},
+                        "list_status": {
+                            "status": "completed",
+                            "is_rewatching": True,
+                            "score": 8,
+                        },
+                    },
+                    {
+                        "node": {"id": 2, "title": "Watching", "genres": []},
+                        "list_status": {"status": "watching", "score": 0},
+                    },
+                ],
+                "paging": {},
+            }
+        )
+
+    monkeypatch.setattr(user_data.requests, "get", fake_get)
+
+    result = user_data.get_user_completed_animes(
+        "fixture-user", "fake-token", include_nsfw=True
+    )
+
+    assert result["Title"].tolist() == ["Completed"]
+    assert calls == [
+        {
+            "fields": f"list_status,{ANIME_FIELDS}",
+            "limit": 1000,
+            "nsfw": "true",
+        }
+    ]
+
+
 def test_completed_anime_skips_malformed_records(monkeypatch):
     monkeypatch.setattr(
         user_data.requests,

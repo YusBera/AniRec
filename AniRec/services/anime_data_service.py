@@ -35,12 +35,14 @@ class AnimeDataService:
         limit: int,
         access_token: str | None = None,
         client_id: str | None = None,
+        include_nsfw: bool = False,
         cancellation_token=None,
     ) -> pd.DataFrame:
         return self._top_fetcher(
             limit=limit,
             access_token=access_token,
             client_id=client_id,
+            include_nsfw=include_nsfw,
             client=self._client,
             cancellation=cancellation_token,
         )
@@ -51,12 +53,14 @@ class AnimeDataService:
         access_token: str | None = None,
         *,
         client_id: str | None = None,
+        include_nsfw: bool = False,
         cancellation_token=None,
     ) -> pd.DataFrame:
         return self._completed_fetcher(
             username,
             access_token,
             client_id=client_id,
+            include_nsfw=include_nsfw,
             client=self._client,
             cancellation=cancellation_token,
         )

@@ -69,7 +69,7 @@ def test_welcome_explains_local_explainable_and_unofficial_behavior(system_temp_
     assert "not affiliated with or endorsed by MyAnimeList" in text
 
 
-def test_client_id_and_profile_url_validate_together_without_oauth(system_temp_dir):
+def test_client_id_and_profile_url_validate_before_oauth(system_temp_dir):
     application = create_application([])
     profile_client = PublicProfileClient()
     onboarding = onboarding_service(system_temp_dir, profile_client)
@@ -78,7 +78,7 @@ def test_client_id_and_profile_url_validate_together_without_oauth(system_temp_d
     wizard.go_next()
     page = wizard.connection_page
 
-    assert len(WizardStep) == 3
+    assert len(WizardStep) == 4
     assert not page.test_button.isEnabled()
     page.client_id_input.setText("fixture-client")
     page.profile_reference_input.setText(
@@ -87,7 +87,7 @@ def test_client_id_and_profile_url_validate_together_without_oauth(system_temp_d
     assert page.test_button.isEnabled()
 
     page.test_button.click()
-    wait_until(application, lambda: wizard.current_step is WizardStep.ANALYSIS)
+    wait_until(application, lambda: wizard.current_step is WizardStep.OAUTH)
 
     assert page.is_complete
     assert onboarding.settings.load().client_id == "fixture-client"
@@ -130,7 +130,7 @@ def test_combined_connection_failure_is_retryable_and_saves_only_after_success(
 
     connection.should_fail = False
     page.test_button.click()
-    wait_until(application, lambda: wizard.current_step is WizardStep.ANALYSIS)
+    wait_until(application, lambda: wizard.current_step is WizardStep.OAUTH)
     assert onboarding.settings.path.is_file()
 
 
@@ -151,4 +151,4 @@ def test_combined_connection_worker_keeps_gui_event_loop_responsive(system_temp_
     wait_until(application, lambda: bool(timer_fired))
 
     assert not page.test_button.isEnabled()
-    wait_until(application, lambda: wizard.current_step is WizardStep.ANALYSIS)
+    wait_until(application, lambda: wizard.current_step is WizardStep.OAUTH)

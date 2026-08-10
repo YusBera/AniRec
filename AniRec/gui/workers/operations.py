@@ -150,25 +150,43 @@ class CoverDownloadWorker(BaseWorker):
 
 
 class TokenRefreshWorker(BaseWorker):
-    """Refresh or validate a profile token without returning secret material to the UI."""
+    """Refresh a token, optionally falling back to interactive OAuth consent."""
 
     def __init__(
         self,
         auth_service: AuthService,
         profile_id: str,
         settings: AppSettings,
+        *,
+        interactive_if_missing: bool = False,
+        callback_timeout_seconds: float = 180,
         **worker_options,
     ) -> None:
         super().__init__(**worker_options)
         self.auth_service = auth_service
         self.profile_id = profile_id
         self.settings = settings
+        self.interactive_if_missing = interactive_if_missing
+        self.callback_timeout_seconds = callback_timeout_seconds
 
     def execute(self) -> object:
         self.cancellation_token.raise_if_cancelled()
-        self.auth_service.get_access_token(self.profile_id, self.settings)
+        if self.interactive_if_missing:
+            self.auth_service.get_access_token(
+                self.profile_id,
+                self.settings,
+                interactive=True,
+                callback_timeout_seconds=self.callback_timeout_seconds,
+                cancellation=self.cancellation_token,
+                status_callback=self._report_oauth_status,
+            )
+        else:
+            self.auth_service.get_access_token(self.profile_id, self.settings)
         self.cancellation_token.raise_if_cancelled()
         return PipelineResult(user_stats={"oauth_connected": 1})
+
+    def _report_oauth_status(self, status_id: str) -> None:
+        self.step_changed.emit(status_id, status_id)
 
 
 class RecommendationWorker(BaseWorker):

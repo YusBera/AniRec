@@ -121,6 +121,7 @@ class PipelineOrchestrator:
         token.raise_if_cancelled()
         top_anime = self._anime_data.fetch_top_anime(
             limit=settings.top_anime_limit,
+            include_nsfw=settings.include_nsfw,
             **credentials,
             cancellation_token=token,
         )
@@ -130,6 +131,7 @@ class PipelineOrchestrator:
         token.raise_if_cancelled()
         completed = self._anime_data.fetch_completed_anime(
             username,
+            include_nsfw=settings.include_nsfw,
             **credentials,
             cancellation_token=token,
         )
@@ -176,6 +178,7 @@ class PipelineOrchestrator:
         token.raise_if_cancelled()
         top_anime = self._anime_data.fetch_top_anime(
             limit=settings.top_anime_limit,
+            include_nsfw=settings.include_nsfw,
             **credentials,
             cancellation_token=token,
         )
@@ -186,6 +189,7 @@ class PipelineOrchestrator:
         token.raise_if_cancelled()
         completed = self._anime_data.fetch_completed_anime(
             username,
+            include_nsfw=settings.include_nsfw,
             **credentials,
             cancellation_token=token,
         )
@@ -339,6 +343,7 @@ class PipelineOrchestrator:
         if step_id == "fetch_top":
             frame = self._anime_data.fetch_top_anime(
                 limit=settings.top_anime_limit,
+                include_nsfw=settings.include_nsfw,
                 **self._checked_credentials(token),
                 cancellation_token=token,
             )
@@ -348,6 +353,7 @@ class PipelineOrchestrator:
         if step_id == "fetch_completed":
             frame = self._anime_data.fetch_completed_anime(
                 username,
+                include_nsfw=settings.include_nsfw,
                 **self._checked_credentials(token),
                 cancellation_token=token,
             )

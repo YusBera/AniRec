@@ -132,3 +132,36 @@ def test_cached_token_reuse_and_expired_refresh(system_temp_dir):
     assert service.get_access_token("expired", _settings()) == "refreshed-access"
     assert post_calls[0]["grant_type"] == "refresh_token"
     assert store.load("expired").refresh_token == "refresh-me"
+
+
+def test_interactive_access_token_starts_oauth_when_no_token_exists(system_temp_dir):
+    callback = FakeCallback()
+    statuses = []
+    iter_values = iter(["state", "verifier"])
+    token_store = TokenStore(root_override=system_temp_dir / "app-data")
+    service = AuthService(
+        token_store=token_store,
+        callback_server=callback,
+        http_post=lambda *_args, **_kwargs: FakeResponse(
+            {"access_token": "interactive-access", "expires_in": 3600}
+        ),
+        browser_open=lambda _url: True,
+        random_token=lambda _length: next(iter_values),
+    )
+
+    token = service.get_access_token(
+        "profile",
+        _settings(),
+        interactive=True,
+        status_callback=statuses.append,
+    )
+
+    assert token == "interactive-access"
+    assert token_store.load("profile").access_token == "interactive-access"
+    assert statuses == [
+        "oauth_opening_browser",
+        "oauth_waiting_approval",
+        "oauth_authorization_complete",
+        "oauth_validating_token",
+        "oauth_success",
+    ]

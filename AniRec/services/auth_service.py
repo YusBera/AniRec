@@ -117,6 +117,7 @@ class AuthService:
         interactive: bool = False,
         callback_timeout_seconds: float = 180,
         cancellation=None,
+        status_callback: Callable[[str], None] | None = None,
     ) -> str:
         token = self._tokens.load(profile_id)
         if token and token.expires_at > int(self._clock()):
@@ -134,6 +135,7 @@ class AuthService:
                 settings,
                 callback_timeout_seconds=callback_timeout_seconds,
                 cancellation=cancellation,
+                status_callback=status_callback,
             ).access_token
         raise AuthError("No valid OAuth token is available.")
 

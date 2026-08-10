@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import time
 
+from PySide6.QtWidgets import QMessageBox
+
 from AniRec.gui.main_window import MainWindow
 from AniRec.gui.settings_page import SettingsPage
 from AniRec.gui.workers import WorkerController
@@ -38,6 +40,7 @@ def saved_settings():
             randomness_factor=7,
             minimum_mean_score=6.5,
             seed=42,
+            include_nsfw=True,
         ),
         default_recommendation_sort="year",
         include_hidden_recommendations=True,
@@ -93,6 +96,7 @@ def test_all_recommendation_api_and_appearance_fields_round_trip_after_restart(
     assert page.seed_input.value() == 42
     assert page.default_sort_input.currentData() == "year"
     assert page.include_hidden_input.isChecked()
+    assert page.include_nsfw_input.isChecked()
     assert page.client_id_input.text() == "fixture-client-id"
     assert page.client_secret_input.text() == ""
     assert page.client_secret_input.echoMode().name == "Password"
@@ -101,11 +105,13 @@ def test_all_recommendation_api_and_appearance_fields_round_trip_after_restart(
     assert not page.show_covers_input.isChecked()
 
     page.recommendation_count_input.setValue(25)
+    page.include_nsfw_input.setChecked(False)
     page.default_sort_input.setCurrentIndex(page.default_sort_input.findData("alphabetical"))
     assert page.save()
     reopened = SettingsService(root_override=system_temp_dir).load()
     assert reopened.pipeline.recommendation_count == 25
     assert reopened.default_recommendation_sort == "alphabetical"
+    assert not reopened.pipeline.include_nsfw
     assert reopened.client_secret == "fixture-secret"
     page.close()
 
@@ -264,4 +270,38 @@ def test_data_actions_confirm_exact_scope_reset_ui_and_preserve_outside_sentinel
     assert page.active_profile is None
     assert page.client_id_input.text() == ""
     assert sentinel.read_text(encoding="utf-8") == "safe"
+    page.close()
+
+
+def test_missing_client_id_save_error_names_the_required_field(system_temp_dir):
+    create_application([])
+    page = SettingsPage(
+        settings_service=SettingsService(root_override=system_temp_dir)
+    )
+
+    assert not page.save()
+    assert "MAL client ID is required" in page.status_label.text()
+    page.close()
+
+
+def test_qt_yes_value_is_accepted_for_profile_and_all_data_confirmation(
+    system_temp_dir, monkeypatch
+):
+    create_application([])
+    profiles, first, _second = create_profiles(system_temp_dir)
+    page = SettingsPage(
+        settings_service=SettingsService(root_override=system_temp_dir),
+        profile_service=profiles,
+        data_management=DataManagementService(root_override=system_temp_dir),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: int(QMessageBox.StandardButton.Yes.value),
+    )
+
+    assert page._confirm_profile_delete(first, profiles.deletion_target(first.profile_id))
+    assert page._confirm_data_delete(
+        page.data_management.plan(DataDeletionScope.ALL_LOCAL_DATA)
+    )
     page.close()
