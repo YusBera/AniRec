@@ -24,6 +24,7 @@ try:
         Recommendation,
     )
     from ..services import AnimeDataService, ProfileService, RecommendationService
+    from ..title_utils import normalize_title_key
 except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
     from core.mal_mapping import anime_from_row
     from errors import CancelledError, DataError
@@ -38,6 +39,7 @@ except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
         Recommendation,
     )
     from services import AnimeDataService, ProfileService, RecommendationService
+    from title_utils import normalize_title_key
 
 
 OAUTH_STEP_ID = "oauth"
@@ -240,9 +242,10 @@ class PipelineOrchestrator:
 
         return PipelineResult(
             recommendations=self._recommendation_models(ranked),
-            genre_stats=self._genre_models(genre_importance),
+            genre_stats=self._genre_models(genre_importance, completed),
             user_stats={
                 "completed_count": len(completed),
+                "rated_count": self._rated_count(completed),
                 "candidate_count": len(candidates),
                 "recommendation_count": len(ranked),
             },
@@ -258,6 +261,7 @@ class PipelineOrchestrator:
         *,
         existing_recommendations: tuple[Recommendation, ...] = (),
         genre_adjustments: dict[str, float] | None = None,
+        excluded_mal_ids: set[int] | frozenset[int] = frozenset(),
         count: int = 5,
         progress_callback: Callable[[PipelineProgress], None] | None = None,
         cancellation_token: CancellationToken | None = None,
@@ -283,9 +287,13 @@ class PipelineOrchestrator:
             for item in existing_recommendations
             if item.anime.mal_id is not None
         }
+        # Titles the user has already rejected or hidden must not reappear here
+        # either; run_more previously only skipped what was already on screen.
+        excluded_ids |= {int(value) for value in (excluded_mal_ids or ()) if value}
         excluded_titles = {
-            item.anime.title.casefold() for item in existing_recommendations
+            normalize_title_key(item.anime.title) for item in existing_recommendations
         }
+        excluded_titles.discard("")
         more_settings = replace(
             settings,
             recommendation_count=max(1, int(count)),
@@ -381,7 +389,7 @@ class PipelineOrchestrator:
             path = directory / "genre_importance.csv"
             result = self._write_step(frame, path, started_at, token)
             return PipelineResult(
-                genre_stats=self._genre_models(frame),
+                genre_stats=self._genre_models(frame, completed),
                 generated_files=result.generated_files,
                 started_at=result.started_at,
                 completed_at=result.completed_at,
@@ -524,14 +532,55 @@ class PipelineOrchestrator:
         return tuple(models)
 
     @staticmethod
-    def _genre_models(frame: pd.DataFrame) -> tuple[GenreStat, ...]:
-        return tuple(
-            GenreStat(
-                genre=row["Genre"],
-                importance_score=row["Importance_Score"],
+    def _genre_models(
+        frame: pd.DataFrame,
+        completed: pd.DataFrame | None = None,
+    ) -> tuple[GenreStat, ...]:
+        summaries = PipelineOrchestrator._genre_summaries(completed)
+        models = []
+        for _, row in frame.iterrows():
+            summary = summaries.get(str(row["Genre"]), {})
+            scores = summary.get("scores", ())
+            models.append(
+                GenreStat(
+                    genre=row["Genre"],
+                    importance_score=row["Importance_Score"],
+                    completed_count=summary.get("completed_count", 0),
+                    average_user_score=(sum(scores) / len(scores)) if scores else None,
+                    missing_score_count=summary.get("missing_score_count", 0),
+                    example_titles=tuple(summary.get("titles", ())[:3]),
+                )
             )
-            for _, row in frame.iterrows()
-        )
+        return tuple(models)
+
+    @staticmethod
+    def _genre_summaries(completed: pd.DataFrame | None) -> dict[str, dict]:
+        """Per-genre counts backing the taste panel.
+
+        Built from the raw completed list rather than the imputed one, so that
+        "average user score" reports what the user actually rated instead of
+        values AniRec filled in for them.
+        """
+        if completed is None or completed.empty or "Genres" not in completed.columns:
+            return {}
+        summaries: dict[str, dict] = {}
+        for _, row in completed.iterrows():
+            score = pd.to_numeric(row.get("User Score"), errors="coerce")
+            rated = pd.notna(score) and float(score) > 0
+            title = str(row.get("Title") or "").strip()
+            for genre in dict.fromkeys(parse_genres(row.get("Genres"))):
+                summary = summaries.setdefault(
+                    genre,
+                    {"completed_count": 0, "missing_score_count": 0, "scores": [], "titles": []},
+                )
+                summary["completed_count"] += 1
+                if rated:
+                    summary["scores"].append(float(score))
+                else:
+                    summary["missing_score_count"] += 1
+                if title:
+                    summary["titles"].append(title)
+        return summaries
 
     def _timestamp(self) -> str:
         return self._clock().astimezone(timezone.utc).isoformat()

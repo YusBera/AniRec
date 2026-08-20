@@ -79,4 +79,5 @@ class RecommendationService:
             genre_adjustments=genre_adjustments,
             excluded_mal_ids=excluded_mal_ids,
             excluded_titles=excluded_titles,
+            minimum_mean_score=settings.minimum_mean_score,
         )

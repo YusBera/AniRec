@@ -5,8 +5,17 @@ import pandas as pd
 
 try:
     from .genre_utils import parse_genres
+    from .title_utils import normalize_title_key
 except ImportError:  # Backward compatibility for direct script-style imports.
     from genre_utils import parse_genres
+    from title_utils import normalize_title_key
+
+
+# A typical anime carries roughly this many meaningful genres. Calibrating
+# against the strongest few weights rather than against the best score in the
+# current batch keeps a title's match percentage the same no matter which other
+# titles happen to be ranked alongside it.
+CALIBRATION_GENRE_COUNT = 3
 
 
 def recommend_animes_with_randomness(
@@ -45,6 +54,7 @@ def rank_recommendations(
     genre_adjustments=None,
     excluded_mal_ids=None,
     excluded_titles=None,
+    minimum_mean_score=None,
 ):
     """Rank in-memory candidate data without reading or writing CSV files."""
     required_candidate_columns = {"Title", "Genres"}
@@ -61,16 +71,18 @@ def rank_recommendations(
 
     excluded_ids = {int(value) for value in (excluded_mal_ids or ()) if value is not None}
     excluded_title_keys = {
-        str(value).strip().casefold() for value in (excluded_titles or ()) if str(value).strip()
+        key for value in (excluded_titles or ()) if (key := normalize_title_key(value))
     }
     candidates_df = candidates_df.copy()
     if excluded_ids and "Anime ID" in candidates_df.columns:
         numeric_ids = pd.to_numeric(candidates_df["Anime ID"], errors="coerce")
         candidates_df = candidates_df.loc[~numeric_ids.isin(excluded_ids)]
     if excluded_title_keys:
-        candidates_df = candidates_df.loc[
-            ~candidates_df["Title"].astype(str).str.strip().str.casefold().isin(excluded_title_keys)
-        ]
+        candidate_keys = candidates_df["Title"].map(normalize_title_key)
+        candidates_df = candidates_df.loc[~candidate_keys.isin(excluded_title_keys)]
+    if minimum_mean_score is not None and "Mean Score" in candidates_df.columns:
+        numeric_scores = pd.to_numeric(candidates_df["Mean Score"], errors="coerce")
+        candidates_df = candidates_df.loc[numeric_scores >= float(minimum_mean_score)]
     if candidates_df.empty:
         return candidates_df.copy()
 
@@ -93,13 +105,13 @@ def rank_recommendations(
     recommendations_df["Recommendation Score"] = recommendations_df["Genres"].apply(
         lambda genres: _score_genres(genres, genre_weights)
     )
-    maximum_raw_score = recommendations_df["Recommendation Score"].max()
-    if pd.isna(maximum_raw_score) or maximum_raw_score <= 0:
+    calibration_reference = _calibration_reference(genre_weights)
+    if calibration_reference <= 0:
         recommendations_df["Match Score"] = 0.0
     else:
         recommendations_df["Match Score"] = recommendations_df[
             "Recommendation Score"
-        ].apply(lambda score: round(float(score) / float(maximum_raw_score) * 100, 2))
+        ].apply(lambda score: _match_percentage(score, calibration_reference))
     recommendations_df["Genre Contributions"] = recommendations_df["Genres"].apply(
         lambda genres: _genre_contributions(genres, genre_weights)
     )
@@ -149,6 +161,25 @@ def rank_recommendations(
         final_recommendations = recommendation_pool
 
     return final_recommendations.copy()
+
+
+def _calibration_reference(genre_weights):
+    """Return a batch-independent denominator for the match percentage."""
+    positives = sorted(
+        (float(value) for value in genre_weights.values() if float(value) > 0),
+        reverse=True,
+    )
+    return sum(positives[:CALIBRATION_GENRE_COUNT])
+
+
+def _match_percentage(score, reference):
+    try:
+        percentage = float(score) / reference * 100
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 0.0
+    if pd.isna(percentage):
+        return 0.0
+    return round(min(100.0, max(0.0, percentage)), 2)
 
 
 def _score_genres(genres, genre_weights):

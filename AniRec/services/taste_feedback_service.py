@@ -13,9 +13,20 @@ except ImportError:  # Compatibility with legacy top-level imports.
     from services.recommendation_state_service import RecommendationLocalState
 
 
+# Feedback is expressed in match-percentage points, the same unit as the score
+# it adjusts. Feedback is applied here and nowhere else: the generation pipeline
+# deliberately produces a feedback-neutral baseline so that a vote is never
+# counted twice.
 LIKE_GENRE_BOOST = 6.0
 DISLIKE_GENRE_PENALTY = 8.0
 MAX_ABSOLUTE_GENRE_ADJUSTMENT = 24.0
+
+
+def _clamp_adjustment(value: float) -> float:
+    return max(
+        -MAX_ABSOLUTE_GENRE_ADJUSTMENT,
+        min(MAX_ABSOLUTE_GENRE_ADJUSTMENT, value),
+    )
 
 
 class TasteFeedbackService:
@@ -31,11 +42,13 @@ class TasteFeedbackService:
             for genre in record.genres:
                 key = genre.casefold()
                 labels.setdefault(key, genre)
-                values[key] = max(
-                    -MAX_ABSOLUTE_GENRE_ADJUSTMENT,
-                    min(MAX_ABSOLUTE_GENRE_ADJUSTMENT, values[key] + delta),
-                )
-        return {labels[key]: round(score, 2) for key, score in values.items()}
+                values[key] += delta
+        # Clamping the accumulated total rather than each step keeps the result
+        # independent of the order feedback happens to be replayed in.
+        return {
+            labels[key]: round(_clamp_adjustment(score), 2)
+            for key, score in values.items()
+        }
 
     def personalize(
         self,
@@ -53,7 +66,7 @@ class TasteFeedbackService:
                 for genre in recommendation.anime.genres
                 if genre.casefold() in adjustments
             ]
-            delta = sum(value for _genre, value in matches) / max(1, len(matches))
+            delta = _clamp_adjustment(sum(value for _genre, value in matches))
             match_score = max(0.0, min(100.0, recommendation.match_score + delta))
             reason = recommendation.reason
             positive = [genre for genre, value in matches if value > 0]

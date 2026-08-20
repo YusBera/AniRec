@@ -506,12 +506,14 @@ class MainWindow(QMainWindow):
             self.show_operation_progress(key)
             return False
         state = self.recommendation_state_service.load(self.active_profile.profile_id)
+        # Generation stays feedback-neutral on purpose. TasteFeedbackService
+        # applies votes once, on the display path, so that a like is not counted
+        # both in the stored score and again when the feed is rendered.
         worker = RecommendationWorker(
             self.pipeline_orchestrator,
             self.active_profile.username,
             self.settings_service.load().pipeline,
-            genre_adjustments=self.taste_feedback_service.genre_adjustments(state),
-            excluded_mal_ids=state.disliked_mal_ids,
+            excluded_mal_ids=state.disliked_mal_ids | state.hidden_mal_ids,
         )
         try:
             self.worker_controller.start(key, worker)
@@ -541,7 +543,7 @@ class MainWindow(QMainWindow):
             self.active_profile.username,
             self.settings_service.load().pipeline,
             existing_recommendations=existing.recommendations,
-            genre_adjustments=self.taste_feedback_service.genre_adjustments(state),
+            excluded_mal_ids=state.disliked_mal_ids | state.hidden_mal_ids,
             count=self._last_more_count,
         )
         try:
