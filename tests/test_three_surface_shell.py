@@ -73,6 +73,28 @@ def test_one_action_replaces_the_seven_step_pipeline_view(window):
     assert requested == [True]
 
 
+def test_progress_is_reported_where_the_user_is_looking(window):
+    """Status must land on a visible surface.
+
+    HomePage still holds the dashboard state, but it is composed into Discover
+    rather than being a page of its own, so anything written only to its own
+    activity line would never be seen.
+    """
+    window._report_activity("Your recommendation feed has been refreshed.")
+
+    assert "refreshed" in window.discover_page.status_label.text()
+
+
+def test_the_refresh_button_shows_that_work_is_under_way(window):
+    window.discover_page.set_refreshing(True)
+    assert not window.discover_page.refresh_button.isEnabled()
+    busy_text = window.discover_page.refresh_button.text()
+
+    window.discover_page.set_refreshing(False)
+    assert window.discover_page.refresh_button.isEnabled()
+    assert window.discover_page.refresh_button.text() != busy_text
+
+
 # ---------------------------------------------------------------------------
 # Adventurousness
 # ---------------------------------------------------------------------------

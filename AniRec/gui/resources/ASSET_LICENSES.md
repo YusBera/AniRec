@@ -6,6 +6,6 @@ They do not reproduce or depend on artwork, characters, logos, or other assets f
 
 The vector assets use the colour roles defined in `AniRec/gui/design_tokens.py`, so the artwork and the interface share one palette.
 
-`icons/anirec.ico` is a rendering of `icons/anirec.svg` and still carries the previous palette. Regenerate it from the SVG at 16, 24, 32, 48, 64, 128, and 256 pixels when convenient.
+`icons/anirec.ico` is generated from `icons/anirec.svg` by `scripts/build_icon.py`. Rebuild it there rather than editing it directly.
 
 `styles/dark.qss` and `styles/light.qss` are generated. Edit `AniRec/gui/design_tokens.py` or the template in `AniRec/gui/qss_builder.py` and run `scripts/build_theme.py` rather than editing them directly.

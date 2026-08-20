@@ -644,19 +644,33 @@ class MainWindow(QMainWindow):
         path = self.profile_service.open_directory(self.active_profile.profile_id)
         self.output_folder_opened.emit(path)
 
+    def _report_activity(self, message: str, *, tone: str = "success") -> None:
+        """Show progress where the user can see it.
+
+        HomePage keeps the dashboard state, but it is composed into Discover
+        rather than being a page of its own, so its own activity line is no
+        longer on screen. Discover carries the visible one.
+        """
+        self.home_page.show_activity(message, tone=tone)
+        self.discover_page.set_status(message)
+
     def _on_operation_started(self, operation_key: str) -> None:
         if operation_key.startswith("sync:"):
             self.home_page.set_operation_running(ACTION_SYNC, True)
+            self.discover_page.set_refreshing(True)
         elif operation_key.startswith("recommendation:"):
             self.home_page.set_operation_running(ACTION_GENERATE, True)
+            self.discover_page.set_refreshing(True)
         elif operation_key.startswith("more-recommendations:"):
             self.recommendations_page.set_more_running(True)
 
     def _on_operation_finished(self, operation_key: str) -> None:
         if operation_key.startswith("sync:"):
             self.home_page.set_operation_running(ACTION_SYNC, False)
+            self.discover_page.set_refreshing(False)
         elif operation_key.startswith("recommendation:"):
             self.home_page.set_operation_running(ACTION_GENERATE, False)
+            self.discover_page.set_refreshing(False)
         elif operation_key.startswith("more-recommendations:"):
             self.recommendations_page.set_more_running(False)
 
@@ -671,18 +685,18 @@ class MainWindow(QMainWindow):
         self.result_service.save_merged(self.active_profile.profile_id, result)
         if operation_key.startswith("sync:"):
             completed = result.user_stats.get("completed_count", 0)
-            self.home_page.show_activity(
+            self._report_activity(
                 f"MAL data updated — {completed} completed titles synced.",
                 tone="success",
             )
         elif operation_key.startswith("more-recommendations:"):
             added = result.user_stats.get("added_recommendation_count", 0)
-            self.home_page.show_activity(
+            self._report_activity(
                 f"Added {added} new feedback-aware recommendations.",
                 tone="success",
             )
         elif operation_key.startswith("recommendation:"):
-            self.home_page.show_activity(
+            self._report_activity(
                 "Your recommendation feed has been refreshed.", tone="success"
             )
         self.refresh_dashboard()
@@ -701,7 +715,7 @@ class MainWindow(QMainWindow):
         ):
             return
         if operation_key.startswith(("sync:", "recommendation:", "more-recommendations:")):
-            self.home_page.show_activity(error.title, tone="error")
+            self._report_activity(error.title, tone="error")
         existing = self.error_dialogs.get(operation_key)
         if existing is not None and existing.isVisible():
             existing.raise_()

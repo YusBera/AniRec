@@ -97,7 +97,6 @@ hierarchy together instead of growing body text while headings stayed fixed.
 
 - The collaborative signal is optional and absent until a run has walked the
   graph.
-- The packaged icon is still rendered from the previous palette.
 - 2.0.0 has been exercised on the development Windows 11 machine. A second
   Windows 10 or 11 acceptance run is still required.
 - The package is unsigned and ships as `onedir`.

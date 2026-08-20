@@ -232,6 +232,5 @@ AniRec is licensed under the [GNU General Public License v3.0](LICENSE).
 - The collaborative signal uses MyAnimeList's own recommendation edges. It is optional, cached, and absent by default until a run has walked the graph.
 - Live recommendations require a user-provided MyAnimeList Client ID and Secret, and a public anime list.
 - 2.0.0 was exercised on the development Windows 11 machine; a second Windows 10/11 computer acceptance run is still required.
-- The packaged `.ico` is still rendered from the previous palette and does not yet match the 2.0 accent.
 - The package is unsigned and distributed as `onedir`; there is no installer, auto-update, code signing, or `onefile` artifact.
 - Local secrets are not stored in an encrypted operating-system credential vault.
