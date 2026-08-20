@@ -621,6 +621,16 @@ class MainWindow(QMainWindow):
     def _on_operation_error(self, operation_key: str, error: object) -> None:
         if operation_key.startswith("cover") or not isinstance(error, UserFacingError):
             return
+        # An open modal wizard reports its own failures inline. Raising a second,
+        # non-modal dialog here would be blocked by the wizard's modality and
+        # leave the user with an error box they cannot close.
+        wizard = self.setup_wizard
+        if (
+            wizard is not None
+            and wizard.isVisible()
+            and wizard.owns_operation(operation_key)
+        ):
+            return
         if operation_key.startswith(("sync:", "recommendation:", "more-recommendations:")):
             self.home_page.show_activity(error.title, tone="error")
         existing = self.error_dialogs.get(operation_key)

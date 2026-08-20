@@ -53,8 +53,18 @@ class OAuthCallbackServer:
             server.server_close()
 
 
+# Browsers routinely open a speculative connection to the callback port
+# alongside the real request. Without a per-connection timeout the handler
+# blocks in readline() on that idle socket forever, which is outside the
+# deadline and cancellation checks below, so neither the timeout nor the
+# Cancel button can take effect.
+CONNECTION_TIMEOUT_SECONDS = 5.0
+
+
 def _handler_factory(expected_path: str, expected_state: str):
     class OAuthCallbackHandler(BaseHTTPRequestHandler):
+        timeout = CONNECTION_TIMEOUT_SECONDS
+
         def do_GET(self):
             parsed = urlparse(self.path)
             params = parse_qs(parsed.query)

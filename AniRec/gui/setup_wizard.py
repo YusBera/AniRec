@@ -6,8 +6,9 @@ import time
 from enum import IntEnum
 
 from ..application.pipeline import FULL_PIPELINE_STEP_IDS, PipelineOrchestrator
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QDialog,
     QFormLayout,
@@ -39,11 +40,12 @@ from ..services import (
     ResultService,
     SettingsService,
 )
+from .external_links import MAL_API_CONFIG_URL, open_external_url
 from .texts import OAUTH_STATUS_TEXT, PROGRESS_STEP_TEXT, UI_TEXT, WIZARD_TEXT
 from .workers import (
     OAuthWorker,
+    OperationAlreadyRunningError,
     OperationKind,
-    ProfileValidationWorker,
     PublicProfileSetupResult,
     PublicProfileSetupWorker,
     RecommendationWorker,
@@ -53,6 +55,10 @@ from .workers import (
 
 
 ONBOARDING_TOKEN_PROFILE_ID = "onboarding"
+
+# How long closing the wizard waits for background work to unwind before
+# closing anyway. Kept short: this blocks the GUI thread.
+CLOSE_GRACE_SECONDS = 1.5
 
 
 class WizardStep(IntEnum):
@@ -70,6 +76,14 @@ STEP_LABELS = {
     WizardStep.OAUTH: WIZARD_TEXT.oauth,
     WizardStep.ANALYSIS: WIZARD_TEXT.analysis,
 }
+
+
+def _hint_label(text: str) -> QLabel:
+    """A quiet explanatory line sitting under a form field."""
+    label = QLabel(text)
+    label.setObjectName("wizardFieldHint")
+    label.setWordWrap(True)
+    return label
 
 
 class WizardPage(QWidget):
@@ -130,22 +144,70 @@ class ApiSettingsPage(WizardPage):
             self.client_secret_input.setPlaceholderText(WIZARD_TEXT.saved_secret)
         self.redirect_uri_input = QLineEdit(initial_settings.redirect_uri)
         self.redirect_uri_input.setObjectName("apiRedirectUriInput")
+        self.redirect_uri_input.setReadOnly(True)
+
+        self.intro_label = QLabel(WIZARD_TEXT.api_intro)
+        self.intro_label.setObjectName("wizardIntro")
+        self.intro_label.setWordWrap(True)
+        self.steps_label = QLabel(WIZARD_TEXT.api_steps)
+        self.steps_label.setObjectName("wizardSteps")
+        self.steps_label.setWordWrap(True)
+        self.api_link = QLabel(
+            f'<a href="{MAL_API_CONFIG_URL}">{WIZARD_TEXT.api_link_label}</a>'
+        )
+        self.api_link.setObjectName("wizardApiLink")
+        self.api_link.setOpenExternalLinks(False)
+        self.api_link.setTextInteractionFlags(
+            Qt.TextInteractionFlag.LinksAccessibleByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByKeyboard
+        )
+        self.api_link.linkActivated.connect(open_external_url)
+
+        redirect_row = QHBoxLayout()
+        redirect_row.setContentsMargins(0, 0, 0, 0)
+        redirect_row.addWidget(self.redirect_uri_input)
+        self.copy_redirect_button = QPushButton(WIZARD_TEXT.copy_redirect_uri)
+        self.copy_redirect_button.setObjectName("apiCopyRedirectButton")
+        self.copy_redirect_button.clicked.connect(self._copy_redirect_uri)
+        redirect_row.addWidget(self.copy_redirect_button)
+        redirect_container = QWidget()
+        redirect_container.setLayout(redirect_row)
+
+        form.addRow(WIZARD_TEXT.redirect_uri, redirect_container)
+        form.addRow("", _hint_label(WIZARD_TEXT.redirect_uri_hint))
         form.addRow(WIZARD_TEXT.client_id, self.client_id_input)
+        form.addRow("", _hint_label(WIZARD_TEXT.client_id_hint))
+        form.addRow(WIZARD_TEXT.client_secret, self.client_secret_input)
+        form.addRow("", _hint_label(WIZARD_TEXT.client_secret_hint))
         form.addRow(WIZARD_TEXT.profile_reference, self.profile_reference_input)
-        self.content_layout.insertLayout(1, form)
+        self.content_layout.insertWidget(1, self.intro_label)
+        self.content_layout.insertWidget(2, self.api_link)
+        self.content_layout.insertWidget(3, self.steps_label)
+        self.content_layout.insertLayout(4, form)
 
         self.test_button = QPushButton(WIZARD_TEXT.test_connection)
         self.test_button.setObjectName("apiTestConnectionButton")
         self.status_label = QLabel(WIZARD_TEXT.api_validation_hint)
         self.status_label.setObjectName("apiTestStatus")
         self.status_label.setWordWrap(True)
-        self.content_layout.insertWidget(2, self.test_button)
-        self.content_layout.insertWidget(3, self.status_label)
+        self.content_layout.insertWidget(5, self.test_button)
+        self.content_layout.insertWidget(6, self.status_label)
 
-        for field in (self.client_id_input, self.profile_reference_input):
+        for field in (
+            self.client_id_input,
+            self.client_secret_input,
+            self.profile_reference_input,
+        ):
             field.textChanged.connect(self._fields_changed)
         self.test_button.clicked.connect(self._request_test)
         self._fields_changed()
+
+    def _copy_redirect_uri(self) -> None:
+        application = QApplication.instance()
+        if application is None:
+            return
+        application.clipboard().setText(self.redirect_uri_input.text())
+        self.copy_redirect_button.setText(WIZARD_TEXT.copied_redirect_uri)
 
     def settings_value(self) -> AppSettings:
         entered_secret = self.client_secret_input.text()
@@ -243,10 +305,11 @@ class OAuthPage(WizardPage):
         self.status_label.setText(WIZARD_TEXT.oauth_success)
         self.set_complete(True)
 
-    def show_failure(self, error: UserFacingError) -> None:
-        self.status_label.setText(
-            f"{error.title}. {error.description} {error.solution}"
-        )
+    def show_failure(self, error: UserFacingError, *, hint: str = "") -> None:
+        message = f"{error.title}. {error.description} {error.solution}"
+        if hint:
+            message = f"{message} {hint}"
+        self.status_label.setText(message)
         self.set_complete(False)
 
     def show_cancelled(self) -> None:
@@ -256,67 +319,6 @@ class OAuthPage(WizardPage):
     def finish_connection(self) -> None:
         self.connect_button.setEnabled(True)
         self.cancel_connection_button.setVisible(False)
-
-
-class ProfilePage(WizardPage):
-    validation_requested = Signal(str)
-
-    def __init__(self) -> None:
-        super().__init__(WizardStep.PROFILE)
-        self.status_label = QLabel(WIZARD_TEXT.profile_ready)
-        self.status_label.setObjectName("profileStatusLabel")
-        self.status_label.setWordWrap(True)
-        self.username_input = QLineEdit()
-        self.username_input.setObjectName("malUsernameInput")
-        self.username_input.setPlaceholderText(WIZARD_TEXT.username)
-        self.validate_button = QPushButton(WIZARD_TEXT.validate_profile)
-        self.validate_button.setObjectName("profileValidateButton")
-        self.validate_button.setEnabled(False)
-        self.identity_label = QLabel()
-        self.identity_label.setObjectName("profileIdentityLabel")
-        self.identity_label.setWordWrap(True)
-        self.content_layout.insertWidget(1, self.status_label)
-        self.content_layout.insertWidget(2, self.username_input)
-        self.content_layout.insertWidget(3, self.validate_button)
-        self.content_layout.insertWidget(4, self.identity_label)
-        self.username_input.textChanged.connect(self._username_changed)
-        self.validate_button.clicked.connect(self._request_validation)
-
-    def begin_validation(self) -> None:
-        self.set_complete(False)
-        self.validate_button.setEnabled(False)
-        self.status_label.setText(WIZARD_TEXT.validating_profile)
-        self.identity_label.clear()
-
-    def show_success(self, profile: UserProfile) -> None:
-        self.status_label.setText(WIZARD_TEXT.profile_success)
-        self.identity_label.setText(
-            f"{WIZARD_TEXT.display_username}: {profile.username}\n"
-            f"{WIZARD_TEXT.local_profile_id}: {profile.profile_id}"
-        )
-        self.set_complete(True)
-
-    def show_failure(self, error: UserFacingError) -> None:
-        self.status_label.setText(
-            f"{error.title}. {error.description} {error.solution}"
-        )
-        self.identity_label.clear()
-        self.set_complete(False)
-
-    def finish_validation(self) -> None:
-        self.validate_button.setEnabled(bool(self.username_input.text().strip()))
-
-    def _username_changed(self) -> None:
-        self.set_complete(False)
-        self.identity_label.clear()
-        self.status_label.setText(WIZARD_TEXT.profile_ready)
-        self.validate_button.setEnabled(bool(self.username_input.text().strip()))
-
-    def _request_validation(self) -> None:
-        username = self.username_input.text().strip()
-        if username:
-            self.begin_validation()
-            self.validation_requested.emit(username)
 
 
 class AnalysisPage(WizardPage):
@@ -599,11 +601,13 @@ class SetupWizard(QDialog):
         )
         for key in keys:
             self.worker_controller.cancel(key)
-        deadline = time.monotonic() + 5.0
+        # Give workers a brief chance to unwind, but always close. Returning
+        # early here used to leave the dialog and its title-bar close button
+        # dead whenever a worker was wedged, with no way out for the user.
+        deadline = time.monotonic() + CLOSE_GRACE_SECONDS
         for key in keys:
             remaining_ms = max(0, int((deadline - time.monotonic()) * 1000))
-            if not self.worker_controller.wait(key, remaining_ms):
-                return
+            self.worker_controller.wait(key, remaining_ms)
         super().reject()
 
     def _start_connection_setup(self, settings: AppSettings, profile_reference: str) -> None:
@@ -635,14 +639,21 @@ class SetupWizard(QDialog):
             )
             return
         self.oauth_page.begin_connection()
-        self.worker_controller.start(
-            self.oauth_operation_key,
-            OAuthWorker(
-                self.auth_service,
-                profile.profile_id,
-                self.onboarding.settings.load(),
-            ),
-        )
+        try:
+            self.worker_controller.start(
+                self.oauth_operation_key,
+                OAuthWorker(
+                    self.auth_service,
+                    profile.profile_id,
+                    self.onboarding.settings.load(),
+                ),
+            )
+        except OperationAlreadyRunningError:
+            # A previous run is still finalising. Restore the page instead of
+            # letting the exception escape the click handler and leave the
+            # Connect button permanently disabled.
+            self.oauth_page.finish_connection()
+            self.oauth_page.show_status("oauth_opening_browser")
 
     def _cancel_oauth(self) -> None:
         self.worker_controller.cancel(self.oauth_operation_key)
@@ -691,14 +702,17 @@ class SetupWizard(QDialog):
             self.analysis_page.show_failure(error.to_user_error())
             self.analysis_page.finish_analysis()
             return
-        self.worker_controller.start(
-            self.analysis_operation_key,
-            RecommendationWorker(
-                self.pipeline_orchestrator,
-                profile.username,
-                pipeline_settings,
-            ),
-        )
+        try:
+            self.worker_controller.start(
+                self.analysis_operation_key,
+                RecommendationWorker(
+                    self.pipeline_orchestrator,
+                    profile.username,
+                    pipeline_settings,
+                ),
+            )
+        except OperationAlreadyRunningError:
+            self.analysis_page.finish_analysis()
 
     def _cancel_analysis(self) -> None:
         if self.analysis_operation_key is not None:
@@ -739,6 +753,28 @@ class SetupWizard(QDialog):
                 return
             self.analysis_page.show_success()
 
+    def _oauth_failure_hint(self) -> str:
+        """Point at the most likely cause when the token exchange is refused."""
+        try:
+            settings = self.onboarding.settings.load()
+        except Exception:  # noqa: BLE001 - a hint must never mask the real error
+            return ""
+        return "" if settings.client_secret else WIZARD_TEXT.oauth_missing_secret_hint
+
+    def owns_operation(self, operation_key_value: str) -> bool:
+        """Whether this wizard is responsible for reporting an operation's outcome.
+
+        The wizard shares MainWindow's worker controller, so both react to the
+        same signals. The wizard is application-modal, and a non-modal dialog
+        raised beside it would be input-blocked and impossible to dismiss, so
+        the wizard reports its own errors inline and MainWindow stands down.
+        """
+        return operation_key_value in {
+            self.connection_operation_key,
+            self.oauth_operation_key,
+            self.analysis_operation_key,
+        }
+
     def _worker_error(self, operation_key_value: str, error: object) -> None:
         if operation_key_value == self.connection_operation_key and isinstance(
             error, UserFacingError
@@ -747,7 +783,7 @@ class SetupWizard(QDialog):
         elif operation_key_value == self.oauth_operation_key and isinstance(
             error, UserFacingError
         ):
-            self.oauth_page.show_failure(error)
+            self.oauth_page.show_failure(error, hint=self._oauth_failure_hint())
         elif operation_key_value == self.analysis_operation_key and isinstance(
             error, UserFacingError
         ):
@@ -792,37 +828,3 @@ class SetupWizard(QDialog):
             step is WizardStep.ANALYSIS
             and all(page.is_complete for page in self.pages.values())
         )
-
-
-class SettingsLandingPage(QWidget):
-    open_setup_requested = Signal()
-    show_hidden_changed = Signal(bool)
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("page-settings")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        title = QLabel(UI_TEXT.pages[4].label)
-        title.setObjectName("pageTitle")
-        description = QLabel(UI_TEXT.pages[4].description)
-        description.setObjectName("pageDescription")
-        self.open_setup_button = QPushButton(WIZARD_TEXT.open_setup)
-        self.open_setup_button.clicked.connect(self.open_setup_requested.emit)
-        self.show_hidden_checkbox = QCheckBox(
-            "Show hidden recommendations in Recommendation Explorer"
-        )
-        self.show_hidden_checkbox.setObjectName("settingsShowHiddenRecommendations")
-        self.show_hidden_checkbox.setEnabled(False)
-        self.show_hidden_checkbox.toggled.connect(self.show_hidden_changed.emit)
-        layout.addWidget(title)
-        layout.addWidget(description)
-        layout.addWidget(self.open_setup_button)
-        layout.addWidget(self.show_hidden_checkbox)
-        layout.addStretch()
-
-    def set_show_hidden(self, show_hidden: bool, *, enabled: bool) -> None:
-        self.show_hidden_checkbox.blockSignals(True)
-        self.show_hidden_checkbox.setChecked(show_hidden)
-        self.show_hidden_checkbox.setEnabled(enabled)
-        self.show_hidden_checkbox.blockSignals(False)

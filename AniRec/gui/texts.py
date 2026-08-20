@@ -154,7 +154,7 @@ class WizardTextCatalog:
         "affiliated with or endorsed by MyAnimeList."
     )
     client_id: str = "Client ID"
-    client_secret: str = "Client Secret (optional)"
+    client_secret: str = "Client Secret"
     redirect_uri: str = "Redirect URI"
     profile_reference: str = "Profile URL or username"
     test_connection: str = "Validate and Continue"
@@ -164,6 +164,41 @@ class WizardTextCatalog:
     api_validation_hint: str = (
         "Enter a Client ID and a public MyAnimeList profile URL or username. "
         "After validation, AniRec will request MyAnimeList OAuth approval."
+    )
+    # First-run guidance. A new user has no reason to know what any of this
+    # means, so the wizard explains the terms and links straight to the page
+    # where the values come from.
+    api_intro: str = (
+        "AniRec reads your anime list through MyAnimeList's official API. "
+        "MyAnimeList asks you to register AniRec once, which takes about two "
+        "minutes and gives you the two values below."
+    )
+    api_steps: str = (
+        "1. Open the MyAnimeList API page and choose Create ID.\n"
+        "2. Give it any name, for example \"AniRec\", and pick Other for the "
+        "app type.\n"
+        "3. Paste the Redirect URI shown below into the App Redirect URL field.\n"
+        "4. Save, then copy the Client ID and Client Secret back here."
+    )
+    api_link_label: str = "Open the MyAnimeList API page"
+    client_id_hint: str = (
+        "A long code MyAnimeList gives you when you register AniRec. It is not "
+        "your password and it is stored only on this computer."
+    )
+    client_secret_hint: str = (
+        "Shown next to the Client ID on the same page. Required for the "
+        "connection step to succeed."
+    )
+    redirect_uri_hint: str = (
+        "MyAnimeList requires this exact value in the App Redirect URL field. "
+        "Copy it across without changing it."
+    )
+    copy_redirect_uri: str = "Copy"
+    copied_redirect_uri: str = "Copied"
+    oauth_missing_secret_hint: str = (
+        "No Client Secret is saved. If MyAnimeList keeps refusing the "
+        "connection, go back one step and paste the Client Secret shown "
+        "beside your Client ID on the MyAnimeList API page."
     )
     connect_mal: str = "Connect with MyAnimeList"
     cancel_connection: str = "Cancel Connection"
