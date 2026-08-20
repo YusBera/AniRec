@@ -72,6 +72,7 @@ class RecommendationService:
         genre_adjustments: dict[str, float] | None = None,
         excluded_mal_ids: set[int] | frozenset[int] = frozenset(),
         excluded_titles: set[str] | frozenset[str] = frozenset(),
+        collaborative_scores: dict[int, float] | None = None,
     ) -> pd.DataFrame:
         random_state = (
             settings.seed
@@ -89,4 +90,5 @@ class RecommendationService:
             excluded_mal_ids=excluded_mal_ids,
             excluded_titles=excluded_titles,
             minimum_mean_score=settings.minimum_mean_score,
+            collaborative_scores=collaborative_scores,
         )

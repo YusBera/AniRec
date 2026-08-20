@@ -70,6 +70,7 @@ def rank_recommendations(
     excluded_mal_ids=None,
     excluded_titles=None,
     minimum_mean_score=None,
+    collaborative_scores=None,
 ):
     """Rank in-memory candidate data without reading or writing CSV files."""
     required_candidate_columns = {"Title", "Genres"}
@@ -111,7 +112,11 @@ def rank_recommendations(
 
     recommendations_df = candidates_df.copy()
     rows = [row for _index, row in recommendations_df.iterrows()]
-    scored = score_candidates(rows, profile)
+    scored = score_candidates(
+        rows,
+        profile,
+        collaborative_scores=_collaborative_by_position(rows, collaborative_scores),
+    )
 
     recommendations_df["Recommendation Score"] = [
         round(item.final_score, 6) for item in scored
@@ -165,6 +170,26 @@ def rank_recommendations(
         final_recommendations = recommendation_pool
 
     return final_recommendations.copy()
+
+
+def _collaborative_by_position(rows, collaborative_scores):
+    """Map per-anime collaborative scores onto the rows being scored.
+
+    Scores arrive keyed by MyAnimeList ID. Rows without an ID, or without an
+    entry in the graph, simply carry no collaborative term and have their
+    remaining weights renormalised.
+    """
+    if not collaborative_scores:
+        return None
+    by_position = {}
+    for position, row in enumerate(rows):
+        try:
+            mal_id = int(row.get("Anime ID"))
+        except (TypeError, ValueError):
+            continue
+        if mal_id in collaborative_scores:
+            by_position[position] = float(collaborative_scores[mal_id])
+    return by_position or None
 
 
 def _apply_adjustments(profile, adjustment_by_key):

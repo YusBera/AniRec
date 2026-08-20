@@ -1,6 +1,7 @@
 """UI-independent application services."""
 
 from .anime_data_service import AnimeDataService
+from .anime_graph_service import AnimeGraphService
 from .api_connection_service import ApiConnectionService
 from .auth_service import AuthService
 from .cover_image_service import CoverImageResult, CoverImageService
@@ -25,6 +26,7 @@ from .token_store import TokenStore
 
 __all__ = [
     "AnimeDataService",
+    "AnimeGraphService",
     "ApiConnectionService",
     "AuthService",
     "CoverImageResult",

@@ -23,7 +23,18 @@ try:
         PipelineSettings,
         Recommendation,
     )
-    from ..services import AnimeDataService, ProfileService, RecommendationService
+    from ..scoring.collaborative import (
+        collaborative_scores,
+        franchise_exclusions,
+        select_seeds,
+    )
+    from ..scoring.taste import build_taste_profile
+    from ..services import (
+        AnimeDataService,
+        AnimeGraphService,
+        ProfileService,
+        RecommendationService,
+    )
     from ..title_utils import normalize_title_key
 except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
     from core.mal_mapping import anime_from_row
@@ -38,7 +49,18 @@ except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
         PipelineSettings,
         Recommendation,
     )
-    from services import AnimeDataService, ProfileService, RecommendationService
+    from scoring.collaborative import (
+        collaborative_scores,
+        franchise_exclusions,
+        select_seeds,
+    )
+    from scoring.taste import build_taste_profile
+    from services import (
+        AnimeDataService,
+        AnimeGraphService,
+        ProfileService,
+        RecommendationService,
+    )
     from title_utils import normalize_title_key
 
 
@@ -95,11 +117,15 @@ class PipelineOrchestrator:
         access_token_provider: Callable[[], str] | None = None,
         client_id_provider: Callable[[], str] | None = None,
         clock: Callable[[], datetime] = _default_clock,
+        anime_graph: AnimeGraphService | None = None,
     ) -> None:
         self._anime_data = anime_data
         self._profiles = profiles
         self._recommendations = recommendations
         self._storage = storage
+        # Optional throughout. Without it, scoring runs on content and
+        # community rating alone.
+        self._anime_graph = anime_graph
         self._access_token_provider = access_token_provider
         self._client_id_provider = client_id_provider
         self._clock = clock
@@ -222,12 +248,16 @@ class PipelineOrchestrator:
 
         self._emit(progress_callback, "generate_recommendations", 6, 6)
         token.raise_if_cancelled()
+        collaborative, franchise_ids = self._collaborative_signal(
+            completed, directory, credentials, token
+        )
         ranked = self._recommendations.recommend(
             candidates,
             genre_importance,
             settings,
             genre_adjustments=genre_adjustments,
-            excluded_mal_ids=excluded_mal_ids,
+            excluded_mal_ids=set(excluded_mal_ids) | franchise_ids,
+            collaborative_scores=collaborative,
         )
         self._require_nonempty(ranked, "No recommendations were generated.")
         token.raise_if_cancelled()
@@ -535,6 +565,50 @@ class PipelineOrchestrator:
                 )
             )
         return tuple(models)
+
+    def _collaborative_signal(self, completed, directory, credentials, token):
+        """Walk the recommendation graph out from the user's favourites.
+
+        Entirely best effort. Any failure leaves the run scoring on content and
+        community rating alone rather than losing the recommendations, which is
+        why every outcome here returns empty rather than raising.
+        """
+        if self._anime_graph is None or completed is None or completed.empty:
+            return {}, set()
+        if "Anime ID" not in completed.columns:
+            return {}, set()
+
+        try:
+            profile = build_taste_profile(completed)
+            spread = profile.rating_spread or 1.0
+            rated = [
+                (
+                    row.get("Anime ID"),
+                    (float(score) - profile.mean_rating) / spread,
+                )
+                for _index, row in completed.iterrows()
+                if (score := pd.to_numeric(row.get("User Score"), errors="coerce"))
+                is not None
+                and pd.notna(score)
+                and float(score) > 0
+            ]
+            seeds = select_seeds(rated)
+            if not seeds:
+                return {}, set()
+            graph = self._anime_graph.build_graph(
+                [mal_id for mal_id, _weight in seeds],
+                directory,
+                access_token=credentials.get("access_token"),
+                client_id=credentials.get("client_id"),
+                cancellation=token,
+            )
+            if not graph:
+                return {}, set()
+            return collaborative_scores(seeds, graph), franchise_exclusions(graph)
+        except CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - an optional signal must never break a run
+            return {}, set()
 
     @staticmethod
     def _genre_models(

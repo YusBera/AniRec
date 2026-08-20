@@ -112,17 +112,54 @@ class ScoredCandidate:
         )
 
 
-def _active_weights(
-    has_quality: bool,
-    has_collaborative: bool,
-) -> tuple[float, float, float]:
+# Stand-ins for a signal that is switched on for a batch but absent from one
+# particular title. A missing community score falls back to the catalogue prior,
+# which is what an unrated title would score anyway; a title the graph never
+# reached simply has no support behind it.
+NEUTRAL_QUALITY = QUALITY_PRIOR_SCORE / QUALITY_SCORE_RANGE
+NEUTRAL_COLLABORATIVE = 0.0
+
+
+class Weights(tuple):
+    """The blend in force for a batch: content, quality, collaborative."""
+
+    __slots__ = ()
+
+    def __new__(cls, content: float, quality: float, collaborative: float):
+        return super().__new__(cls, (content, quality, collaborative))
+
+    @property
+    def content(self) -> float:
+        return self[0]
+
+    @property
+    def quality(self) -> float:
+        return self[1]
+
+    @property
+    def collaborative(self) -> float:
+        return self[2]
+
+
+def active_weights(
+    *,
+    has_quality: bool = True,
+    has_collaborative: bool = False,
+) -> Weights:
+    """Choose the blend for a whole batch.
+
+    This is decided once per batch, never per title. Reweighting title by title
+    would mean two candidates in the same list were scored on different scales,
+    and a title carrying an extra signal could rank below one without it purely
+    because the extra term diluted the weight of the signal it scored well on.
+    """
     content = CONTENT_WEIGHT
     quality = QUALITY_WEIGHT if has_quality else 0.0
     collaborative = COLLABORATIVE_WEIGHT if has_collaborative else 0.0
     total = content + quality + collaborative
     if total <= 0:
-        return 1.0, 0.0, 0.0
-    return content / total, quality / total, collaborative / total
+        return Weights(1.0, 0.0, 0.0)
+    return Weights(content / total, quality / total, collaborative / total)
 
 
 def score_candidate(
@@ -131,14 +168,18 @@ def score_candidate(
     *,
     index: object = None,
     collaborative_score: float | None = None,
+    weights: Weights | None = None,
     vote_column: str = "Scoring Users",
 ) -> ScoredCandidate:
     """Score one candidate and keep the terms that produced the score."""
     features = extract_features(row)
     quality = quality_prior(row.get("Mean Score"), row.get(vote_column))
-    content_weight, quality_weight, collaborative_weight = _active_weights(
-        quality is not None, collaborative_score is not None
-    )
+    if weights is None:
+        weights = active_weights(
+            has_quality=quality is not None,
+            has_collaborative=collaborative_score is not None,
+        )
+    content_weight, quality_weight, collaborative_weight = weights
 
     user_norm = profile.norm()
     anime_norm = math.sqrt(
@@ -155,8 +196,10 @@ def score_candidate(
                 per_feature[feature] = component / divisor
     content = sum(per_feature.values())
 
-    quality_term = quality_weight * (quality or 0.0)
-    collaborative_term = collaborative_weight * (collaborative_score or 0.0)
+    quality_term = quality_weight * (NEUTRAL_QUALITY if quality is None else quality)
+    collaborative_term = collaborative_weight * (
+        NEUTRAL_COLLABORATIVE if collaborative_score is None else collaborative_score
+    )
     final = content_weight * content + quality_term + collaborative_term
     match = calibrate(final)
 
@@ -199,12 +242,18 @@ def score_candidates(
 ) -> list[ScoredCandidate]:
     collaborative_scores = collaborative_scores or {}
     keys = list(indexes) if indexes is not None else list(range(len(rows)))
+    # One blend for the whole batch, so every title is scored on the same scale.
+    weights = active_weights(
+        has_quality=True,
+        has_collaborative=bool(collaborative_scores),
+    )
     return [
         score_candidate(
             row,
             profile,
             index=key,
             collaborative_score=collaborative_scores.get(key),
+            weights=weights,
         )
         for key, row in zip(keys, rows)
     ]

@@ -16,7 +16,11 @@ except ImportError:  # Compatibility with the S01 top-level import path.
 
 ANIME_FIELDS = (
     "id,title,alternative_titles,main_picture,genres,mean,num_episodes,status,"
-    "start_date,end_date,start_season,synopsis"
+    "start_date,end_date,start_season,synopsis,"
+    # Requested on the same paged calls the pipeline already makes, so these
+    # cost no additional requests. num_scoring_users is what lets the quality
+    # prior tell a widely loved title from a thinly rated one.
+    "studios,source,media_type,num_scoring_users"
 )
 ANIME_CSV_COLUMNS = [
     "Anime ID",
@@ -34,6 +38,10 @@ ANIME_CSV_COLUMNS = [
     "Year",
     "Synopsis",
     "MAL URL",
+    "Studios",
+    "Source",
+    "Media Type",
+    "Scoring Users",
 ]
 COMPLETED_ANIME_CSV_COLUMNS = [*ANIME_CSV_COLUMNS, "Status", "User Score"]
 
@@ -81,6 +89,14 @@ def anime_from_node(node: object) -> Anime | None:
         year=year,
         synopsis=_text(node.get("synopsis")),
         mal_url=f"https://myanimelist.net/anime/{mal_id}",
+        studios=tuple(
+            name
+            for item in node.get("studios") or ()
+            if isinstance(item, Mapping) and (name := _text(item.get("name")))
+        ),
+        source=_text(node.get("source")),
+        media_type=_text(node.get("media_type")),
+        scoring_users=_count(node.get("num_scoring_users")),
     )
 
 
@@ -101,6 +117,10 @@ def anime_to_row(anime: Anime) -> dict[str, Any]:
         "Year": anime.year,
         "Synopsis": anime.synopsis,
         "MAL URL": anime.mal_url,
+        "Studios": list(anime.studios),
+        "Source": anime.source,
+        "Media Type": anime.media_type,
+        "Scoring Users": anime.scoring_users,
     }
 
 
@@ -122,6 +142,10 @@ def anime_from_row(row: Mapping[str, Any]) -> Anime:
         end_date=_text(row.get("End Date")),
         year=_positive_int(row.get("Year")),
         synopsis=_text(row.get("Synopsis")),
+        studios=tuple(parse_genres(row.get("Studios"))),
+        source=_text(row.get("Source")),
+        media_type=_text(row.get("Media Type")),
+        scoring_users=_count(row.get("Scoring Users")),
         mal_url=(
             f"https://myanimelist.net/anime/{mal_id}"
             if mal_id is not None
@@ -156,6 +180,17 @@ def _positive_int(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
     return number if number > 0 else None
+
+
+def _count(value: object) -> int | None:
+    """A non-negative tally. Zero is meaningful here, unlike an identifier."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
 
 
 def _year_from_date(value: str | None) -> int | None:

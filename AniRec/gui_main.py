@@ -27,6 +27,7 @@ from .metadata import (
 )
 from .services import (
     AnimeDataService,
+    AnimeGraphService,
     AuthService,
     DataManagementService,
     OnboardingService,
@@ -106,6 +107,7 @@ def main(
                 storage=CsvStorage(),
                 access_token_provider=access_token_provider,
                 client_id_provider=lambda: settings.load().client_id or "",
+                anime_graph=AnimeGraphService(),
             )
             onboarding = OnboardingService(
                 settings=settings,
