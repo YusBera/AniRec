@@ -1,11 +1,14 @@
 """Properties the recommendation engine must satisfy, independent of formula.
 
-These are the executable specification for the AniRec 2.0 scoring rebuild.
+These were written as the executable specification for the 2.0 scoring
+rebuild. Each one began as a strict expected failure describing a defect in
+the 1.2.2 engine, so that fixing the underlying bug failed the suite until the
+marker was removed. They all pass now, and they are kept as the statement of
+what must stay true: a formula may change, these may not.
 
-Tests marked ``xfail(strict=True)`` describe defects in the 1.2.2 engine. They
-are strict on purpose: when a phase fixes the underlying bug the unexpected pass
-fails the suite, which forces the marker to be removed rather than left behind
-to rot.
+Assertions are deliberately about behaviour rather than about particular
+numbers. Pinning exact values is what made the previous suite agree with a
+model that had stopped measuring preference at all.
 """
 
 from __future__ import annotations

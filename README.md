@@ -172,7 +172,9 @@ Install development dependencies and run the complete networkless suite:
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The suite uses mock/fault injection instead of a real account. It covers the recommendation pipeline, adaptive feedback, visible/editable taste collections, vote-driven reranking, five/ten-pick exclusion, public Client ID access, optional OAuth internals, persistence, profiles, GUI navigation, wizard, workers, success auto-close, retry/cancellation, compact cards/details, responsive library controls, settings, data deletion, path/link safety, secret redaction, packaging contracts, and offline/timeout/rate-limit/storage failures. Implicit `%APPDATA%` access is isolated per test.
+The suite uses mock and fault injection instead of a real account, and isolates implicit `%APPDATA%` access per test. It covers the scoring engine, the pipeline, taste collections and vote-driven reranking, first-run setup and the connection step, persistence, profiles, navigation, workers, cancellation and retry, settings, data deletion, path and link safety, secret redaction, packaging contracts, and offline, timeout, rate-limit and storage failures.
+
+[tests/test_scoring_invariants.py](tests/test_scoring_invariants.py) states the properties the recommender must satisfy whatever the formula: that a match percentage does not depend on what else was ranked beside it, that the parts of an explanation add up to the score shown, that a genre you rate poorly is never presented as a reason to watch something, and that evidence tempers enthusiasm.
 
 The development-machine packaged-EXE matrix is recorded in [docs/EXE_SMOKE.md](docs/EXE_SMOKE.md).
 
@@ -209,11 +211,14 @@ AniRec/
 │   ├── gui/                   # PySide6 pages, dialogs, resources, workers
 │   ├── infrastructure/        # HTTP, storage, paths, callback, logging
 │   ├── models/                # Versioned domain and settings models
+│   ├── scoring/               # Taste profile, feature vocabulary, ranking
 │   └── services/              # UI-independent application services
 ├── tests/                     # Networkless regression and GUI smoke tests
-├── docs/                      # Verified screenshots and EXE smoke evidence
+├── docs/                      # Screenshots, release notes, acceptance evidence
 ├── packaging/                 # Windows version resource
 ├── scripts/build_windows.ps1  # Clean PyInstaller build
+├── scripts/build_theme.py     # Regenerate the stylesheets from design tokens
+├── scripts/build_icon.py      # Regenerate the Windows icon from the SVG
 ├── AniRec.spec                # Tracked onedir package definition
 ├── anirec_gui.py              # Desktop launcher
 └── README.md
