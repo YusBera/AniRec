@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .design_tokens import SPACE
 from .recommendation_view_model import RecommendationViewModel
 from .resources import cover_placeholder_pixmap
 
@@ -94,7 +95,7 @@ class RecommendationCard(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 13)
+        layout.setContentsMargins(SPACE['md'], SPACE['md'], SPACE['md'], SPACE['md'])
         layout.setSpacing(7)
         self.cover_label = QLabel()
         self.cover_label.setObjectName("recommendationCover")

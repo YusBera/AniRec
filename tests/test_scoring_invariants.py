@@ -358,12 +358,6 @@ def _selectors(path: Path) -> set[str]:
     return found
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="light.qss omits QMenu and the operation progress dialog rules that "
-    "dark.qss defines, so those surfaces fall back to unthemed platform "
-    "defaults in light mode.",
-)
 def test_light_and_dark_themes_style_the_same_selectors(repo_root: Path):
     styles = repo_root / "AniRec" / "gui" / "resources" / "styles"
     dark = _selectors(styles / "dark.qss")

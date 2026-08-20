@@ -158,6 +158,7 @@ class MainWindow(QMainWindow):
         settings_service: SettingsService | None = None,
         token_store: TokenStore | None = None,
         data_management_service: DataManagementService | None = None,
+        theme_manager: ThemeManager | None = None,
     ) -> None:
         super().__init__()
         self.profile_service = profile_service
@@ -174,6 +175,7 @@ class MainWindow(QMainWindow):
         self.data_management_service = data_management_service or DataManagementService()
         self.active_profile: UserProfile | None = None
         self.setup_wizard: SetupWizard | None = None
+        self.theme_manager = theme_manager
         self.setObjectName("mainWindow")
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
@@ -554,12 +556,13 @@ class MainWindow(QMainWindow):
         return True
 
     def _apply_settings(self, settings: AppSettings) -> None:
-        application = QApplication.instance()
-        if isinstance(application, QApplication):
-            manager = getattr(application, "_anirec_theme_manager", None)
-            if not isinstance(manager, ThemeManager):
+        manager = self.theme_manager
+        if manager is None:
+            application = QApplication.instance()
+            if isinstance(application, QApplication):
                 manager = ThemeManager(application)
-                application._anirec_theme_manager = manager
+                self.theme_manager = manager
+        if manager is not None:
             manager.apply(settings.theme, font_scale=settings.font_scale)
         self.recommendations_page.set_default_sort(settings.default_recommendation_sort)
         self.recommendations_page.set_show_covers(settings.show_covers)
