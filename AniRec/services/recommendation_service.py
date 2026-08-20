@@ -16,6 +16,8 @@ try:
     )
     from ..models import PipelineSettings
     from ..recommendation_system import rank_recommendations
+    from ..scoring.serialization import profile_to_frame
+    from ..scoring.taste import build_taste_profile
 except ImportError:  # Compatibility with the S01 top-level test import path.
     from candidate_generation import filter_recommendation_candidates
     from genre_importance import calculate_genre_importance
@@ -25,6 +27,8 @@ except ImportError:  # Compatibility with the S01 top-level test import path.
     )
     from models import PipelineSettings
     from recommendation_system import rank_recommendations
+    from scoring.serialization import profile_to_frame
+    from scoring.taste import build_taste_profile
 
 
 class RecommendationService:
@@ -39,13 +43,18 @@ class RecommendationService:
         medians = calculate_genre_medians(completed)
         return handle_missing_scores_with_genre_medians(completed, medians)
 
-    def calculate_genre_importance(self, completed: pd.DataFrame) -> pd.DataFrame:
-        medians = calculate_genre_medians(completed)
-        importance = calculate_genre_importance(completed, medians)
-        return pd.DataFrame(
-            sorted(importance.items(), key=lambda item: item[1], reverse=True),
-            columns=["Genre", "Importance_Score"],
-        )
+    def calculate_genre_importance(
+        self,
+        completed: pd.DataFrame,
+        catalog: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        """Learn the user's taste profile from their rated history.
+
+        ``catalog`` is the wider candidate pool, used to judge how common each
+        feature is. Without it the user's own list stands in, which is less
+        discriminating but still correct.
+        """
+        return profile_to_frame(build_taste_profile(completed, catalog=catalog))
 
     def create_candidates(
         self,

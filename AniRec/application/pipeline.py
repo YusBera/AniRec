@@ -205,7 +205,12 @@ class PipelineOrchestrator:
 
         self._emit(progress_callback, "genre_importance", 4, 6)
         token.raise_if_cancelled()
-        genre_importance = self._recommendations.calculate_genre_importance(imputed)
+        # Learn taste from what the user actually rated, not from the imputed
+        # frame. Feeding filled-in scores back in made AniRec measure its own
+        # guesses and counted unrated titles toward every genre's share.
+        genre_importance = self._recommendations.calculate_genre_importance(
+            completed, top_anime
+        )
         self._require_nonempty(genre_importance, "No genre importance scores were generated.")
         token.raise_if_cancelled()
 

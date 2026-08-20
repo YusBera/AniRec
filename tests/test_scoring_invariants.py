@@ -104,12 +104,6 @@ def test_match_score_never_leaves_the_zero_to_hundred_range():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Contributions are raw importance units while the headline is a "
-    "max-normalized percentage, they are truncated to three, and negative "
-    "contributions are filtered out entirely.",
-)
 def test_displayed_contributions_reconcile_with_the_displayed_score():
     weights = _weights([("Action", 120.0), ("Comedy", 60.0)])
     candidates = pd.DataFrame([_candidate(1, "Both", ["Action", "Comedy"])])
@@ -119,11 +113,31 @@ def test_displayed_contributions_reconcile_with_the_displayed_score():
     assert contribution_total == pytest.approx(row["Match Score"], rel=1e-6)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="_genre_contributions filters to score > 0, so a title penalised by "
-    "feedback shows an empty breakdown next to a reduced score.",
-)
+def test_a_disliked_genre_is_never_shown_as_helping():
+    """Signs in the breakdown must match reality, even for a poor match.
+
+    Attributing shares by dividing the match percentage by the blended score
+    inverts every sign when that score is negative, which presents the very
+    genres that sank a title as the reasons to watch it.
+    """
+    taste = pytest.importorskip("scoring.taste")
+    ranking = pytest.importorskip("scoring.ranking")
+
+    completed = pd.DataFrame(
+        [{"Title": f"Chore {i}", "Genres": ["Tedious"], "User Score": 3} for i in range(8)]
+        + [{"Title": f"Gem {i}", "Genres": ["Beloved"], "User Score": 10} for i in range(8)]
+    )
+    profile = taste.build_taste_profile(completed)
+    scored = ranking.score_candidate(
+        {"Genres": ["Tedious"], "Mean Score": 8.0, "Scoring Users": 100000}, profile
+    )
+
+    assert profile.affinity("genre:Tedious") < 0
+    contributions = dict(scored.contributions)
+    assert contributions["genre:Tedious"] < 0, "a disliked genre must read as a penalty"
+    assert scored.quality_contribution > 0
+
+
 def test_penalised_titles_explain_why_they_were_penalised():
     weights = _weights([("Action", 20.0)])
     candidates = pd.DataFrame([_candidate(1, "Disliked", ["Action"])])
@@ -137,11 +151,6 @@ def test_penalised_titles_explain_why_they_were_penalised():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="_score_genres sums matched weights without de-duplicating, so a "
-    "repeated tag counts twice.",
-)
 def test_repeating_a_tag_does_not_raise_a_title():
     weights = _weights([("Action", 100.0)])
     candidates = pd.DataFrame(
@@ -178,12 +187,6 @@ def test_excluded_ids_never_appear_in_results():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="The mean/median term is self-referential: the medians come from the "
-    "same sample, so a uniformly-rated genre always yields the ratio 1.0 "
-    "and rating quality cannot influence importance at all.",
-)
 def test_a_well_rated_genre_outranks_a_badly_rated_one_at_equal_frequency():
     completed = pd.DataFrame(
         [
@@ -249,11 +252,6 @@ def test_genres_the_user_never_rated_are_absent_from_the_profile():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Feedback for a genre missing from genre_importance.csv is dropped, "
-    "because the update loop iterates existing weight keys only.",
-)
 def test_feedback_reaches_genres_absent_from_the_taste_profile():
     weights = _weights([("Action", 100.0)])
     candidates = pd.DataFrame(

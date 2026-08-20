@@ -21,9 +21,11 @@ def application():
 
 @pytest.fixture
 def api_page(application):
-    page = ApiSettingsPage(AppSettings())
-    yield page
-    page.deleteLater()
+    # Deliberately no deleteLater here: it schedules a deferred deletion that
+    # nothing services once the session ends, which risks a fault during
+    # interpreter shutdown. The other GUI suites let the widget fall out of
+    # scope the same way.
+    return ApiSettingsPage(AppSettings())
 
 
 def _widgets_in_layout(widget) -> set:

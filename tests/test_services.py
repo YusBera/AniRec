@@ -94,7 +94,10 @@ def test_recommendation_service_is_in_memory_and_randomness_is_injected(
     )
 
     assert imputed["User Score"].isna().sum() == 0
-    assert list(genre.columns) == ["Genre", "Importance_Score"]
+    # The taste profile carries its learned parts alongside the original two
+    # columns, which stay so that existing files and readers keep working.
+    assert {"Genre", "Importance_Score"}.issubset(genre.columns)
+    assert {"Affinity", "Idf"}.issubset(genre.columns)
     assert candidates["Title"].tolist() == ["Gamma Show", "Delta Show"]
     assert len(recommendations) == 2
 
