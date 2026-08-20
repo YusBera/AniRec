@@ -1,6 +1,6 @@
 # AniRec
 
-AniRec 1.2.2 is an open-source Windows desktop application that turns a MyAnimeList history into explainable, genre-based anime recommendations. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
+AniRec 2.0.0 is an open-source Windows desktop application that turns a MyAnimeList history into anime recommendations you can actually interrogate. Every score comes with a breakdown that adds up to it. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
 
 AniRec is unofficial and is not affiliated with or endorsed by MyAnimeList.
 
@@ -8,31 +8,25 @@ AniRec is unofficial and is not affiliated with or endorsed by MyAnimeList.
 
 The English desktop interface provides:
 
-- a three-step first-run setup using a Client ID, public MAL profile URL, and initial analysis;
-- a modern Home dashboard with working MAL sync/generation actions, genre strength bars, and cover-based recent recommendation cards;
-- compact card and table recommendation views with filters, sorting, lazy cover loading, and reusable details;
-- personal-match explanations and per-genre score contributions;
-- profile-local Hidden, Watch Later, Like, and Not for me state keyed by MyAnimeList anime ID;
-- adaptive, explainable reranking that updates the remaining feed after every explicit vote;
-- always-visible **For You**, **Liked**, **Disliked**, and **Watch Later** tabs with live counts and editable saved states;
-- **Recommend 5 more** plus an automatic 10-pick refill prompt when the active feed is exhausted;
-- genre analysis summaries and a detailed genre table;
-- independently runnable advanced pipeline steps with explicit prerequisites;
-- multi-profile, API, recommendation, appearance, cache, cover, log, and local-data settings;
-- OLED-black dark, light, and system themes with adjustable font scale;
-- cancellable background work, guarded retry, automatically closing successful progress dialogs, safe error dialogs, and redacted logs.
+- three surfaces: **Discover**, **My Library**, and **Settings**;
+- a guided first run that links to the MyAnimeList API page, shows the exact redirect URI with a copy button, and explains every value it asks for;
+- a **look around with sample data** mode that needs no account at all;
+- recommendations scored from a learned taste profile, with a breakdown for each one that sums to the match percentage shown beside it;
+- a **Why these?** summary naming the genres driving the feed, including the ones AniRec has learned you avoid;
+- profile-local Liked, Not for me, and Watch Later collections keyed by MyAnimeList anime ID;
+- **Recommend 5 more** plus an automatic refill prompt when the feed is exhausted;
+- a single **Adventurousness** control in place of the sampler's internals;
+- optional developer tools exposing the individual data steps;
+- warm cinematic dark and light themes generated from one set of design tokens, with a font scale that moves the whole type hierarchy;
+- cancellable background work, guarded retry, safe error dialogs, and redacted logs.
 
-![AniRec first-run wizard](docs/images/anirec-first-run-wizard.png)
+![AniRec first-run setup](docs/images/anirec-first-run-wizard.png)
 
-![AniRec modern Home dashboard](docs/images/anirec-modern-home.png)
+![AniRec Discover](docs/images/anirec-home.png)
 
-![AniRec modern recommendation library](docs/images/anirec-s15-modern-for-you.png)
+![AniRec My Library](docs/images/anirec-recommendations.png)
 
-![AniRec editable Liked collection](docs/images/anirec-s15-editable-liked.png)
-
-![AniRec exhausted recommendation feed](docs/images/anirec-s15-modern-empty.png)
-
-![AniRec modern Settings](docs/images/anirec-modern-settings.png)
+![AniRec Settings](docs/images/anirec-settings.png)
 
 ## Requirements
 
@@ -135,21 +129,21 @@ python -m AniRec.cli
 
 Do not store real credentials in `.env.example`; that file contains placeholders only.
 
-## Recommendation pipeline
+## How recommendations are made
 
-AniRec uses an explainable content-based workflow, not a collaborative-filtering or generative model:
+AniRec scores candidates from your own rating history. It is not a generative model, and nothing is sent to a third party beyond the MyAnimeList API calls it makes on your behalf.
 
-1. Fetch ranked anime and the user's completed list from MyAnimeList.
-2. Impute missing or zero user scores from genre medians.
-3. Calculate per-genre preference importance.
-4. Remove completed anime by MyAnimeList ID.
-5. Score candidates from genre contributions.
-6. Apply deterministic, configurable variety and return ranked recommendations.
-7. Apply profile-local Like/Not for me genre affinities to current and future ranking while keeping the adjustment bounded and explainable.
+1. Fetch ranked anime and your completed list from MyAnimeList.
+2. Build a taste profile from the titles you actually rated. Ratings are centred on your own average, so a generous rater and a harsh one produce comparable profiles, and each feature is shrunk toward neutral according to how much evidence supports it. A genre you rate below your average carries a negative affinity.
+3. Describe each anime by genre, studio, source, media type, and era, weighting rarer features more heavily because they say more about taste.
+4. Score by cosine similarity, so a broadly tagged title cannot outrank a precise match simply by carrying more tags.
+5. Blend in a confidence-weighted community score, so an obscure title with a handful of perfect ratings does not displace a widely loved one, and optionally a collaborative signal walked outward from your highest rated titles.
+6. Calibrate to a percentage using fixed constants, so a title scores the same whatever else is ranked alongside it.
+7. Apply your Liked and Not for me votes in exactly one place, bounded so repeated votes converge rather than saturate.
 
-Like/Not for me is an adaptive content-ranking signal, not a generative AI or a cloud-trained model. Feedback stays in the local profile. Each vote moves the anime into its Liked or Disliked tab and immediately reranks the unreviewed feed. Opening a collection lets the user remove a saved vote or move it to the opposite collection; Watch Later can be inspected and cleared the same way. Selecting **Recommend 5 more** reads the already generated candidate pool, excludes anime already shown, and appends five unseen picks. When every current pick has been reviewed, the same background pipeline offers ten fresh picks based on the latest feedback.
+Because the total is a weighted sum, and cosine is itself a sum over features, each feature's share is an exact identity rather than an estimate. That is why the breakdown shown against a recommendation adds up to the percentage beside it, including negative contributions and the community rating.
 
-Generated CSV and JSON results are profile-scoped. The UI exposes the recommendation reason and genre contribution values used by the ranker.
+Generated CSV and JSON results are profile-scoped.
 
 ## Local data and privacy
 
@@ -233,11 +227,11 @@ AniRec is licensed under the [GNU General Public License v3.0](LICENSE).
 - Desktop GUI contribution: a PySide6 interface built on the original AniRec project
 - Original GUI assets and their licensing: [AniRec/gui/resources/ASSET_LICENSES.md](AniRec/gui/resources/ASSET_LICENSES.md)
 
-## Known limitations in 1.2.2
+## Known limitations in 2.0.0
 
-- The algorithm is intentionally genre-based and does not use collaborative filtering.
-- Live recommendations require a user-provided MyAnimeList Client ID and a public anime list.
-- The release candidate was exercised on the development Windows 11 machine; a second Windows 10/11 computer acceptance run is still required.
-- Real public-profile integration was verified without displaying or persisting anime titles in test output.
+- The collaborative signal uses MyAnimeList's own recommendation edges. It is optional, cached, and absent by default until a run has walked the graph.
+- Live recommendations require a user-provided MyAnimeList Client ID and Secret, and a public anime list.
+- 2.0.0 was exercised on the development Windows 11 machine; a second Windows 10/11 computer acceptance run is still required.
+- The packaged `.ico` is still rendered from the previous palette and does not yet match the 2.0 accent.
 - The package is unsigned and distributed as `onedir`; there is no installer, auto-update, code signing, or `onefile` artifact.
 - Local secrets are not stored in an encrypted operating-system credential vault.

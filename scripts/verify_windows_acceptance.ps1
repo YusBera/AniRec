@@ -1,8 +1,10 @@
 param(
-    [switch]$Launch
+    [switch]$Launch,
+    [string]$ExpectedVersion = "2.0.0"
 )
 
 $ErrorActionPreference = "Stop"
+$expectedVersion = $ExpectedVersion
 $packageRoot = [IO.Path]::GetFullPath($PSScriptRoot)
 $appRoot = Join-Path $packageRoot "AniRec"
 $executable = Join-Path $appRoot "AniRec.exe"
@@ -26,7 +28,7 @@ function Add-Result {
     }
 }
 
-Write-Output "AniRec 1.2.2 Windows acceptance preflight"
+Write-Output "AniRec $expectedVersion Windows acceptance preflight"
 Write-Output "Package root: $packageRoot"
 
 $os = Get-CimInstance Win32_OperatingSystem
@@ -88,7 +90,7 @@ if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
 
 if (Test-Path -LiteralPath $executable -PathType Leaf) {
     $versionInfo = (Get-Item -LiteralPath $executable).VersionInfo
-    Add-Result ($versionInfo.FileVersion -eq "1.2.2" -and $versionInfo.ProductVersion -eq "1.2.2") "EXE version" "File $($versionInfo.FileVersion), product $($versionInfo.ProductVersion)"
+    Add-Result ($versionInfo.FileVersion -eq $expectedVersion -and $versionInfo.ProductVersion -eq $expectedVersion) "EXE version" "File $($versionInfo.FileVersion), product $($versionInfo.ProductVersion), expected $expectedVersion"
 
     $bytes = [IO.File]::ReadAllBytes($executable)
     $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)

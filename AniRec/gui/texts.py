@@ -170,8 +170,8 @@ class WizardTextCatalog:
     connection_success: str = "Client ID and public anime list validated."
     saved_secret: str = "A saved secret is configured. Leave blank to keep it."
     api_validation_hint: str = (
-        "Enter a Client ID and a public MyAnimeList profile URL or username. "
-        "After validation, AniRec will request MyAnimeList OAuth approval."
+        "Fill in the values above, then choose Validate and Continue. "
+        "AniRec will check them and ask MyAnimeList for your permission."
     )
     # First-run guidance. A new user has no reason to know what any of this
     # means, so the wizard explains the terms and links straight to the page
@@ -210,11 +210,14 @@ class WizardTextCatalog:
     )
     connect_mal: str = "Connect with MyAnimeList"
     cancel_connection: str = "Cancel Connection"
-    oauth_ready: str = "Open MyAnimeList authorization in your browser to continue."
+    oauth_ready: str = (
+        "AniRec will open MyAnimeList in your browser so you can approve access. "
+        "Your password is never shared with AniRec."
+    )
     oauth_opening_browser: str = "Opening your browser…"
     oauth_waiting_approval: str = "Waiting for MyAnimeList approval…"
     oauth_authorization_complete: str = "Authorization received."
-    oauth_validating_token: str = "Validating the OAuth token…"
+    oauth_validating_token: str = "Finishing the connection…"
     oauth_success: str = "MyAnimeList connection completed successfully."
     oauth_cancelled: str = "MyAnimeList connection was cancelled. You can try again."
     username: str = "MyAnimeList username"
