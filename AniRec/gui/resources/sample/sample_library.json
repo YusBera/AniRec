@@ -1,0 +1,81 @@
+{
+  "_note": "Demonstration data for AniRec's look-around mode. Facts are public MyAnimeList catalogue metadata; scores and reasons are illustrative of AniRec's own output, not MyAnimeList values.",
+  "completed_count": 128,
+  "rated_count": 96,
+  "genres": [
+    {"genre": "Psychological", "importance_score": 74.2, "completed_count": 11, "average_user_score": 9.1},
+    {"genre": "Drama", "importance_score": 61.8, "completed_count": 24, "average_user_score": 8.6},
+    {"genre": "Thriller", "importance_score": 55.4, "completed_count": 9, "average_user_score": 8.8},
+    {"genre": "Sci-Fi", "importance_score": 28.1, "completed_count": 15, "average_user_score": 7.9},
+    {"genre": "Adventure", "importance_score": 6.3, "completed_count": 21, "average_user_score": 7.2},
+    {"genre": "Ecchi", "importance_score": -38.7, "completed_count": 7, "average_user_score": 4.4}
+  ],
+  "recommendations": [
+    {
+      "mal_id": 1535, "title": "Death Note", "genres": ["Supernatural", "Suspense", "Psychological", "Thriller"],
+      "mean_score": 8.62, "episodes": 37, "year": 2006, "status": "finished_airing",
+      "studios": ["Madhouse"], "source": "manga", "media_type": "tv", "scoring_users": 2900000,
+      "match_score": 92.4, "reason": "Matches your interests in Psychological, Thriller, and Supernatural.",
+      "contributions": [["Psychological", 44.1], ["Thriller", 26.8], ["Supernatural", 5.2], ["Community rating", 16.3]],
+      "synopsis": "A high school student discovers a notebook that kills anyone whose name is written in it."
+    },
+    {
+      "mal_id": 9253, "title": "Steins;Gate", "genres": ["Drama", "Sci-Fi", "Suspense", "Psychological"],
+      "mean_score": 9.07, "episodes": 24, "year": 2011, "status": "finished_airing",
+      "studios": ["White Fox"], "source": "visual_novel", "media_type": "tv", "scoring_users": 1400000,
+      "match_score": 90.8, "reason": "Matches your interests in Psychological, Drama, and Sci-Fi.",
+      "contributions": [["Psychological", 38.6], ["Drama", 24.9], ["Sci-Fi", 10.4], ["Community rating", 16.9]],
+      "synopsis": "A self-styled mad scientist discovers a way to send messages into the past."
+    },
+    {
+      "mal_id": 199, "title": "Sen to Chihiro no Kamikakushi", "english_title": "Spirited Away",
+      "genres": ["Adventure", "Award Winning", "Supernatural"],
+      "mean_score": 8.77, "episodes": 1, "year": 2001, "status": "finished_airing",
+      "studios": ["Studio Ghibli"], "source": "original", "media_type": "movie", "scoring_users": 1300000,
+      "match_score": 61.2, "reason": "Matches your interest in Adventure.",
+      "contributions": [["Adventure", 8.4], ["Supernatural", 35.7], ["Community rating", 17.1]],
+      "synopsis": "A girl wanders into a world of spirits and must work to free her parents."
+    },
+    {
+      "mal_id": 4181, "title": "Clannad: After Story", "genres": ["Drama", "Romance", "Supernatural"],
+      "mean_score": 8.93, "episodes": 24, "year": 2008, "status": "finished_airing",
+      "studios": ["Kyoto Animation"], "source": "visual_novel", "media_type": "tv", "scoring_users": 800000,
+      "match_score": 78.5, "reason": "Matches your interests in Drama and Supernatural.",
+      "contributions": [["Drama", 46.2], ["Supernatural", 14.9], ["Community rating", 17.4]],
+      "synopsis": "The continuation of a story about family, loss, and growing up."
+    },
+    {
+      "mal_id": 32281, "title": "Kimi no Na wa.", "english_title": "Your Name.",
+      "genres": ["Award Winning", "Drama", "Supernatural", "Romance"],
+      "mean_score": 8.83, "episodes": 1, "year": 2016, "status": "finished_airing",
+      "studios": ["CoMix Wave Films"], "source": "original", "media_type": "movie", "scoring_users": 1600000,
+      "match_score": 74.9, "reason": "Matches your interests in Drama and Supernatural.",
+      "contributions": [["Drama", 41.3], ["Supernatural", 16.2], ["Community rating", 17.4]],
+      "synopsis": "Two teenagers discover they are inexplicably swapping bodies."
+    },
+    {
+      "mal_id": 30, "title": "Neon Genesis Evangelion", "genres": ["Avant Garde", "Drama", "Psychological", "Sci-Fi"],
+      "mean_score": 8.35, "episodes": 26, "year": 1995, "status": "finished_airing",
+      "studios": ["Gainax"], "source": "original", "media_type": "tv", "scoring_users": 1100000,
+      "match_score": 88.1, "reason": "Matches your interests in Psychological, Drama, and Sci-Fi.",
+      "contributions": [["Psychological", 40.2], ["Drama", 22.7], ["Sci-Fi", 9.6], ["Community rating", 15.6]],
+      "synopsis": "Teenage pilots are conscripted to defend humanity in giant biomechanical machines."
+    },
+    {
+      "mal_id": 19, "title": "Monster", "genres": ["Drama", "Mystery", "Psychological", "Suspense"],
+      "mean_score": 8.87, "episodes": 74, "year": 2004, "status": "finished_airing",
+      "studios": ["Madhouse"], "source": "manga", "media_type": "tv", "scoring_users": 350000,
+      "match_score": 94.6, "reason": "Matches your interests in Psychological, Drama, and Mystery.",
+      "contributions": [["Psychological", 47.8], ["Drama", 25.1], ["Mystery", 5.4], ["Community rating", 16.3]],
+      "synopsis": "A surgeon hunts the man whose life he once saved."
+    },
+    {
+      "mal_id": 21, "title": "One Piece", "genres": ["Action", "Adventure", "Fantasy"],
+      "mean_score": 8.72, "episodes": 1100, "year": 1999, "status": "currently_airing",
+      "studios": ["Toei Animation"], "source": "manga", "media_type": "tv", "scoring_users": 1200000,
+      "match_score": 34.7, "reason": "Broadens your recommendations beyond your strongest genres.",
+      "contributions": [["Adventure", 6.1], ["Action", -4.2], ["Fantasy", 15.9], ["Community rating", 16.9]],
+      "synopsis": "A crew of pirates searches for the world's greatest treasure."
+    }
+  ]
+}

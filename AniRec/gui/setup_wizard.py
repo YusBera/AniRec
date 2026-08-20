@@ -115,10 +115,31 @@ class WizardPage(QWidget):
 
 
 class WelcomePage(WizardPage):
+    demo_requested = Signal()
+
     def __init__(self) -> None:
         super().__init__(WizardStep.WELCOME, complete=True)
         self.hint_label.setText(WIZARD_TEXT.welcome_body)
         self.hint_label.setWordWrap(True)
+
+        # A way in that costs nothing. Registering an API application before
+        # seeing anything at all is a hard wall for someone still deciding
+        # whether AniRec is worth their time.
+        self.connect_hint = QLabel(WIZARD_TEXT.welcome_connect_hint)
+        self.connect_hint.setObjectName("wizardFieldHint")
+        self.connect_hint.setWordWrap(True)
+        self.demo_button = QPushButton(WIZARD_TEXT.welcome_demo)
+        self.demo_button.setObjectName("wizardDemoButton")
+        self.demo_button.setProperty("buttonRole", "secondary")
+        self.demo_button.setAccessibleName(WIZARD_TEXT.welcome_demo_accessible)
+        self.demo_hint = QLabel(WIZARD_TEXT.welcome_demo_hint)
+        self.demo_hint.setObjectName("wizardFieldHint")
+        self.demo_hint.setWordWrap(True)
+        self.demo_button.clicked.connect(self.demo_requested.emit)
+
+        self.content_layout.insertWidget(2, self.connect_hint)
+        self.content_layout.insertWidget(3, self.demo_button)
+        self.content_layout.insertWidget(4, self.demo_hint)
 
 
 class ApiSettingsPage(WizardPage):
@@ -455,6 +476,7 @@ class AnalysisPage(WizardPage):
 
 
 class SetupWizard(QDialog):
+    demo_requested = Signal()
     def __init__(
         self,
         onboarding: OnboardingService,
@@ -496,6 +518,7 @@ class SetupWizard(QDialog):
         for step in WizardStep:
             if step is WizardStep.WELCOME:
                 page = WelcomePage()
+                page.demo_requested.connect(self.demo_requested.emit)
             elif step is WizardStep.CONNECTION:
                 page = ApiSettingsPage(onboarding.settings.load())
                 page.test_requested.connect(self._start_connection_setup)

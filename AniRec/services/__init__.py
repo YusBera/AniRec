@@ -21,6 +21,7 @@ from .recommendation_state_service import (
 )
 from .taste_feedback_service import TasteFeedbackService
 from .result_service import ResultService
+from .sample_data_service import SampleDataService
 from .settings_service import SettingsService
 from .token_store import TokenStore
 
@@ -43,6 +44,7 @@ __all__ = [
     "RecommendationStateService",
     "TasteFeedbackService",
     "ResultService",
+    "SampleDataService",
     "SettingsService",
     "TokenStore",
 ]

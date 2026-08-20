@@ -75,15 +75,9 @@ UI_TEXT = UiTextCatalog(
     progress_completed="Operation completed.",
     progress_close="Close",
     pages=(
-        PageText("Home", "Your anime activity at a glance."),
-        PageText("Recommendations", "Discover anime selected from your preferences."),
-        PageText("Genre Analysis", "Explore the genres that shape your anime taste."),
-        PageText(
-            "Advanced Operations",
-            "Run individual data and recommendation operations.",
-        ),
-        PageText("Settings", "Manage AniRec preferences and profiles."),
-        PageText("About", "Learn about AniRec and its open-source project."),
+        PageText("Discover", "Anime picked for you, and the taste behind them."),
+        PageText("My Library", "Everything you have loved, saved, or passed on."),
+        PageText("Settings", "Your account, how AniRec picks, and your data."),
     ),
 )
 
@@ -153,6 +147,20 @@ class WizardTextCatalog:
         "AniRec application-data folder. AniRec is an unofficial application and is not "
         "affiliated with or endorsed by MyAnimeList."
     )
+    welcome_connect_hint: str = (
+        "Connecting your MyAnimeList account takes about two minutes and "
+        "gives you recommendations built from your own ratings."
+    )
+    welcome_demo: str = "Look around with sample data"
+    welcome_demo_hint: str = "No account needed. Nothing is saved."
+    welcome_demo_accessible: str = (
+        "Explore AniRec using a bundled sample library, without connecting an account"
+    )
+    demo_banner: str = (
+        "You are looking at sample data. Connect your MyAnimeList account to "
+        "get recommendations built from your own ratings."
+    )
+    demo_banner_action: str = "Connect my account"
     client_id: str = "Client ID"
     client_secret: str = "Client Secret"
     redirect_uri: str = "Redirect URI"
@@ -239,3 +247,44 @@ OAUTH_STATUS_TEXT = {
     "oauth_validating_token": WIZARD_TEXT.oauth_validating_token,
     "oauth_success": WIZARD_TEXT.oauth_success,
 }
+
+
+@dataclass(frozen=True)
+class DiscoverTextCatalog:
+    """Copy for the Discover surface. Plain language, no pipeline vocabulary."""
+
+    refresh: str = "Get new recommendations"
+    refreshing: str = "Finding anime for you…"
+    refresh_accessible: str = "Update your anime list and pick new recommendations"
+    status_ready: str = "Ready when you are."
+    status_never_synced: str = "Connect your MyAnimeList account to get started."
+    status_synced_template: str = "Last updated {when}."
+    taste_show: str = "Why these?"
+    taste_hide: str = "Hide"
+    taste_summary: str = "You tend to enjoy {genres}."
+    taste_empty: str = "Your taste appears here once AniRec has seen your ratings."
+    taste_none_yet: str = "nothing yet"
+    taste_line: str = "{genre}: {count} you have finished"
+    taste_avoid: str = "{genre}: usually not for you"
+
+
+@dataclass(frozen=True)
+class SettingsTextCatalog:
+    """Copy for the simplified Settings surface."""
+
+    adventurousness: str = "Adventurousness"
+    adventurousness_hint: str = (
+        "Low keeps close to what you already love. High reaches further for "
+        "something unexpected."
+    )
+    adventurousness_low: str = "Familiar"
+    adventurousness_high: str = "Surprising"
+    developer_tools: str = "Developer tools"
+    developer_tools_hint: str = (
+        "Shows the individual data steps AniRec runs for you. Not needed for "
+        "normal use."
+    )
+
+
+DISCOVER_TEXT = DiscoverTextCatalog()
+SETTINGS_TEXT = SettingsTextCatalog()

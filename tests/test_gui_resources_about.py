@@ -64,7 +64,8 @@ def test_offscreen_shell_smoke_navigates_themes_about_and_closes():
     for theme in ThemePreference:
         assert manager.apply(theme) in {ThemePreference.LIGHT, ThemePreference.DARK}
 
-    about_page = window.page_widgets[PageId.ABOUT]
+    # About is now a section within Settings, not a destination of its own.
+    about_page = window.about_page
     assert isinstance(about_page, AboutPage)
     assert "GPL-3.0" in about_page.complete_text()
     assert "unofficial application" in about_page.complete_text()

@@ -437,6 +437,7 @@ class RecommendationExplorerPage(QWidget):
             self.library_tabs[state] = button
             tab_row.addWidget(button)
         self.library_tabs["all"].setChecked(True)
+        self._visible_states = tuple(self.library_tabs)
         tab_row.addStretch()
         library_layout.addLayout(tab_row)
 
@@ -668,6 +669,25 @@ class RecommendationExplorerPage(QWidget):
         else:
             self.state_filter.setCurrentIndex(index)
 
+    def set_visible_states(self, states) -> None:
+        """Restrict which library collections this view offers.
+
+        The same widget serves both top level surfaces: Discover shows the feed
+        waiting to be reviewed, My Library shows what has been saved. Limiting
+        the tabs rather than duplicating the view keeps filtering, sorting,
+        selection and cover loading in one place.
+        """
+        wanted = [state for state in states if state in self.library_tabs]
+        if not wanted:
+            return
+        self._visible_states = tuple(wanted)
+        for state, button in self.library_tabs.items():
+            button.setVisible(state in self._visible_states)
+        # A single collection needs no tab to choose between.
+        self.library_bar.setVisible(len(self._visible_states) > 1)
+        if self.state_filter.currentData() not in self._visible_states:
+            self._select_state_filter(self._visible_states[0])
+
     def _update_library_tabs(self) -> None:
         reviewed = self.local_state.liked_mal_ids | self.local_state.disliked_mal_ids
         for_you = sum(
@@ -695,6 +715,7 @@ class RecommendationExplorerPage(QWidget):
         for state, button in self.library_tabs.items():
             button.setText(f"{labels[state]}  {counts[state]}")
             button.setChecked(state == current_state)
+            button.setVisible(state in self._visible_states)
 
     def _populate_filter_options(self) -> None:
         current_genre = self.genre_filter.currentData()
