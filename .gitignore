@@ -36,3 +36,4 @@ release/
 htmlcov/
 .DS_Store
 Thumbs.db
+ACCEPTANCE_STATIC_RESULTS.txt

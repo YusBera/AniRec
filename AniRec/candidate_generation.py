@@ -3,6 +3,11 @@ import math
 
 import pandas as pd
 
+try:
+    from .title_utils import normalize_title_key
+except ImportError:  # Backward compatibility for direct script-style imports.
+    from title_utils import normalize_title_key
+
 
 def load_anime_data(file_path, required_columns=None):
     """Load a CSV file and validate the columns used by the pipeline."""
@@ -44,33 +49,36 @@ def filter_recommendation_candidates(completed_df, top_anime_df):
         raise ValueError(f"Anime data is missing required columns: {missing}")
 
     completed_records = [
-        (_mal_id(row.get("Anime ID")), str(row["Title"]).casefold())
+        (_mal_id(row.get("Anime ID")), normalize_title_key(row["Title"]))
         for _, row in completed_df.iterrows()
     ]
     completed_ids = {mal_id for mal_id, _title in completed_records if mal_id is not None}
-    completed_titles = {title for _mal_id_value, title in completed_records}
+    completed_titles = {title for _mal_id_value, title in completed_records if title}
     legacy_completed_titles = {
-        title for mal_id, title in completed_records if mal_id is None
+        title for mal_id, title in completed_records if mal_id is None and title
     }
 
     kept_indexes = []
     seen_ids = set()
     seen_legacy_titles = set()
     for index, row in top_anime_df.iterrows():
-        title = str(row["Title"]).casefold()
+        title = normalize_title_key(row["Title"])
         mal_id = _mal_id(row.get("Anime ID"))
         if mal_id is not None:
-            if mal_id in completed_ids or title in legacy_completed_titles:
+            if mal_id in completed_ids or (title and title in legacy_completed_titles):
                 continue
-            if not completed_ids and title in completed_titles:
+            if not completed_ids and title and title in completed_titles:
                 continue
             if mal_id in seen_ids:
                 continue
             seen_ids.add(mal_id)
         else:
-            if title in completed_titles or title in seen_legacy_titles:
+            # An untitled row carries no usable identity, so it cannot be
+            # matched against the completed list or de-duplicated by title.
+            if title and (title in completed_titles or title in seen_legacy_titles):
                 continue
-            seen_legacy_titles.add(title)
+            if title:
+                seen_legacy_titles.add(title)
         kept_indexes.append(index)
 
     return top_anime_df.loc[kept_indexes].copy()

@@ -75,15 +75,9 @@ UI_TEXT = UiTextCatalog(
     progress_completed="Operation completed.",
     progress_close="Close",
     pages=(
-        PageText("Home", "Your anime activity at a glance."),
-        PageText("Recommendations", "Discover anime selected from your preferences."),
-        PageText("Genre Analysis", "Explore the genres that shape your anime taste."),
-        PageText(
-            "Advanced Operations",
-            "Run individual data and recommendation operations.",
-        ),
-        PageText("Settings", "Manage AniRec preferences and profiles."),
-        PageText("About", "Learn about AniRec and its open-source project."),
+        PageText("Discover", "Anime picked for you, and the taste behind them."),
+        PageText("My Library", "Everything you have loved, saved, or passed on."),
+        PageText("Settings", "Your account, how AniRec picks, and your data."),
     ),
 )
 
@@ -153,8 +147,22 @@ class WizardTextCatalog:
         "AniRec application-data folder. AniRec is an unofficial application and is not "
         "affiliated with or endorsed by MyAnimeList."
     )
+    welcome_connect_hint: str = (
+        "Connecting your MyAnimeList account takes about two minutes and "
+        "gives you recommendations built from your own ratings."
+    )
+    welcome_demo: str = "Look around with sample data"
+    welcome_demo_hint: str = "No account needed. Nothing is saved."
+    welcome_demo_accessible: str = (
+        "Explore AniRec using a bundled sample library, without connecting an account"
+    )
+    demo_banner: str = (
+        "You are looking at sample data. Connect your MyAnimeList account to "
+        "get recommendations built from your own ratings."
+    )
+    demo_banner_action: str = "Connect my account"
     client_id: str = "Client ID"
-    client_secret: str = "Client Secret (optional)"
+    client_secret: str = "Client Secret"
     redirect_uri: str = "Redirect URI"
     profile_reference: str = "Profile URL or username"
     test_connection: str = "Validate and Continue"
@@ -162,16 +170,54 @@ class WizardTextCatalog:
     connection_success: str = "Client ID and public anime list validated."
     saved_secret: str = "A saved secret is configured. Leave blank to keep it."
     api_validation_hint: str = (
-        "Enter a Client ID and a public MyAnimeList profile URL or username. "
-        "After validation, AniRec will request MyAnimeList OAuth approval."
+        "Fill in the values above, then choose Validate and Continue. "
+        "AniRec will check them and ask MyAnimeList for your permission."
+    )
+    # First-run guidance. A new user has no reason to know what any of this
+    # means, so the wizard explains the terms and links straight to the page
+    # where the values come from.
+    api_intro: str = (
+        "AniRec reads your anime list through MyAnimeList's official API. "
+        "MyAnimeList asks you to register AniRec once, which takes about two "
+        "minutes and gives you the two values below."
+    )
+    api_steps: str = (
+        "1. Open the MyAnimeList API page and choose Create ID.\n"
+        "2. Give it any name, for example \"AniRec\", and pick Other for the "
+        "app type.\n"
+        "3. Paste the Redirect URI shown below into the App Redirect URL field.\n"
+        "4. Save, then copy the Client ID and Client Secret back here."
+    )
+    api_link_label: str = "Open the MyAnimeList API page"
+    client_id_hint: str = (
+        "A long code MyAnimeList gives you when you register AniRec. It is not "
+        "your password and it is stored only on this computer."
+    )
+    client_secret_hint: str = (
+        "Shown next to the Client ID on the same page. Required for the "
+        "connection step to succeed."
+    )
+    redirect_uri_hint: str = (
+        "MyAnimeList requires this exact value in the App Redirect URL field. "
+        "Copy it across without changing it."
+    )
+    copy_redirect_uri: str = "Copy"
+    copied_redirect_uri: str = "Copied"
+    oauth_missing_secret_hint: str = (
+        "No Client Secret is saved. If MyAnimeList keeps refusing the "
+        "connection, go back one step and paste the Client Secret shown "
+        "beside your Client ID on the MyAnimeList API page."
     )
     connect_mal: str = "Connect with MyAnimeList"
     cancel_connection: str = "Cancel Connection"
-    oauth_ready: str = "Open MyAnimeList authorization in your browser to continue."
+    oauth_ready: str = (
+        "AniRec will open MyAnimeList in your browser so you can approve access. "
+        "Your password is never shared with AniRec."
+    )
     oauth_opening_browser: str = "Opening your browser…"
     oauth_waiting_approval: str = "Waiting for MyAnimeList approval…"
     oauth_authorization_complete: str = "Authorization received."
-    oauth_validating_token: str = "Validating the OAuth token…"
+    oauth_validating_token: str = "Finishing the connection…"
     oauth_success: str = "MyAnimeList connection completed successfully."
     oauth_cancelled: str = "MyAnimeList connection was cancelled. You can try again."
     username: str = "MyAnimeList username"
@@ -204,3 +250,44 @@ OAUTH_STATUS_TEXT = {
     "oauth_validating_token": WIZARD_TEXT.oauth_validating_token,
     "oauth_success": WIZARD_TEXT.oauth_success,
 }
+
+
+@dataclass(frozen=True)
+class DiscoverTextCatalog:
+    """Copy for the Discover surface. Plain language, no pipeline vocabulary."""
+
+    refresh: str = "Get new recommendations"
+    refreshing: str = "Finding anime for you…"
+    refresh_accessible: str = "Update your anime list and pick new recommendations"
+    status_ready: str = "Ready when you are."
+    status_never_synced: str = "Connect your MyAnimeList account to get started."
+    status_synced_template: str = "Last updated {when}."
+    taste_show: str = "Why these?"
+    taste_hide: str = "Hide"
+    taste_summary: str = "You tend to enjoy {genres}."
+    taste_empty: str = "Your taste appears here once AniRec has seen your ratings."
+    taste_none_yet: str = "nothing yet"
+    taste_line: str = "{genre}: {count} you have finished"
+    taste_avoid: str = "{genre}: usually not for you"
+
+
+@dataclass(frozen=True)
+class SettingsTextCatalog:
+    """Copy for the simplified Settings surface."""
+
+    adventurousness: str = "Adventurousness"
+    adventurousness_hint: str = (
+        "Low keeps close to what you already love. High reaches further for "
+        "something unexpected."
+    )
+    adventurousness_low: str = "Familiar"
+    adventurousness_high: str = "Surprising"
+    developer_tools: str = "Developer tools"
+    developer_tools_hint: str = (
+        "Shows the individual data steps AniRec runs for you. Not needed for "
+        "normal use."
+    )
+
+
+DISCOVER_TEXT = DiscoverTextCatalog()
+SETTINGS_TEXT = SettingsTextCatalog()

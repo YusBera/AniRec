@@ -27,6 +27,7 @@ from .metadata import (
 )
 from .services import (
     AnimeDataService,
+    AnimeGraphService,
     AuthService,
     DataManagementService,
     OnboardingService,
@@ -80,7 +81,6 @@ def main(
         theme_manager = ThemeManager(application)
         startup_settings = SettingsService(root_override=root_override).load()
         theme_manager.apply(startup_settings.theme, font_scale=startup_settings.font_scale)
-        application._anirec_theme_manager = theme_manager
         if window_factory is not None:
             window = window_factory()
         else:
@@ -106,6 +106,7 @@ def main(
                 storage=CsvStorage(),
                 access_token_provider=access_token_provider,
                 client_id_provider=lambda: settings.load().client_id or "",
+                anime_graph=AnimeGraphService(),
             )
             onboarding = OnboardingService(
                 settings=settings,
@@ -127,6 +128,7 @@ def main(
                 data_management_service=DataManagementService(
                     root_override=root_override
                 ),
+                theme_manager=theme_manager,
             )
         window.show()
         logger.info("AniRec GUI started.")

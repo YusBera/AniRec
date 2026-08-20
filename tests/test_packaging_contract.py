@@ -6,7 +6,7 @@ from AniRec import __version__
 
 
 def test_release_version_launcher_and_spec_are_consistent(repo_root):
-    assert __version__ == "1.2.2"
+    assert __version__ == "2.0.0"
     launcher = (repo_root / "anirec_gui.py").read_text(encoding="utf-8")
     spec = (repo_root / "AniRec.spec").read_text(encoding="utf-8")
 
@@ -49,12 +49,13 @@ def test_readme_documents_only_the_verified_desktop_release(repo_root):
         "## MyAnimeList setup",
         "## Run the Windows package",
         "## Build the Windows package",
+        "## How recommendations are made",
         "## Command-line interface",
         "## Local data and privacy",
         "## Tests",
         "## Troubleshooting",
         "## License and attribution",
-        "## Known limitations in 1.2.2",
+        "## Known limitations in 2.0.0",
     )
 
     assert all(section in readme for section in required_sections)
@@ -66,6 +67,7 @@ def test_readme_documents_only_the_verified_desktop_release(repo_root):
         "anirec-first-run-wizard.png",
         "anirec-home.png",
         "anirec-recommendations.png",
+        "anirec-settings.png",
     ):
         assert (repo_root / "docs" / "images" / name).is_file()
 
@@ -94,3 +96,31 @@ def test_second_computer_acceptance_tooling_is_hash_verified_and_non_destructive
     assert "Remove-Item" not in packager
     assert template.count("|  |  |") >= 16
     assert "PASS`, `FAIL`, or `BLOCKED" in template
+
+
+def test_release_version_is_recorded_in_the_windows_resource(repo_root):
+    resource = (repo_root / "packaging" / "windows_version_info.txt").read_text(
+        encoding="utf-8"
+    )
+
+    assert f"'FileVersion', '{__version__}'" in resource
+    assert f"'ProductVersion', '{__version__}'" in resource
+    numeric = ", ".join(__version__.split(".") + ["0"])
+    assert f"filevers=({numeric})" in resource
+    assert f"prodvers=({numeric})" in resource
+
+
+def test_generated_stylesheets_match_their_source(repo_root):
+    """The packaged themes must be a current rendering of the design tokens.
+
+    They are generated artefacts. Editing one by hand, or changing the tokens
+    without rebuilding, would ship a stylesheet that no longer matches what the
+    application renders at runtime.
+    """
+    from AniRec.gui.qss_builder import build_stylesheet
+
+    for theme in ("dark", "light"):
+        packaged = (
+            repo_root / "AniRec" / "gui" / "resources" / "styles" / f"{theme}.qss"
+        ).read_text(encoding="utf-8")
+        assert packaged.strip() == build_stylesheet(theme).strip()

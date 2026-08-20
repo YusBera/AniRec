@@ -7,21 +7,25 @@ from AniRec.gui_main import create_application
 from AniRec.metadata import MINIMUM_WINDOW_HEIGHT, MINIMUM_WINDOW_WIDTH
 
 
-def test_main_window_exposes_six_expected_pages():
+def test_main_window_exposes_three_surfaces():
+    """The dashboard, genre analysis and pipeline pages are no longer destinations.
+
+    A first time user was previously shown six navigation entries, one of which
+    rendered a seven step dependency chain as a flat list of buttons. Those
+    views still exist: the first two are composed into Discover, and the steps
+    sit behind the developer tools switch in Settings.
+    """
     create_application([])
     window = MainWindow()
 
     assert [definition.label for definition in PAGE_DEFINITIONS] == [
-        "Home",
-        "Recommendations",
-        "Genre Analysis",
-        "Advanced Operations",
+        "Discover",
+        "My Library",
         "Settings",
-        "About",
     ]
-    assert window.page_stack.count() == 6
-    assert window.current_page_id is PageId.HOME
-    assert window.navigation_buttons[PageId.HOME].isChecked()
+    assert window.page_stack.count() == 3
+    assert window.current_page_id is PageId.DISCOVER
+    assert window.navigation_buttons[PageId.DISCOVER].isChecked()
     window.close()
 
 

@@ -135,11 +135,12 @@ def test_dashboard_actions_route_to_requests_pages_and_safe_profile_folder(syste
     home.action_buttons[ACTION_GENERATE].click()
     home.action_buttons[ACTION_OPEN_RECOMMENDATIONS].click()
     application.processEvents()
-    assert window.current_page_id is PageId.RECOMMENDATIONS
-    window.navigate_to(PageId.HOME)
+    # Recommendations and the taste summary both live on Discover now.
+    assert window.current_page_id is PageId.DISCOVER
+    window.navigate_to(PageId.SETTINGS)
     home.action_buttons[ACTION_VIEW_GENRES].click()
     application.processEvents()
-    assert window.current_page_id is PageId.GENRE_ANALYSIS
+    assert window.current_page_id is PageId.DISCOVER
     home.action_buttons[ACTION_OPEN_FOLDER].click()
 
     assert requested_sync == [True]

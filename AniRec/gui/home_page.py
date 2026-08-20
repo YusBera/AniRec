@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from ..models import PipelineResult, Recommendation, UserProfile
 from ..services import CoverImageResult, CoverImageService
 from .resources import cover_placeholder_pixmap
+from .design_tokens import SPACE
 from .texts import DASHBOARD_TEXT
 from .workers import (
     CoverDownloadWorker,
@@ -157,7 +158,7 @@ class HomePage(QWidget):
         body = QWidget()
         body.setObjectName("dashboardBody")
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(0, 4, 4, 4)
+        body_layout.setContentsMargins(0, SPACE['xs'], SPACE['xs'], SPACE['xs'])
         body_layout.setSpacing(18)
         body_layout.addLayout(self._build_actions())
         body_layout.addLayout(self._build_metrics())

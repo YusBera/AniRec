@@ -10,6 +10,7 @@ from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
 from ..infrastructure.paths import resource_path
+from .qss_builder import DEFAULT_BASE_POINT_SIZE, build_stylesheet
 
 
 MINIMUM_FONT_SCALE = 0.80
@@ -22,26 +23,6 @@ class ThemePreference(str, Enum):
     SYSTEM = "system"
 
 
-_FALLBACK_STYLES = {
-    ThemePreference.LIGHT: """
-/* AniRec fallback light */
-QWidget { background: #f7f8fc; color: #1d2433; }
-QPushButton { background: #e7eaf3; border: 2px solid #a9b1c4; padding: 7px; }
-QPushButton:hover { background: #dce2f2; }
-QPushButton:focus { border: 2px solid #315bd6; }
-QPushButton:disabled { color: #747b8b; background: #eceef3; }
-QPushButton:checked { background: #315bd6; color: #ffffff; }
-""",
-    ThemePreference.DARK: """
-/* AniRec fallback dark */
-QWidget { background: #03050a; color: #f2f4fa; }
-QPushButton { background: #111827; border: 2px solid #596176; padding: 7px; }
-QPushButton:hover { background: #182238; }
-QPushButton:focus { border: 2px solid #8da8ff; }
-QPushButton:disabled { color: #8d94a8; background: #080c14; }
-QPushButton:checked { background: #6f8cff; color: #10131a; }
-""",
-}
 
 
 class ThemeManager:
@@ -59,6 +40,21 @@ class ThemeManager:
         self.active_theme = ThemePreference.LIGHT
         self.font_scale = 1.0
         self._base_font = QFont(application.font())
+        # Follow the desktop when the user asked for "System". Without this the
+        # app kept whichever mode was in force at startup until it was
+        # restarted or the settings were saved again.
+        try:
+            application.styleHints().colorSchemeChanged.connect(
+                self._on_color_scheme_changed
+            )
+        except (AttributeError, RuntimeError):
+            # Older Qt builds do not expose the signal. Following the desktop
+            # live is a convenience, never a requirement.
+            pass
+
+    def _on_color_scheme_changed(self, *_args) -> None:
+        if self.requested_theme is ThemePreference.SYSTEM:
+            self.apply(ThemePreference.SYSTEM, font_scale=self.font_scale)
 
     def apply(
         self,
@@ -70,8 +66,8 @@ class ThemeManager:
         self.active_theme = self._resolve_theme(self.requested_theme)
         self.font_scale = max(MINIMUM_FONT_SCALE, min(MAXIMUM_FONT_SCALE, float(font_scale)))
 
-        self.application.setStyleSheet(self._load_stylesheet(self.active_theme))
         self._apply_font_scale()
+        self.application.setStyleSheet(self._load_stylesheet(self.active_theme))
         self.application.setProperty("themePreference", self.requested_theme.value)
         self.application.setProperty("activeTheme", self.active_theme.value)
         self.application.setProperty("fontScale", self.font_scale)
@@ -92,15 +88,34 @@ class ThemeManager:
         return ThemePreference.DARK if window_color.lightness() < 128 else ThemePreference.LIGHT
 
     def _load_stylesheet(self, theme: ThemePreference) -> str:
+        """Render the stylesheet for a theme at the current font scale.
+
+        Generated rather than read from disk, so that font sizes can be scaled
+        with the user's setting. The packaged .qss files remain the reference
+        copy of the same output and are still used if generation ever fails.
+        """
+        try:
+            return build_stylesheet(
+                theme.value,
+                base_point_size=self._base_point_size(),
+                font_scale=self.font_scale,
+            )
+        except (KeyError, ValueError):
+            return self._packaged_stylesheet(theme)
+
+    def _packaged_stylesheet(self, theme: ThemePreference) -> str:
         stylesheet_path = resource_path(
             Path("gui") / "resources" / "styles" / f"{theme.value}.qss",
             base_override=self.resource_root,
         )
         try:
-            stylesheet = stylesheet_path.read_text(encoding="utf-8").strip()
+            return stylesheet_path.read_text(encoding="utf-8").strip()
         except (OSError, UnicodeError):
-            return _FALLBACK_STYLES[theme].strip()
-        return stylesheet or _FALLBACK_STYLES[theme].strip()
+            return ""
+
+    def _base_point_size(self) -> float:
+        size = self._base_font.pointSizeF()
+        return size if size > 0 else DEFAULT_BASE_POINT_SIZE
 
     def _apply_font_scale(self) -> None:
         font = QFont(self._base_font)

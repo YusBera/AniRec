@@ -41,7 +41,12 @@ def test_recommendations_sum_genre_weights_and_use_mean_score_as_tie_break(syste
     assert result == ["Action Higher", "Action Lower", "Comedy"]
     output = system_temp_dir / "nested" / "fixture_user_recommendations.csv"
     saved = pd.read_csv(output)
-    assert saved["Recommendation Score"].tolist() == [100.0, 100.0, 20.0]
+    scores = saved["Recommendation Score"].tolist()
+    # The two Action titles match the profile equally, so they tie on the
+    # genre signal and the higher community score breaks the tie. Comedy is
+    # the weaker preference and ranks below both.
+    assert scores[0] == pytest.approx(scores[1])
+    assert scores[1] > scores[2]
 
 
 @pytest.mark.parametrize("randomness_factor", [0, 1, 10, 20])

@@ -2,13 +2,13 @@
   <metadata>Original AniRec application icon, created for this GPL-3.0 project.</metadata>
   <defs>
     <linearGradient id="background" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#8DA8FF"/>
-      <stop offset="1" stop-color="#6B4EFF"/>
+      <stop stop-color="#F0958A"/>
+      <stop offset="1" stop-color="#C4503F"/>
     </linearGradient>
   </defs>
-  <rect width="256" height="256" rx="58" fill="#141720"/>
+  <rect width="256" height="256" rx="58" fill="#0B0B0F"/>
   <path d="M43 178L105 54c9-18 35-18 44 0l64 124h-39l-14-29H94l-14 29H43z" fill="url(#background)"/>
-  <path d="M110 119h34l-17-37-17 37z" fill="#141720"/>
-  <circle cx="190" cy="66" r="19" fill="#FF7A9D"/>
+  <path d="M110 119h34l-17-37-17 37z" fill="#0B0B0F"/>
+  <circle cx="190" cy="66" r="19" fill="#E0685A"/>
   <path d="M190 53v26M177 66h26" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
 </svg>

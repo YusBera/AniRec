@@ -67,6 +67,10 @@ class Anime:
     year: int | None = None
     synopsis: str | None = None
     mal_url: str | None = None
+    studios: tuple[str, ...] = ()
+    source: str | None = None
+    media_type: str | None = None
+    scoring_users: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "title", _optional_text(self.title) or UNKNOWN_TITLE)
@@ -79,11 +83,18 @@ class Anime:
             "end_date",
             "synopsis",
             "mal_url",
+            "source",
+            "media_type",
         ):
             object.__setattr__(self, name, _optional_text(getattr(self, name)))
         object.__setattr__(self, "alternative_titles", _text_tuple(self.alternative_titles))
         object.__setattr__(self, "genres", _text_tuple(self.genres))
+        object.__setattr__(self, "studios", _text_tuple(self.studios))
         object.__setattr__(self, "mean_score", _optional_float(self.mean_score))
+        if self.scoring_users is not None:
+            # A tally, so zero is a legitimate value rather than an absence.
+            count = int(self.scoring_users)
+            object.__setattr__(self, "scoring_users", count if count >= 0 else None)
 
         for name in ("mal_id", "episodes", "year"):
             value = getattr(self, name)
@@ -125,6 +136,10 @@ class Anime:
             "year": self.year,
             "synopsis": self.synopsis,
             "mal_url": self.mal_url,
+            "studios": list(self.studios),
+            "source": self.source,
+            "media_type": self.media_type,
+            "scoring_users": self.scoring_users,
         }
 
     @classmethod

@@ -37,17 +37,71 @@ def test_system_theme_resolves_to_a_concrete_theme():
     assert application.property("themePreference") == "system"
 
 
-def test_missing_qss_uses_safe_accessible_fallback(system_temp_dir):
+def test_a_missing_qss_file_still_yields_a_fully_themed_application(system_temp_dir):
+    """Styling no longer depends on the packaged file being present.
+
+    The stylesheet is generated from the design tokens so that font sizes can
+    follow the user's scale setting. A missing or unreadable resource therefore
+    costs nothing, where it previously dropped the application onto a stripped
+    back fallback palette that shared almost no colours with the real theme.
+    """
     application = create_application([])
     manager = ThemeManager(application, resource_root=system_temp_dir)
 
     manager.apply(ThemePreference.DARK)
     stylesheet = application.styleSheet()
 
-    assert "AniRec fallback dark" in stylesheet
-    assert "QPushButton:hover" in stylesheet
-    assert "QPushButton:focus" in stylesheet
-    assert "QPushButton:disabled" in stylesheet
+    assert "AniRec dark theme" in stylesheet
+    for state in ("QPushButton:hover", "QPushButton:focus", "QPushButton:disabled"):
+        assert state in stylesheet
+    # The full theme, not a reduced stand-in.
+    assert "QFrame#sidebar" in stylesheet
+    assert "QMenu::item:selected" in stylesheet
+
+
+def test_both_themes_style_exactly_the_same_selectors():
+    """Generation is what makes drift impossible.
+
+    The two stylesheets were previously maintained by hand and had diverged:
+    context menus and the operation progress dialog were styled only in dark,
+    and rendered with unthemed platform defaults in light.
+    """
+    from AniRec.gui.qss_builder import build_stylesheet, selectors
+
+    dark = selectors(build_stylesheet("dark"))
+    light = selectors(build_stylesheet("light"))
+
+    assert dark == light
+    assert len(dark) > 100
+
+
+def test_font_scale_moves_the_whole_type_hierarchy_together():
+    """Headings must grow with body text, not stay pinned.
+
+    Sizes were previously fixed pixel values in the stylesheet, which the font
+    scale setting could not reach. Body text grew while headings did not, so
+    the hierarchy flattened and eventually inverted at larger scales.
+    """
+    import re
+
+    from AniRec.gui.qss_builder import build_stylesheet
+
+    def sizes(scale: float) -> tuple[float, float]:
+        sheet = build_stylesheet("dark", base_point_size=9.0, font_scale=scale)
+        body = float(re.search(r"font-size: ([\d.]+)pt;", sheet).group(1))
+        heading = float(
+            re.search(r"HeroTitle \{ color: [^;]+; font-size: ([\d.]+)pt", sheet).group(1)
+        )
+        return body, heading
+
+    small_body, small_heading = sizes(MINIMUM_FONT_SCALE)
+    large_body, large_heading = sizes(MAXIMUM_FONT_SCALE)
+
+    assert large_body > small_body
+    assert large_heading > small_heading
+    assert small_heading / small_body == pytest.approx(
+        large_heading / large_body, rel=0.02
+    )
 
 
 @pytest.mark.parametrize(

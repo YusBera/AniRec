@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from models import PipelineSettings
 from recommendation_system import rank_recommendations
@@ -46,13 +47,21 @@ def test_raw_display_score_contributions_and_reason_templates():
         random_state=42,
     )
 
-    assert result["Recommendation Score"].tolist() == [180.0, 120.0, 0.0]
-    assert result["Match Score"].tolist() == [100.0, 66.67, 0.0]
-    assert result["Genre Contributions"].tolist() == [
-        [("Action", 120.0), ("Comedy", 60.0)],
-        [("Action", 120.0)],
-        [],
-    ]
+    titles = result["Title"].tolist()
+    assert titles == ["Two Genres", "One Genre", "No Match"]
+
+    # Carrying an extra matching tag still helps, but only slightly. Scoring by
+    # cosine rather than by a sum of weights means a precise two-tag match is no
+    # longer beaten simply because another title carries more tags.
+    scores = dict(zip(titles, result["Match Score"]))
+    assert scores["Two Genres"] > scores["One Genre"] > scores["No Match"]
+    assert scores["One Genre"] > scores["Two Genres"] * 0.8
+
+    # Every displayed part adds up to the percentage shown beside it.
+    for _index, row in result.iterrows():
+        breakdown = sum(value for _label, value in row["Genre Contributions"])
+        assert breakdown == pytest.approx(row["Match Score"], abs=0.01)
+
     assert result["Recommendation Reason"].tolist() == [
         "Matches your interests in Action and Comedy.",
         "Matches your interest in Action.",

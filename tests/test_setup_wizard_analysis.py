@@ -139,7 +139,7 @@ def test_mock_end_to_end_analysis_persists_result_marks_complete_and_opens_home(
     application.processEvents()
 
     assert onboarding.completion_flag()
-    assert window.current_page_id is PageId.HOME
+    assert window.current_page_id is PageId.DISCOVER
     assert window.home_page.metric_values["completed"].text() == "12"
     assert window.home_page.metric_values["recommendations"].text() == "1"
     window.close()

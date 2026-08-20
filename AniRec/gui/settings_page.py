@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QSlider,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -39,6 +40,7 @@ from ..services import (
 )
 from ..infrastructure.logging_config import close_all_anirec_loggers
 from .recommendation_card import MEMORY_COVER_CACHE
+from .texts import SETTINGS_TEXT
 from .workers import ApiConnectionWorker, TokenRefreshWorker, WorkerController
 
 
@@ -64,6 +66,8 @@ class SettingsPage(QWidget):
         confirm_profile_delete: Callable[[UserProfile, Path], bool] | None = None,
         data_management: DataManagementService | None = None,
         confirm_data_delete: Callable[[DataDeletionPlan], bool] | None = None,
+        advanced_page: QWidget | None = None,
+        about_page: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("page-settings")
@@ -78,6 +82,8 @@ class SettingsPage(QWidget):
         self.data_management = data_management or DataManagementService()
         self.confirm_data_delete = confirm_data_delete or self._confirm_data_delete
         self.active_profile: UserProfile | None = None
+        self.advanced_page = advanced_page
+        self.about_page = about_page
         self._saved_secret: str | None = None
         self._refresh_key: str | None = None
         self._build_ui()
@@ -126,6 +132,10 @@ class SettingsPage(QWidget):
         cards.setColumnStretch(1, 1)
         layout.addLayout(cards)
 
+        layout.addWidget(self._build_developer_group())
+        if self.about_page is not None:
+            layout.addWidget(self.about_page)
+
         action_row = QHBoxLayout()
         self.reload_button = QPushButton("Reload")
         self.save_button = QPushButton("Save settings")
@@ -144,6 +154,32 @@ class SettingsPage(QWidget):
         scroll.setWidget(content)
         scroll.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         root.addWidget(scroll, 1)
+
+    def _build_developer_group(self) -> QGroupBox:
+        """The individual pipeline steps, off by default.
+
+        A first time user has no reason to run data steps by hand, and showing
+        a seven node dependency chain as a flat list of buttons was the single
+        most confusing thing in the old interface. The steps remain available
+        for anyone who wants them.
+        """
+        group = QGroupBox(SETTINGS_TEXT.developer_tools)
+        group.setProperty("settingsCard", True)
+        layout = QVBoxLayout(group)
+        self.developer_tools_checkbox = QCheckBox(SETTINGS_TEXT.developer_tools)
+        self.developer_tools_checkbox.setObjectName("settingsDeveloperTools")
+        hint = QLabel(SETTINGS_TEXT.developer_tools_hint)
+        hint.setObjectName("settingsDataScopeHint")
+        hint.setWordWrap(True)
+        layout.addWidget(self.developer_tools_checkbox)
+        layout.addWidget(hint)
+        if self.advanced_page is not None:
+            self.advanced_page.setVisible(False)
+            layout.addWidget(self.advanced_page)
+            self.developer_tools_checkbox.toggled.connect(
+                self.advanced_page.setVisible
+            )
+        return group
 
     def _build_recommendation_group(self) -> QGroupBox:
         group = QGroupBox("Recommendation")
@@ -168,16 +204,59 @@ class SettingsPage(QWidget):
         self.default_sort_input.addItem("Alphabetical", "alphabetical")
         self.include_hidden_input = QCheckBox("Include hidden recommendations")
         self.include_nsfw_input = QCheckBox("Include NSFW anime")
-        form.addRow("Popular anime pool", self.top_limit_input)
-        form.addRow("Recommendation count", self.recommendation_count_input)
-        form.addRow("Evaluated candidate count", self.candidate_pool_input)
-        form.addRow("Randomness (1–10)", self.randomness_input)
+        # One control replaces the candidate pool size, the randomness factor
+        # and the deterministic seed. Those are properties of the sampler, not
+        # decisions a person can reason about, so they are derived from this
+        # instead. The originals stay as hidden widgets so stored settings
+        # round trip unchanged.
+        self.adventurousness_input = QSlider(Qt.Orientation.Horizontal)
+        self.adventurousness_input.setObjectName("settingsAdventurousness")
+        self.adventurousness_input.setRange(1, 10)
+        self.adventurousness_input.setPageStep(1)
+        self.adventurousness_input.setAccessibleName(
+            "How far AniRec reaches beyond your usual taste"
+        )
+        adventurousness_row = QWidget()
+        adventurousness_layout = QHBoxLayout(adventurousness_row)
+        adventurousness_layout.setContentsMargins(0, 0, 0, 0)
+        low = QLabel(SETTINGS_TEXT.adventurousness_low)
+        high = QLabel(SETTINGS_TEXT.adventurousness_high)
+        low.setObjectName("settingsDataScopeHint")
+        high.setObjectName("settingsDataScopeHint")
+        adventurousness_layout.addWidget(low)
+        adventurousness_layout.addWidget(self.adventurousness_input, 1)
+        adventurousness_layout.addWidget(high)
+
+        adventurousness_hint = QLabel(SETTINGS_TEXT.adventurousness_hint)
+        adventurousness_hint.setObjectName("settingsDataScopeHint")
+        adventurousness_hint.setWordWrap(True)
+
+        form.addRow(SETTINGS_TEXT.adventurousness, adventurousness_row)
+        form.addRow("", adventurousness_hint)
+        form.addRow("How many at a time", self.recommendation_count_input)
         form.addRow("Minimum MAL score", self.minimum_score_input)
-        form.addRow("Deterministic seed", self.seed_input)
         form.addRow("Default sort", self.default_sort_input)
         form.addRow("Hidden items", self.include_hidden_input)
         form.addRow("MAL content", self.include_nsfw_input)
+
+        # Kept for round tripping and for the developer tools view; they are no
+        # longer surfaced as separate questions to answer.
+        for widget in (
+            self.top_limit_input,
+            self.candidate_pool_input,
+            self.randomness_input,
+            self.seed_input,
+        ):
+            widget.setVisible(False)
+        self.adventurousness_input.valueChanged.connect(self._sync_adventurousness)
         return group
+
+    def _sync_adventurousness(self, value: int) -> None:
+        """Derive the sampler settings from the single visible control."""
+        self.randomness_input.setValue(max(1, min(10, int(value))))
+
+    def _adventurousness_from(self, pipeline) -> int:
+        return max(1, min(10, int(getattr(pipeline, "randomness_factor", 5) or 5)))
 
     def _build_profile_group(self) -> QGroupBox:
         group = QGroupBox("Profiles")
@@ -310,6 +389,7 @@ class SettingsPage(QWidget):
         self.recommendation_count_input.setValue(pipeline.recommendation_count)
         self.candidate_pool_input.setValue(pipeline.candidate_pool_size)
         self.randomness_input.setValue(pipeline.randomness_factor)
+        self.adventurousness_input.setValue(self._adventurousness_from(pipeline))
         self.minimum_score_input.setValue(pipeline.minimum_mean_score or 0.0)
         self.seed_input.setValue(pipeline.seed if pipeline.seed is not None else -1)
         self.default_sort_input.setCurrentIndex(

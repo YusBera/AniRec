@@ -38,12 +38,14 @@ from ..services import (
     ProfileService,
     RecommendationStateService,
     ResultService,
+    SampleDataService,
     SettingsService,
     TasteFeedbackService,
     TokenStore,
 )
 from .advanced_operations_page import AdvancedOperationsPage
 from .about_page import AboutPage
+from .discover_page import DiscoverPage
 from .home_page import ACTION_GENERATE, ACTION_SYNC, HomePage
 from .genre_analysis_page import GenreAnalysisPage
 from .error_dialog import ErrorDialog
@@ -52,7 +54,7 @@ from .recommendation_page import RecommendationExplorerPage
 from .resources import app_icon, placeholder_pixmap
 from .settings_page import SettingsPage
 from .setup_wizard import SetupWizard
-from .texts import UI_TEXT
+from .texts import UI_TEXT, WIZARD_TEXT
 from .theme import ThemeManager
 from .workers import (
     MoreRecommendationsWorker,
@@ -65,12 +67,9 @@ from .workers import (
 
 
 class PageId(str, Enum):
-    HOME = "home"
-    RECOMMENDATIONS = "recommendations"
-    GENRE_ANALYSIS = "genre-analysis"
-    ADVANCED_OPERATIONS = "advanced-operations"
+    DISCOVER = "discover"
+    LIBRARY = "library"
     SETTINGS = "settings"
-    ABOUT = "about"
 
 
 @dataclass(frozen=True)
@@ -80,26 +79,18 @@ class PageDefinition:
     description: str
 
 
+# Three surfaces. What used to be a dashboard, a genre analysis page and a
+# seven step pipeline view now live inside Discover, or behind the developer
+# tools switch in Settings for anyone who wants the individual steps.
 PAGE_DEFINITIONS = (
-    PageDefinition(PageId.HOME, UI_TEXT.pages[0].label, UI_TEXT.pages[0].description),
-    PageDefinition(
-        PageId.RECOMMENDATIONS,
-        UI_TEXT.pages[1].label,
-        UI_TEXT.pages[1].description,
-    ),
-    PageDefinition(
-        PageId.GENRE_ANALYSIS,
-        UI_TEXT.pages[2].label,
-        UI_TEXT.pages[2].description,
-    ),
-    PageDefinition(
-        PageId.ADVANCED_OPERATIONS,
-        UI_TEXT.pages[3].label,
-        UI_TEXT.pages[3].description,
-    ),
-    PageDefinition(PageId.SETTINGS, UI_TEXT.pages[4].label, UI_TEXT.pages[4].description),
-    PageDefinition(PageId.ABOUT, UI_TEXT.pages[5].label, UI_TEXT.pages[5].description),
+    PageDefinition(PageId.DISCOVER, UI_TEXT.pages[0].label, UI_TEXT.pages[0].description),
+    PageDefinition(PageId.LIBRARY, UI_TEXT.pages[1].label, UI_TEXT.pages[1].description),
+    PageDefinition(PageId.SETTINGS, UI_TEXT.pages[2].label, UI_TEXT.pages[2].description),
 )
+
+# Collections shown on each surface.
+DISCOVER_STATES = ("all",)
+LIBRARY_STATES = ("liked", "watch-later", "disliked")
 
 
 class ConnectionStatusBar(QFrame):
@@ -158,6 +149,7 @@ class MainWindow(QMainWindow):
         settings_service: SettingsService | None = None,
         token_store: TokenStore | None = None,
         data_management_service: DataManagementService | None = None,
+        theme_manager: ThemeManager | None = None,
     ) -> None:
         super().__init__()
         self.profile_service = profile_service
@@ -174,6 +166,9 @@ class MainWindow(QMainWindow):
         self.data_management_service = data_management_service or DataManagementService()
         self.active_profile: UserProfile | None = None
         self.setup_wizard: SetupWizard | None = None
+        self.sample_data_service = SampleDataService()
+        self.demo_mode = False
+        self.theme_manager = theme_manager
         self.setObjectName("mainWindow")
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
@@ -196,7 +191,7 @@ class MainWindow(QMainWindow):
         self.worker_controller.error_occurred.connect(self._on_operation_error)
         self.refresh_dashboard()
         self._apply_settings(self.settings_service.load())
-        self.navigate_to(PageId.HOME)
+        self.navigate_to(PageId.DISCOVER)
         if self.onboarding_service is not None and self.onboarding_service.needs_setup():
             QTimer.singleShot(0, lambda: self.open_setup_wizard(force=False))
 
@@ -236,9 +231,34 @@ class MainWindow(QMainWindow):
             worker_controller=self.worker_controller,
         )
         wizard.finished.connect(self._on_setup_finished)
+        wizard.demo_requested.connect(self._enter_demo_mode)
         self.setup_wizard = wizard
         wizard.show()
         return wizard
+
+    def _enter_demo_mode(self) -> None:
+        """Show the bundled sample library so AniRec can be judged before setup."""
+        result = self.sample_data_service.load()
+        if result is None:
+            return
+        self.demo_mode = True
+        if self.setup_wizard is not None:
+            self.setup_wizard.reject()
+        for view in self._recommendation_views():
+            # No profile: sample data is read only, so likes and hidden
+            # items must not be written anywhere.
+            view.set_profile(None)
+            view.set_recommendations(result.recommendations)
+        self.discover_page.set_genre_stats(result.genre_stats)
+        self.genre_analysis_page.set_genre_stats(result.genre_stats)
+        self.home_page.set_state(None, result)
+        self.demo_banner.setVisible(True)
+        self.navigate_to(PageId.DISCOVER)
+
+    def _leave_demo_mode(self) -> None:
+        self.demo_mode = False
+        self.demo_banner.setVisible(False)
+        self.open_setup_wizard()
 
     def _on_setup_finished(self, result: int) -> None:
         if result == int(QDialog.DialogCode.Accepted):
@@ -247,9 +267,13 @@ class MainWindow(QMainWindow):
             self._apply_settings(settings)
         self.refresh_dashboard()
         if result == int(QDialog.DialogCode.Accepted):
-            self.navigate_to(PageId.HOME)
+            self.navigate_to(PageId.DISCOVER)
 
     def refresh_dashboard(self) -> None:
+        # Sample data stands in for a library that does not exist yet, so a
+        # refresh would only replace it with nothing.
+        if self.demo_mode:
+            return
         profile = None
         result = None
         if self.profile_service is not None:
@@ -275,11 +299,16 @@ class MainWindow(QMainWindow):
                 ),
             )
         self.home_page.set_state(profile, display_result)
-        self.recommendations_page.set_profile(profile.profile_id if profile else None)
-        self.recommendations_page.set_recommendations(
-            display_result.recommendations if display_result else ()
-        )
-        self.genre_analysis_page.set_genre_stats(result.genre_stats if result else ())
+        stats = result.genre_stats if result else ()
+        # Discover and My Library are two views of one library, so both are
+        # given the same profile and the same recommendations.
+        for view in self._recommendation_views():
+            view.set_profile(profile.profile_id if profile else None)
+            view.set_recommendations(
+                display_result.recommendations if display_result else ()
+            )
+        self.genre_analysis_page.set_genre_stats(stats)
+        self.discover_page.set_genre_stats(stats)
         self.advanced_operations_page.set_profile(profile)
         self.settings_page.set_context(profile)
         settings = self.settings_service.load()
@@ -361,32 +390,56 @@ class MainWindow(QMainWindow):
         self.connection_status = ConnectionStatusBar()
         layout.addWidget(self.connection_status)
 
+        # Stays visible for as long as sample data is on screen, so the state
+        # can never be mistaken for the user's own library.
+        self.demo_banner = QFrame()
+        self.demo_banner.setObjectName("demoBanner")
+        banner_layout = QHBoxLayout(self.demo_banner)
+        banner_layout.setContentsMargins(16, 8, 16, 8)
+        banner_layout.setSpacing(12)
+        banner_label = QLabel(WIZARD_TEXT.demo_banner)
+        banner_label.setObjectName("dashboardActivity")
+        banner_label.setWordWrap(True)
+        banner_button = QPushButton(WIZARD_TEXT.demo_banner_action)
+        banner_button.setProperty("buttonRole", "primary")
+        banner_button.clicked.connect(self._leave_demo_mode)
+        banner_layout.addWidget(banner_label, 1)
+        banner_layout.addWidget(banner_button)
+        self.demo_banner.setVisible(False)
+        layout.addWidget(self.demo_banner)
+
         self.page_stack = QStackedWidget()
         self.page_stack.setObjectName("pageStack")
+        # The dashboard and genre analysis still exist as widgets; they are now
+        # composed into Discover rather than being destinations of their own.
+        self.home_page = HomePage(worker_controller=self.worker_controller)
+        self.genre_analysis_page = GenreAnalysisPage()
+        self.advanced_operations_page = AdvancedOperationsPage(
+            worker_controller=self.worker_controller,
+            orchestrator=self.pipeline_orchestrator,
+            profile_service=self.profile_service,
+            settings_service=self.settings_service,
+            auth_service=self.auth_service,
+        )
+        self.about_page = AboutPage()
+
         for definition in PAGE_DEFINITIONS:
-            if definition.page_id is PageId.HOME:
-                page = HomePage(worker_controller=self.worker_controller)
-                self.home_page = page
-            elif definition.page_id is PageId.RECOMMENDATIONS:
-                page = RecommendationExplorerPage(
+            if definition.page_id is PageId.DISCOVER:
+                self.recommendations_page = RecommendationExplorerPage(
                     worker_controller=self.worker_controller,
                     state_service=self.recommendation_state_service,
                 )
-                self.recommendations_page = page
-            elif definition.page_id is PageId.GENRE_ANALYSIS:
-                page = GenreAnalysisPage()
-                self.genre_analysis_page = page
-            elif definition.page_id is PageId.ADVANCED_OPERATIONS:
-                page = AdvancedOperationsPage(
+                self.recommendations_page.set_visible_states(DISCOVER_STATES)
+                page = DiscoverPage(self.recommendations_page)
+                page.refresh_requested.connect(self.recommendations_requested.emit)
+                self.discover_page = page
+            elif definition.page_id is PageId.LIBRARY:
+                self.library_page = RecommendationExplorerPage(
                     worker_controller=self.worker_controller,
-                    orchestrator=self.pipeline_orchestrator,
-                    profile_service=self.profile_service,
-                    settings_service=self.settings_service,
-                    auth_service=self.auth_service,
+                    state_service=self.recommendation_state_service,
                 )
-                self.advanced_operations_page = page
-            elif definition.page_id is PageId.ABOUT:
-                page = AboutPage()
+                self.library_page.set_visible_states(LIBRARY_STATES)
+                page = self.library_page
             elif definition.page_id is PageId.SETTINGS:
                 page = SettingsPage(
                     settings_service=self.settings_service,
@@ -395,6 +448,8 @@ class MainWindow(QMainWindow):
                     auth_service=self.auth_service,
                     worker_controller=self.worker_controller,
                     data_management=self.data_management_service,
+                    advanced_page=self.advanced_operations_page,
+                    about_page=self.about_page,
                 )
                 self.settings_page = page
             else:
@@ -447,10 +502,10 @@ class MainWindow(QMainWindow):
         self.home_page.generate_requested.connect(self.recommendations_requested.emit)
         self.home_page.sync_requested.connect(self.sync_requested.emit)
         self.home_page.open_recommendations_requested.connect(
-            lambda: self.navigate_to(PageId.RECOMMENDATIONS)
+            lambda: self.navigate_to(PageId.DISCOVER)
         )
         self.home_page.view_genres_requested.connect(
-            lambda: self.navigate_to(PageId.GENRE_ANALYSIS)
+            lambda: self.navigate_to(PageId.DISCOVER)
         )
         self.home_page.open_folder_requested.connect(self._open_active_output_folder)
         self.settings_page.open_setup_requested.connect(
@@ -506,12 +561,14 @@ class MainWindow(QMainWindow):
             self.show_operation_progress(key)
             return False
         state = self.recommendation_state_service.load(self.active_profile.profile_id)
+        # Generation stays feedback-neutral on purpose. TasteFeedbackService
+        # applies votes once, on the display path, so that a like is not counted
+        # both in the stored score and again when the feed is rendered.
         worker = RecommendationWorker(
             self.pipeline_orchestrator,
             self.active_profile.username,
             self.settings_service.load().pipeline,
-            genre_adjustments=self.taste_feedback_service.genre_adjustments(state),
-            excluded_mal_ids=state.disliked_mal_ids,
+            excluded_mal_ids=state.disliked_mal_ids | state.hidden_mal_ids,
         )
         try:
             self.worker_controller.start(key, worker)
@@ -541,7 +598,7 @@ class MainWindow(QMainWindow):
             self.active_profile.username,
             self.settings_service.load().pipeline,
             existing_recommendations=existing.recommendations,
-            genre_adjustments=self.taste_feedback_service.genre_adjustments(state),
+            excluded_mal_ids=state.disliked_mal_ids | state.hidden_mal_ids,
             count=self._last_more_count,
         )
         try:
@@ -551,20 +608,34 @@ class MainWindow(QMainWindow):
         self.show_operation_progress(key)
         return True
 
-    def _apply_settings(self, settings: AppSettings) -> None:
-        application = QApplication.instance()
-        if isinstance(application, QApplication):
-            manager = getattr(application, "_anirec_theme_manager", None)
-            if not isinstance(manager, ThemeManager):
-                manager = ThemeManager(application)
-                application._anirec_theme_manager = manager
-            manager.apply(settings.theme, font_scale=settings.font_scale)
-        self.recommendations_page.set_default_sort(settings.default_recommendation_sort)
-        self.recommendations_page.set_show_covers(settings.show_covers)
-        if self.active_profile is not None:
-            self.recommendations_page.set_show_hidden_preference(
-                settings.include_hidden_recommendations
+    def _recommendation_views(self):
+        """Every explorer instance that should reflect the same library."""
+        return tuple(
+            view
+            for view in (
+                getattr(self, "recommendations_page", None),
+                getattr(self, "library_page", None),
             )
+            if view is not None
+        )
+
+    def _apply_settings(self, settings: AppSettings) -> None:
+        manager = self.theme_manager
+        if manager is None:
+            application = QApplication.instance()
+            if isinstance(application, QApplication):
+                manager = ThemeManager(application)
+                self.theme_manager = manager
+        if manager is not None:
+            manager.apply(settings.theme, font_scale=settings.font_scale)
+        for view in self._recommendation_views():
+            view.set_default_sort(settings.default_recommendation_sort)
+            view.set_show_covers(settings.show_covers)
+        if self.active_profile is not None:
+            for view in self._recommendation_views():
+                view.set_show_hidden_preference(
+                    settings.include_hidden_recommendations
+                )
         self.advanced_operations_page.refresh_prerequisites()
 
     def _open_active_output_folder(self) -> None:
@@ -573,19 +644,33 @@ class MainWindow(QMainWindow):
         path = self.profile_service.open_directory(self.active_profile.profile_id)
         self.output_folder_opened.emit(path)
 
+    def _report_activity(self, message: str, *, tone: str = "success") -> None:
+        """Show progress where the user can see it.
+
+        HomePage keeps the dashboard state, but it is composed into Discover
+        rather than being a page of its own, so its own activity line is no
+        longer on screen. Discover carries the visible one.
+        """
+        self.home_page.show_activity(message, tone=tone)
+        self.discover_page.set_status(message)
+
     def _on_operation_started(self, operation_key: str) -> None:
         if operation_key.startswith("sync:"):
             self.home_page.set_operation_running(ACTION_SYNC, True)
+            self.discover_page.set_refreshing(True)
         elif operation_key.startswith("recommendation:"):
             self.home_page.set_operation_running(ACTION_GENERATE, True)
+            self.discover_page.set_refreshing(True)
         elif operation_key.startswith("more-recommendations:"):
             self.recommendations_page.set_more_running(True)
 
     def _on_operation_finished(self, operation_key: str) -> None:
         if operation_key.startswith("sync:"):
             self.home_page.set_operation_running(ACTION_SYNC, False)
+            self.discover_page.set_refreshing(False)
         elif operation_key.startswith("recommendation:"):
             self.home_page.set_operation_running(ACTION_GENERATE, False)
+            self.discover_page.set_refreshing(False)
         elif operation_key.startswith("more-recommendations:"):
             self.recommendations_page.set_more_running(False)
 
@@ -600,18 +685,18 @@ class MainWindow(QMainWindow):
         self.result_service.save_merged(self.active_profile.profile_id, result)
         if operation_key.startswith("sync:"):
             completed = result.user_stats.get("completed_count", 0)
-            self.home_page.show_activity(
+            self._report_activity(
                 f"MAL data updated — {completed} completed titles synced.",
                 tone="success",
             )
         elif operation_key.startswith("more-recommendations:"):
             added = result.user_stats.get("added_recommendation_count", 0)
-            self.home_page.show_activity(
+            self._report_activity(
                 f"Added {added} new feedback-aware recommendations.",
                 tone="success",
             )
         elif operation_key.startswith("recommendation:"):
-            self.home_page.show_activity(
+            self._report_activity(
                 "Your recommendation feed has been refreshed.", tone="success"
             )
         self.refresh_dashboard()
@@ -619,8 +704,18 @@ class MainWindow(QMainWindow):
     def _on_operation_error(self, operation_key: str, error: object) -> None:
         if operation_key.startswith("cover") or not isinstance(error, UserFacingError):
             return
+        # An open modal wizard reports its own failures inline. Raising a second,
+        # non-modal dialog here would be blocked by the wizard's modality and
+        # leave the user with an error box they cannot close.
+        wizard = self.setup_wizard
+        if (
+            wizard is not None
+            and wizard.isVisible()
+            and wizard.owns_operation(operation_key)
+        ):
+            return
         if operation_key.startswith(("sync:", "recommendation:", "more-recommendations:")):
-            self.home_page.show_activity(error.title, tone="error")
+            self._report_activity(error.title, tone="error")
         existing = self.error_dialogs.get(operation_key)
         if existing is not None and existing.isVisible():
             existing.raise_()

@@ -237,6 +237,7 @@ class MoreRecommendationsWorker(BaseWorker):
         *,
         existing_recommendations=(),
         genre_adjustments: dict[str, float] | None = None,
+        excluded_mal_ids=(),
         count: int = 5,
         **worker_options,
     ) -> None:
@@ -246,6 +247,7 @@ class MoreRecommendationsWorker(BaseWorker):
         self.settings = settings
         self.existing_recommendations = tuple(existing_recommendations)
         self.genre_adjustments = dict(genre_adjustments or {})
+        self.excluded_mal_ids = frozenset(excluded_mal_ids or ())
         self.count = count
 
     def execute(self) -> object:
@@ -254,6 +256,7 @@ class MoreRecommendationsWorker(BaseWorker):
             self.settings,
             existing_recommendations=self.existing_recommendations,
             genre_adjustments=self.genre_adjustments,
+            excluded_mal_ids=self.excluded_mal_ids,
             count=self.count,
             progress_callback=self.report_progress,
             cancellation_token=self.cancellation_token,
