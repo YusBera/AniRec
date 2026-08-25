@@ -4,6 +4,13 @@ import os
 import subprocess
 import sys
 
+
+# Importing the GUI package takes about 1.5s on an idle machine. The bound is
+# here to stop a hung import from stalling the run, not to assert a speed, so
+# it is generous: with the whole suite competing for the CPU a 10s bound turned
+# a correctness test into a machine-load test.
+SUBPROCESS_TIMEOUT_SECONDS = 90
+
 def test_direct_script_entrypoint_exits_cleanly(repo_root):
     result = subprocess.run(
         [sys.executable, str(repo_root / "AniRec" / "main.py")],
@@ -11,7 +18,7 @@ def test_direct_script_entrypoint_exits_cleanly(repo_root):
         text=True,
         capture_output=True,
         cwd=repo_root,
-        timeout=10,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
         check=False,
     )
 
@@ -26,7 +33,7 @@ def test_package_module_entrypoint(repo_root):
         text=True,
         capture_output=True,
         cwd=repo_root,
-        timeout=10,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
         check=False,
     )
 
@@ -41,7 +48,7 @@ def test_cli_module_entrypoint(repo_root):
         text=True,
         capture_output=True,
         cwd=repo_root,
-        timeout=10,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
         check=False,
     )
 
@@ -55,7 +62,7 @@ def test_gui_module_import_has_no_side_effects(repo_root):
         text=True,
         capture_output=True,
         cwd=repo_root,
-        timeout=10,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
         check=False,
     )
 
@@ -80,7 +87,7 @@ def test_gui_module_exits_cleanly_when_event_loop_is_stopped(repo_root):
         capture_output=True,
         cwd=repo_root,
         env=environment,
-        timeout=10,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
         check=False,
     )
 

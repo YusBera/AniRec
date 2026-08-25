@@ -12,9 +12,17 @@ from collections import OrderedDict
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFocusEvent, QMouseEvent, QPixmap
+from PySide6.QtGui import (
+    QDesktopServices,
+    QFocusEvent,
+    QMouseEvent,
+    QPainter,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QFrame,
+    QStyle,
+    QStyleOption,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -40,8 +48,11 @@ CARD_WIDTH = 224
 # A 2:3 poster, the standard shape for anime cover art. Sized so that a whole
 # card, including the review actions, fits the default window without
 # scrolling; at the previous size the buttons sat below the fold.
-COVER_WIDTH = 176
-COVER_HEIGHT = 264
+# 2:3 exactly (172*3 == 258*2). Trimmed a little from 176x264 to buy back the
+# height the extra spacing cost, so the review loop still fits the default
+# window with room to spare.
+COVER_WIDTH = 172
+COVER_HEIGHT = 258
 # Matches the card's own corner radius so the portrait sits inside it rather
 # than cutting across it.
 COVER_RADIUS = RADIUS["md"]
@@ -96,6 +107,35 @@ def open_mal_url(url: str | None, *, opener: Callable[[QUrl], bool] = QDesktopSe
     return opener(parsed)
 
 
+class ElidingLabel(QLabel):
+    """A single-line label that ends in an ellipsis rather than being cut off.
+
+    CHANGE [BUG7]: the alternative, rewriting the label's text, makes text()
+    report a string the anime is not called, so anything reading the card's
+    contents sees a truncated title as if it were the real one. Eliding while
+    painting keeps the full string on the widget, and re-fits by itself after
+    a resize or a font change instead of relying on somebody remembering to
+    recompute it.
+    """
+
+    def paintEvent(self, _event) -> None:
+        option = QStyleOption()
+        option.initFrom(self)
+        painter = QPainter(self)
+        # The stylesheet owns the background and border; draw those first or
+        # a styled label loses them.
+        self.style().drawPrimitive(
+            QStyle.PrimitiveElement.PE_Widget, option, painter, self
+        )
+        rect = self.contentsRect()
+        elided = self.fontMetrics().elidedText(
+            self.text(), Qt.TextElideMode.ElideRight, rect.width()
+        )
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        painter.drawText(rect, int(self.alignment()), elided)
+        painter.end()
+
+
 class RecommendationCard(QFrame):
     cover_requested = Signal(str)
     details_requested = Signal(object)
@@ -128,13 +168,18 @@ class RecommendationCard(QFrame):
         # CHANGE [BUG2]: margins and spacing scale too, or the card's proportions
         # change as it grows.
         layout.setContentsMargins(
-            scaled(SPACE['md']), scaled(SPACE['md']),
+            scaled(SPACE['md']), scaled(SPACE['sm']),
             scaled(SPACE['md']), scaled(SPACE['md']),
         )
         # CHANGE [BUG7]: 4px between eleven stacked items left every label
         # touching the control above it, so the buttons read as part of the
-        # text rather than as separate things to press. The card is taller for
-        # it, which is the correct trade: the grid equalises heights anyway.
+        # text rather than as separate things to press.
+        #
+        # The separation is carried by this one value rather than by extra
+        # spacers between groups. addSpacing inserts a layout item, so a 4px
+        # spacer actually costs 4px plus another full spacing gap beside it,
+        # and three of them pushed the feedback buttons past the point where
+        # the review loop still fits the default window.
         layout.setSpacing(scaled(SPACE['sm']))
         self.cover_label = QLabel()
         self.cover_label.setObjectName("recommendationCover")
@@ -170,8 +215,10 @@ class RecommendationCard(QFrame):
         self.match_label.setVisible(self.match_badge is None)
         self.title_label = self._label(model.display_title, "recommendationTitle")
         self.title_label.setWordWrap(True)
+        # CHANGE [BUG7]: these two run past the card edge on long values and
+        # were being cut off mid-word with no ellipsis.
         self.secondary_title_label = self._label(
-            model.secondary_title or "", "recommendationSecondaryTitle"
+            model.secondary_title or "", "recommendationSecondaryTitle", eliding=True
         )
         # CHANGE [BUG7]: keep the line even when there is no English title.
         # Hiding it removed a row of height from that card alone, so every
@@ -179,7 +226,9 @@ class RecommendationCard(QFrame):
         # the grid lined up across a row. An empty label still reserves one
         # line, which is exactly the reservation needed.
         self.secondary_title_label.setVisible(True)
-        self.mal_score_label = self._label(model.mal_score_text, "malScoreLabel")
+        self.mal_score_label = self._label(
+            model.mal_score_text, "malScoreLabel", eliding=True
+        )
         self.meta_label = self._label(
             f"{model.year_text} · {model.status} · {model.episodes_text}",
             "recommendationMeta",
@@ -207,8 +256,6 @@ class RecommendationCard(QFrame):
         # CHANGE [BUG7]: the single-line labels were cut off mid-word at the
         # card edge with no ellipsis, which reads as text running into the
         # border rather than as text that continues elsewhere.
-        self._elide(self.secondary_title_label)
-        self._elide(self.mal_score_label)
         self.like_button = QPushButton("Like")
         self.like_button.setObjectName("recommendationLikeButton")
         self.like_button.setProperty("feedback", "liked")
@@ -257,19 +304,14 @@ class RecommendationCard(QFrame):
         # CHANGE [BUG2]: the cover is narrower than the card, and adding it
         # without an alignment left it against the left margin. Centre it.
         layout.addWidget(self.cover_label, 0, Qt.AlignmentFlag.AlignHCenter)
-        # CHANGE [BUG7]: the portrait and the first line of text were 4px
-        # apart, so the artwork appeared to sit on top of the words.
-        layout.addSpacing(scaled(SPACE['xs']))
         for widget in (
             self.match_label,
             self.title_label,
             self.secondary_title_label,
         ):
             layout.addWidget(widget)
-        # CHANGE [BUG7]: a clear break before a row of controls, and scaled
-        # gaps inside it. The 8 and 4 here were raw pixels that stayed put
-        # while everything around them grew with the GUI scale.
-        layout.addSpacing(scaled(SPACE['xs']))
+        # CHANGE [BUG7]: the gaps inside these rows were raw pixels that
+        # stayed put while everything around them grew with the GUI scale.
         feedback_row = QHBoxLayout()
         feedback_row.setSpacing(scaled(SPACE['sm']))
         feedback_row.addWidget(self.like_button, 1)
@@ -288,7 +330,6 @@ class RecommendationCard(QFrame):
         # each line sat. Pooling it here pins the action rows to the bottom of
         # every card and lets the text above align from the top.
         layout.addStretch(1)
-        layout.addSpacing(scaled(SPACE['xs']))
         action_row = QHBoxLayout()
         action_row.setSpacing(scaled(SPACE['sm']))
         action_row.addWidget(self.details_button, 1)
@@ -317,7 +358,7 @@ class RecommendationCard(QFrame):
             # card is built, so a scale change quietly restored the cramped
             # spacing the constructor no longer uses.
             layout.setContentsMargins(
-                scaled(SPACE["md"]), scaled(SPACE["md"]),
+                scaled(SPACE["md"]), scaled(SPACE["sm"]),
                 scaled(SPACE["md"]), scaled(SPACE["md"]),
             )
             layout.setSpacing(scaled(SPACE["sm"]))
@@ -330,8 +371,6 @@ class RecommendationCard(QFrame):
         self._reserve_lines(self.meta_label, META_LINES)
         self._reserve_lines(self.genres_label, GENRE_LINES)
         self._reserve_lines(self.reason_label, REASON_LINES)
-        self._elide(self.secondary_title_label)
-        self._elide(self.mal_score_label)
         self._rescale_cover()
         self._position_badge()
 
@@ -355,26 +394,6 @@ class RecommendationCard(QFrame):
         if self.match_badge is not None:
             self.match_badge.set_colours(track, fill, text)
 
-    def _elide(self, label: QLabel) -> None:
-        """Shorten a single-line label with an ellipsis instead of clipping it.
-
-        The full string stays on the widget as its tooltip and accessible
-        name, so nothing is actually lost to a user who wants it.
-        """
-        full = getattr(label, "_full_text", None)
-        if full is None:
-            full = label.text()
-            label._full_text = full
-        if not full:
-            return
-        available = scaled(CARD_WIDTH) - 2 * scaled(SPACE["md"])
-        label.setText(label.fontMetrics().elidedText(
-            full, Qt.TextElideMode.ElideRight, max(0, available)
-        ))
-        if label.text() != full:
-            label.setToolTip(full)
-            label.setAccessibleName(full)
-
     @staticmethod
     def _reserve_lines(label: QLabel, lines: int) -> None:
         """Pin a wrapped label to a fixed number of lines.
@@ -397,7 +416,9 @@ class RecommendationCard(QFrame):
         height = single + max(0, lines - 1) * label.fontMetrics().lineSpacing()
         label.setFixedHeight(height)
 
-    def _label(self, text: str, object_name: str) -> QLabel:
+    def _label(
+        self, text: str, object_name: str, *, eliding: bool = False
+    ) -> QLabel:
         """CHANGE [BUG1]: parent the label to the card at creation.
 
         A QWidget with no parent *is* a top-level window. These labels were
@@ -411,8 +432,11 @@ class RecommendationCard(QFrame):
         Parenting on creation costs nothing, the layout reparents to the same
         widget anyway, and it makes the ordering irrelevant.
         """
-        label = QLabel(text, self)
+        label = ElidingLabel(text, self) if eliding else QLabel(text, self)
         label.setObjectName(object_name)
+        if eliding and text:
+            # The full string stays reachable for anyone who wants it.
+            label.setToolTip(text)
         # CHANGE [BUG7]: natural height only. A label left free to grow soaks
         # up part of the equalisation slack, which is what made otherwise
         # identical cards disagree about where each row sat.

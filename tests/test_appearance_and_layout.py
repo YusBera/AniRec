@@ -9,7 +9,7 @@ from AniRec.gui.gradient_picker import GradientPicker
 from AniRec.gui.main_window import MainWindow
 from AniRec.gui.qss_builder import build_stylesheet, selectors
 from AniRec.gui.recommendation_page import RecommendationViewMode
-from AniRec.gui.recommendation_row import THUMBNAIL_SIZE
+from AniRec.gui.recommendation_row import COVER_ROW_HEIGHT, THUMBNAIL_SIZE
 from AniRec.gui.theme import ThemeManager, ThemePreference
 from AniRec.gui_main import create_application
 from AniRec.models import AppSettings
@@ -142,8 +142,12 @@ def test_a_list_row_leads_with_a_small_thumbnail_and_then_text(window):
     feed.set_view_mode("list")
     row = next(iter(feed._rows_by_key.values()))
 
+    # The thumbnail is a 2:3 poster, not a square. Cover art is 2:3, so a
+    # square crop cut the top and bottom off every image in the list and made
+    # the same title look different depending on which view it was in.
     assert row.cover_label.width() == THUMBNAIL_SIZE
-    assert row.cover_label.height() == THUMBNAIL_SIZE
+    assert row.cover_label.height() == COVER_ROW_HEIGHT
+    assert THUMBNAIL_SIZE * 3 == COVER_ROW_HEIGHT * 2
     assert row.title_label.text()
     assert row.reason_label.text()
     assert row.match_tag.text()
