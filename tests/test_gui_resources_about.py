@@ -61,8 +61,22 @@ def test_offscreen_shell_smoke_navigates_themes_about_and_closes():
         application.processEvents()
         assert window.current_page_id is definition.page_id
 
+    # Every preference applies. Only "system" resolves to something else,
+    # because the rest already name a concrete palette; OLED and Gradient are
+    # modes in their own right rather than variants of light or dark.
+    concrete = {
+        ThemePreference.LIGHT,
+        ThemePreference.DARK,
+        ThemePreference.OLED,
+        ThemePreference.GRADIENT,
+    }
     for theme in ThemePreference:
-        assert manager.apply(theme) in {ThemePreference.LIGHT, ThemePreference.DARK}
+        resolved = manager.apply(theme)
+        if theme is ThemePreference.SYSTEM:
+            assert resolved in {ThemePreference.LIGHT, ThemePreference.DARK}
+        else:
+            assert resolved is theme
+        assert resolved in concrete
 
     # About is now a section within Settings, not a destination of its own.
     about_page = window.about_page

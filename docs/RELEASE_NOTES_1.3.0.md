@@ -1,7 +1,9 @@
-# AniRec 2.0.0 release notes
+# AniRec 1.3.0 release notes
 
-AniRec 2.0.0 rebuilds how recommendations are calculated, explained, and
-presented. Existing profiles keep working: stored settings and saved
+AniRec 1.3.0 rebuilds how recommendations are calculated, explained, and
+presented. It is the last release before the learned model: 2.0 is reserved
+for the neural recommender, which needs a corpus that is still being
+collected. Existing profiles keep working: stored settings and saved
 collections round trip unchanged, and a taste profile written by an earlier
 version still loads.
 
@@ -84,6 +86,23 @@ they style exactly the same surfaces; previously context menus and the progress
 dialog were themed only in dark. Font scaling now moves the whole type
 hierarchy together instead of growing body text while headings stayed fixed.
 
+## Appearance and layout
+
+Four themes rather than two. OLED black uses true black, which switches pixels
+off entirely on an OLED panel. Gradient blends between two colours you choose,
+with a live preview; only the background is really yours, because the surfaces
+and text are derived from your colours so the result stays readable whatever
+you pick.
+
+The feed can be shown as a grid of cards, as a compact list, or as a table. The
+list trades the poster for density: a small thumbnail, the title, a truncated
+reason, and a tag, so several times as many titles fit the same space. The grid
+adds columns as the window widens. Whichever you choose is remembered.
+
+Appearance and layout choices no longer require an account. Saving any setting
+previously demanded a Client ID, which meant nothing chosen while looking
+around could be kept.
+
 ## Also fixed
 
 - Titles you hid or rejected no longer return through "Recommend 5 more".
@@ -97,7 +116,10 @@ hierarchy together instead of growing body text while headings stayed fixed.
 
 - The collaborative signal is optional and absent until a run has walked the
   graph.
-- 2.0.0 has been exercised on the development Windows 11 machine. A second
+- The learned model is not in this release. The scoring blend already carries
+  its term at weight zero and renormalises without it, so it can be added
+  without disturbing anything here.
+- 1.3.0 has been exercised on the development Windows 11 machine. A second
   Windows 10 or 11 acceptance run is still required.
 - The package is unsigned and ships as `onedir`.
 - Local secrets are not held in an encrypted operating system vault.

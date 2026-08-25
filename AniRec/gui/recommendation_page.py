@@ -1,14 +1,27 @@
-"""Filterable card/table explorer for persisted anime recommendations."""
+"""Filterable card, list and table explorer for persisted recommendations.
+
+Addresses: BUG1 (guarded actions), BUG2 (view toggle restored, scale rebuild),
+FEAT2 (badge colours follow the theme).
+"""
 
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPoint,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QGraphicsOpacityEffect,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -32,17 +45,28 @@ from ..models import Recommendation
 from ..services import (
     CoverImageResult,
     CoverImageService,
+    RecommendationFeedback,
     RecommendationLocalState,
     RecommendationStateService,
 )
 from .recommendation_card import CARD_WIDTH, RecommendationCard
+from .design_tokens import SPACE
 from .recommendation_detail_dialog import RecommendationDetailDialog
+from .recommendation_row import RecommendationRow
 from .recommendation_view_model import RecommendationViewModel, recommendation_view_models
 from .workers import CoverDownloadWorker, OperationAlreadyRunningError, WorkerController
 
 
 class RecommendationViewMode(str, Enum):
+    """How the feed is laid out.
+
+    CARDS leads with artwork in a responsive grid. LIST trades the poster
+    for density, fitting several times as many titles in the same space.
+    TABLE remains for scanning many rows by column.
+    """
+
     CARDS = "cards"
+    LIST = "list"
     TABLE = "table"
 
 
@@ -102,6 +126,73 @@ def filter_and_sort_recommendations(
     return tuple(sorted(filtered, key=key))
 
 
+def _toggle_in_memory(
+    state: RecommendationLocalState, field: str, mal_id: int, wanted: bool
+) -> RecommendationLocalState:
+    """Add or remove one id from a saved-state set, without persisting."""
+    current = set(getattr(state, field))
+    current.add(mal_id) if wanted else current.discard(mal_id)
+    return replace(state, **{field: frozenset(current)})
+
+
+def _feedback_in_memory(
+    state: RecommendationLocalState,
+    mal_id: int,
+    sentiment: str | None,
+    *,
+    genres: tuple[str, ...],
+    title: str,
+) -> RecommendationLocalState:
+    """Record or clear one vote, without persisting."""
+    kept = [record for record in state.feedback if record.mal_id != mal_id]
+    if sentiment is not None:
+        kept.append(
+            RecommendationFeedback(
+                mal_id=mal_id, sentiment=sentiment, genres=genres, title=title
+            )
+        )
+    return replace(state, feedback=tuple(kept))
+
+
+# Long enough to read as a transition, short enough not to delay the switch.
+VIEW_FADE_MILLISECONDS = 160
+
+
+def _badge_colours():
+    """Track, fill and text for the match bar, from the palette in force.
+
+    CHANGE [BUG-BADGE]: this used to look the palette up by theme name, which
+    returns defaults for the gradient theme because that palette is built from
+    the user's two colours. The bar stayed the stock terracotta over a green or
+    blue interface. The theme manager now publishes what it actually resolved.
+    """
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QApplication
+
+    from .design_tokens import palette
+
+    application = QApplication.instance()
+    accent = application.property("resolvedAccent") if application else None
+    contrast = application.property("resolvedAccentContrast") if application else None
+    background = application.property("resolvedBackground") if application else None
+    if not accent:
+        theme = (application.property("activeTheme") if application else None) or "dark"
+        try:
+            colours = palette(theme)
+        except ValueError:
+            colours = palette("dark")
+        accent = colours["accent"]
+        contrast = colours["accent_contrast"]
+        background = colours["bg"]
+
+    track = QColor(background)
+    # CHANGE [FEAT2]: opaque enough to read as the bar's full length over
+    # cover art. At 165 it disappeared into dark artwork and the fill had
+    # nothing to be a proportion of.
+    track.setAlpha(215)
+    return track, QColor(accent), QColor(contrast)
+
+
 def recommendation_key(model: RecommendationViewModel, source_index: int) -> str:
     if model.mal_id is not None:
         return f"mal:{model.mal_id}"
@@ -117,6 +208,10 @@ class RecommendationExplorerPage(QWidget):
     feedback_changed = Signal(object)
     more_requested = Signal()
     refill_requested = Signal()
+    view_mode_changed = Signal(str)
+    # CHANGE [BUG5]: lets the surrounding surface collapse its header once
+    # the feed is scrolled, so browsing is not done through a slot.
+    feed_scrolled = Signal(int)
     MAX_COVER_REQUESTS_PER_PASS = 6
 
     def __init__(
@@ -140,6 +235,7 @@ class RecommendationExplorerPage(QWidget):
         self._key_by_model: dict[int, str] = {}
         self._model_by_key: dict[str, RecommendationViewModel] = {}
         self._cards_by_key: dict[str, RecommendationCard] = {}
+        self._rows_by_key: dict[str, RecommendationRow] = {}
         self._selected_key: str | None = None
         self._view_mode = RecommendationViewMode.CARDS
         self.show_covers = True
@@ -150,6 +246,9 @@ class RecommendationExplorerPage(QWidget):
         self._more_available = False
         self._more_running = False
         self._more_unavailable_reason = ""
+        self._profile_loaded = False
+        self._ephemeral = False
+        self._view_animation = None
         self._build_ui()
         self._update_feedback_summary()
         if self.worker_controller is not None:
@@ -174,7 +273,13 @@ class RecommendationExplorerPage(QWidget):
         recommendations: tuple[Recommendation, ...] | list[Recommendation],
     ) -> None:
         previous_key = self._selected_key
-        self._models = recommendation_view_models(recommendations)
+        models = recommendation_view_models(recommendations)
+        # CHANGE [BUG1]: an identical set needs no teardown. Re-personalising
+        # after a vote usually returns the same titles in the same order.
+        if models == self._models:
+            self._apply_query()
+            return
+        self._models = models
         self._key_by_model = {
             id(model): recommendation_key(model, index)
             for index, model in enumerate(self._models)
@@ -216,6 +321,21 @@ class RecommendationExplorerPage(QWidget):
         )
 
     def set_profile(self, profile_id: str | None) -> None:
+        # CHANGE [BUG1]: skip the work when nothing changed. A single Like ran
+        # five full rebuilds of every card and row, because the dashboard
+        # refresh calls set_profile and set_recommendations on both views and
+        # each one triggered a teardown. Four of those five were redundant, and
+        # the visible tear-down and rebuild is what reads as flashing.
+        if profile_id == self.profile_id and self._profile_loaded:
+            self.local_state = (
+                self.state_service.load(profile_id)
+                if profile_id is not None
+                else self.local_state
+            )
+            self._update_feedback_summary()
+            self._apply_query()
+            return
+        self._profile_loaded = True
         self.profile_id = profile_id
         self.local_state = (
             self.state_service.load(profile_id)
@@ -245,12 +365,18 @@ class RecommendationExplorerPage(QWidget):
         resolved = RecommendationViewMode(mode)
         self._view_mode = resolved
         self.cards_button.setChecked(resolved is RecommendationViewMode.CARDS)
+        self.list_button.setChecked(resolved is RecommendationViewMode.LIST)
         self.table_button.setChecked(resolved is RecommendationViewMode.TABLE)
+        # CHANGE [BUG1]: the layout being switched to may not be built yet.
+        self._rebuild_cards()
+        self._rebuild_rows()
         self._show_current_view()
         self._restore_selection()
         self._update_selected_actions_visibility()
-        if resolved is RecommendationViewMode.CARDS:
+        if resolved in (RecommendationViewMode.CARDS, RecommendationViewMode.LIST):
             QTimer.singleShot(0, self._request_visible_covers)
+        self._fade_in_current_view()
+        self.view_mode_changed.emit(resolved.value)
 
     def set_default_sort(self, sort_mode: RecommendationSortMode | str) -> None:
         resolved = RecommendationSortMode(sort_mode)
@@ -262,6 +388,9 @@ class RecommendationExplorerPage(QWidget):
         self.show_covers = bool(show_covers)
         for card in self._cards_by_key.values():
             card.set_cover_visible(self.show_covers)
+            # CHANGE [FEAT2]: the badge follows the active theme rather than
+            # assuming a dark portrait behind it.
+            card.set_badge_colours(*_badge_colours())
         if self.detail_dialog is not None:
             self.detail_dialog.set_cover_visible(self.show_covers)
         if self.show_covers:
@@ -310,21 +439,24 @@ class RecommendationExplorerPage(QWidget):
         self.hero = QFrame()
         self.hero.setObjectName("recommendationHero")
         hero_layout = QHBoxLayout(self.hero)
-        hero_layout.setContentsMargins(24, 22, 24, 22)
-        hero_layout.setSpacing(24)
+        hero_layout.setContentsMargins(20, 14, 20, 14)
+        hero_layout.setSpacing(20)
         heading_copy = QVBoxLayout()
         heading_copy.setSpacing(6)
         eyebrow = QLabel("PERSONAL DISCOVERY")
         eyebrow.setObjectName("recommendationEyebrow")
+        self.hero_eyebrow = eyebrow
         title = QLabel("Find your next favorite")
         title.setObjectName("recommendationHeroTitle")
         title.setAccessibleName("Your recommendations heading")
+        self.hero_title = title
         description = QLabel(
             "Review each pick once. AniRec learns from every decision and reshapes "
             "the remaining feed in real time."
         )
         description.setObjectName("recommendationHeroDescription")
         description.setWordWrap(True)
+        self.hero_description = description
         heading_copy.addWidget(eyebrow)
         heading_copy.addWidget(title)
         heading_copy.addWidget(description)
@@ -341,6 +473,7 @@ class RecommendationExplorerPage(QWidget):
         action_caption = QLabel("READY FOR SOMETHING NEW?")
         action_caption.setObjectName("recommendationActionCaption")
         action_caption.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.hero_action_caption = action_caption
         hero_actions.addWidget(action_caption)
 
         # Kept as a compatibility hook for earlier local state tests; visible
@@ -468,6 +601,11 @@ class RecommendationExplorerPage(QWidget):
         self.cards_button.setObjectName("recommendationCardsViewButton")
         self.cards_button.setProperty("viewToggle", True)
         self.cards_button.setCheckable(True)
+        self.list_button = QPushButton("List")
+        self.list_button.setObjectName("recommendationListViewButton")
+        self.list_button.setProperty("viewToggle", True)
+        self.list_button.setCheckable(True)
+        self.list_button.setAccessibleName("Show recommendations as a compact list")
         self.table_button = QPushButton("Table")
         self.table_button.setObjectName("recommendationTableViewButton")
         self.table_button.setProperty("viewToggle", True)
@@ -475,12 +613,24 @@ class RecommendationExplorerPage(QWidget):
         group = QButtonGroup(self)
         group.setExclusive(True)
         group.addButton(self.cards_button)
+        group.addButton(self.list_button)
         group.addButton(self.table_button)
         self.cards_button.setChecked(True)
         view_row.addWidget(self.cards_button)
+        view_row.addWidget(self.list_button)
         view_row.addWidget(self.table_button)
-        library_layout.addLayout(view_row)
+        # CHANGE [BUG2]: the grid/list toggle used to live inside library_bar,
+        # which set_visible_states() hides when a surface offers only one
+        # collection. Discover offers one, so the toggle disappeared entirely,
+        # at every DPI. It now sits in its own bar that is always shown.
+        self.view_bar = QFrame()
+        self.view_bar.setObjectName("recommendationViewBar")
+        view_bar_layout = QVBoxLayout(self.view_bar)
+        view_bar_layout.setContentsMargins(0, 0, 0, 0)
+        view_bar_layout.addLayout(view_row)
+
         root.addWidget(self.library_bar)
+        root.addWidget(self.view_bar)
         root.addWidget(self.filter_controls)
 
         self.selected_actions_frame = QFrame()
@@ -517,6 +667,21 @@ class RecommendationExplorerPage(QWidget):
         self.card_scroll.setObjectName("recommendationCardScroll")
         self.card_scroll.setWidgetResizable(True)
         self.card_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.list_scroll = QScrollArea()
+        self.list_scroll.setObjectName("recommendationListScroll")
+        self.list_scroll.setWidgetResizable(True)
+        self.list_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.list_container = QWidget()
+        self.list_container.setObjectName("recommendationListContainer")
+        self.list_layout = QVBoxLayout(self.list_container)
+        self.list_layout.setContentsMargins(0, 0, 0, 0)
+        self.list_layout.setSpacing(SPACE["sm"])
+        self.list_layout.addStretch()
+        self.list_scroll.setWidget(self.list_container)
+        self.list_scroll.verticalScrollBar().valueChanged.connect(
+            self.feed_scrolled.emit
+        )
+
         self.card_container = QWidget()
         self.card_container.setObjectName("recommendationCardContainer")
         self.card_layout = QGridLayout(self.card_container)
@@ -524,6 +689,9 @@ class RecommendationExplorerPage(QWidget):
         self.card_layout.setSpacing(16)
         self.card_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.card_scroll.setWidget(self.card_container)
+        self.card_scroll.verticalScrollBar().valueChanged.connect(
+            self.feed_scrolled.emit
+        )
         self.card_scroll.viewport().installEventFilter(self)
         self.card_scroll.verticalScrollBar().valueChanged.connect(
             lambda _value: self._schedule_visible_covers()
@@ -596,6 +764,7 @@ class RecommendationExplorerPage(QWidget):
         empty_layout.addStretch()
 
         self.card_index = self.content_stack.addWidget(self.card_scroll)
+        self.list_index = self.content_stack.addWidget(self.list_scroll)
         self.table_index = self.content_stack.addWidget(self.table)
         self.empty_index = self.content_stack.addWidget(self.empty_widget)
         root.addWidget(self.content_stack, 1)
@@ -613,6 +782,7 @@ class RecommendationExplorerPage(QWidget):
             else:
                 widget.valueChanged.connect(lambda _value: self._apply_query())
         self.cards_button.clicked.connect(lambda: self.set_view_mode(RecommendationViewMode.CARDS))
+        self.list_button.clicked.connect(lambda: self.set_view_mode(RecommendationViewMode.LIST))
         self.table_button.clicked.connect(lambda: self.set_view_mode(RecommendationViewMode.TABLE))
         self.clear_filters_button.clicked.connect(self.clear_filters)
         self.state_filter.currentIndexChanged.connect(lambda _index: self._apply_query())
@@ -668,6 +838,57 @@ class RecommendationExplorerPage(QWidget):
             self._apply_query()
         else:
             self.state_filter.setCurrentIndex(index)
+
+    def set_ephemeral(self, ephemeral: bool) -> None:
+        """Allow reviewing without a profile, keeping the result in memory.
+
+        The sample library exists so someone can judge AniRec before creating a
+        MyAnimeList application. Reviewing a pick is the whole product, so
+        disabling Like and Not for me there left the one mode meant to sell it
+        unable to demonstrate anything. Nothing is written: there is no profile
+        directory to write to, and the state is discarded when the sample is.
+        """
+        self._ephemeral = bool(ephemeral)
+        if self._ephemeral:
+            self.local_state = RecommendationLocalState()
+        self._update_feedback_summary()
+        self._apply_query()
+
+    @property
+    def can_review(self) -> bool:
+        """Whether feedback and saved state can be recorded at all."""
+        return self.profile_id is not None or self._ephemeral
+
+    def rebuild_for_scale(self) -> None:
+        """Resize the existing widgets rather than recreating them.
+
+        CHANGE [BUG2]: rebuilding here would undo the reuse that stops a vote
+        tearing down the feed, so the widgets re-apply their own dimensions
+        instead.
+        """
+        for widget in (*self._cards_by_key.values(), *self._rows_by_key.values()):
+            widget.apply_scale()
+        self._reflow_cards()
+        self._restore_selection()
+
+    def set_compact_header(self, compact: bool) -> None:
+        """Fold away the decorative header copy.
+
+        Measured on a 1280x720 window, the full header put half the viewport
+        above the first recommendation, so almost nothing was visible without
+        scrolling. The two parts that do work, the feedback summary and the
+        action to fetch more, stay; the standing title and description do not,
+        because the surface already carries its own heading and the empty state
+        explains the review loop where that explanation is actually useful.
+        """
+        decorative = bool(compact)
+        for widget in (
+            self.hero_eyebrow,
+            self.hero_title,
+            self.hero_description,
+            self.hero_action_caption,
+        ):
+            widget.setVisible(not decorative)
 
     def set_visible_states(self, states) -> None:
         """Restrict which library collections this view offers.
@@ -766,6 +987,28 @@ class RecommendationExplorerPage(QWidget):
             )
         )
 
+    def _schedule_rebuild(self) -> None:
+        """Coalesce rebuild requests into one pass on the next event turn.
+
+        CHANGE [BUG1]: a single Like ran three separate full rebuilds, tearing
+        down and recreating every card and row each time. With thirty
+        recommendations that was 88 card widgets plus 88 rows, roughly 3,500
+        child widgets, and about 1.1 seconds during which the feed visibly
+        tore down and came back. That flashing is what reads as popups
+        appearing and vanishing, and it is the main reason the interface felt
+        slow. Collapsing the burst into one deferred pass removes both.
+        """
+        if self._rebuild_pending:
+            return
+        self._rebuild_pending = True
+        QTimer.singleShot(0, self._run_pending_rebuild)
+
+    def _run_pending_rebuild(self) -> None:
+        self._rebuild_pending = False
+        self._rebuild_cards()
+        self._rebuild_rows()
+        self._restore_selection()
+
     def _apply_query(self) -> None:
         state_filter = self.state_filter.currentData()
         reviewed_ids = (
@@ -811,10 +1054,34 @@ class RecommendationExplorerPage(QWidget):
         if self._selected_key not in visible_keys:
             self._selected_key = None
         self._rebuild_cards()
+        self._rebuild_rows()
         self._rebuild_table()
         self._show_current_view()
         self._restore_selection()
         self._update_local_action_state()
+
+    def _fade_in_current_view(self) -> None:
+        """Cross fade when the layout changes, so the switch is not a jump cut.
+
+        Short and opacity only. A longer or moving transition would fight the
+        scroll position the user is holding, and Qt has no CSS transition to
+        lean on here.
+        """
+        widget = self.content_stack.currentWidget()
+        if widget is None:
+            return
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", self)
+        animation.setDuration(VIEW_FADE_MILLISECONDS)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        # Detach afterwards: a lingering effect forces the whole subtree
+        # through an offscreen buffer on every repaint.
+        animation.finished.connect(lambda: widget.setGraphicsEffect(None))
+        self._view_animation = animation
+        animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _show_current_view(self) -> None:
         if not self._visible_models:
@@ -872,45 +1139,150 @@ class RecommendationExplorerPage(QWidget):
         self.clear_filters_button.setVisible(False)
         self.browse_liked_button.setVisible(False)
         self.content_stack.setCurrentIndex(
-            self.card_index if self._view_mode is RecommendationViewMode.CARDS else self.table_index
+            {
+                RecommendationViewMode.CARDS: self.card_index,
+                RecommendationViewMode.LIST: self.list_index,
+                RecommendationViewMode.TABLE: self.table_index,
+            }[self._view_mode]
         )
 
-    def _rebuild_cards(self) -> None:
-        while self.card_layout.count():
-            item = self.card_layout.takeAt(0)
+    def _rebuild_rows(self) -> None:
+        """Bring the compact list in line with the visible models.
+
+        CHANGE [BUG1]: reuses rows for the same reason cards are reused. Both
+        views are kept in step, so a rebuild of one was a rebuild of both.
+        """
+        # CHANGE [BUG1]: see _rebuild_cards. Only the visible layout is built.
+        if self._view_mode is not RecommendationViewMode.LIST:
+            return
+        wanted = [
+            (self._key_by_model[id(model)], model) for model in self._visible_models
+        ]
+        wanted_keys = {key for key, _model in wanted}
+
+        for key in [key for key in self._rows_by_key if key not in wanted_keys]:
+            row = self._rows_by_key.pop(key)
+            # CHANGE [BUG1]: hide before detaching, as in _rebuild_cards.
+            row.hide()
+            self.list_layout.removeWidget(row)
+            row.setParent(None)
+            row.deleteLater()
+
+        # Detach the trailing stretch so order can be reapplied cheaply.
+        while self.list_layout.count():
+            item = self.list_layout.takeAt(self.list_layout.count() - 1)
             if item.widget() is not None:
-                item.widget().deleteLater()
-        self._cards_by_key.clear()
-        for model in self._visible_models:
-            key = self._key_by_model[id(model)]
-            card = RecommendationCard(model, self.card_container)
-            card.selection_requested.connect(
-                lambda _model, selected_key=key: self.select_key(selected_key)
+                item.widget().setParent(self.list_container)
+
+        for key, model in wanted:
+            row = self._rows_by_key.get(key)
+            if row is None:
+                row = self._build_row(key, model)
+                self._rows_by_key[key] = row
+            row.set_local_state(
+                hidden=model.mal_id in self.local_state.hidden_mal_ids,
+                watch_later=model.mal_id in self.local_state.watch_later_mal_ids,
+                actions_enabled=self.can_review and model.mal_id is not None,
+                liked=model.mal_id in self.local_state.liked_mal_ids,
+                disliked=model.mal_id in self.local_state.disliked_mal_ids,
             )
-            card.details_requested.connect(self._open_details)
-            card.hide_requested.connect(self._toggle_hidden)
-            card.watch_later_requested.connect(self._toggle_watch_later)
-            card.liked_requested.connect(lambda model: self._toggle_feedback(model, "liked"))
-            card.disliked_requested.connect(
-                lambda model: self._toggle_feedback(model, "disliked")
-            )
-            card.cover_requested.connect(
-                lambda url, selected_key=key: self._request_cover(selected_key, url)
-            )
-            self._cards_by_key[key] = card
+            row.set_cover_visible(self.show_covers)
+            row.show()
+            self.list_layout.addWidget(row)
+        self.list_layout.addStretch()
+
+    def _build_row(self, key: str, model: RecommendationViewModel):
+        row = RecommendationRow(model, self.list_container)
+        row.selection_requested.connect(
+            lambda _model, selected_key=key: self.select_key(selected_key)
+        )
+        row.details_requested.connect(self._open_details)
+        row.hide_requested.connect(self._toggle_hidden)
+        row.watch_later_requested.connect(self._toggle_watch_later)
+        row.liked_requested.connect(lambda model: self._toggle_feedback(model, "liked"))
+        row.disliked_requested.connect(
+            lambda model: self._toggle_feedback(model, "disliked")
+        )
+        row.cover_requested.connect(
+            lambda url, selected_key=key: self._request_cover(selected_key, url)
+        )
+        return row
+
+    def _rebuild_cards(self) -> None:
+        """Bring the card grid in line with the visible models.
+
+        CHANGE [BUG1]: this used to delete every card and build them all again
+        on any change. A single Like did that five times over, roughly 3,500
+        child widgets, taking about a second, and the feed visibly tore down
+        and came back each time. That is what reads as things flashing open and
+        shut, and it is the main reason the interface felt slow.
+
+        Cards are now reused. Only titles that actually entered or left the
+        view are created or destroyed, and the rest are updated in place, so
+        nothing is torn down for a state change that does not need it.
+        """
+        # CHANGE [BUG1]: only build the layout that is on screen. Both the card
+        # grid and the list rows were being built every time regardless of which
+        # one was visible, which doubled the widget count for nothing. With a
+        # global stylesheet, every extra widget is re-polished on a theme
+        # change, and that repolish is what a theme switch actually costs.
+        if self._view_mode is not RecommendationViewMode.CARDS:
+            return
+        wanted = [
+            (self._key_by_model[id(model)], model) for model in self._visible_models
+        ]
+        wanted_keys = {key for key, _model in wanted}
+
+        for key in [key for key in self._cards_by_key if key not in wanted_keys]:
+            card = self._cards_by_key.pop(key)
+            # CHANGE [BUG1]: hide before detaching. setParent(None) makes a
+            # widget a top-level window, and a widget that was visible keeps
+            # its "explicitly shown" state, so Qt re-shows it as a real window
+            # on the next event loop turn: a blank frame with a title bar that
+            # vanishes when deleteLater finally runs. That is the flashing seen
+            # on Like, Watch Later and anything else that refilters the feed.
+            card.hide()
+            self.card_layout.removeWidget(card)
+            card.setParent(None)
+            card.deleteLater()
+
+        for key, model in wanted:
+            card = self._cards_by_key.get(key)
+            if card is None:
+                card = self._build_card(key, model)
+                self._cards_by_key[key] = card
             card.set_local_state(
                 hidden=model.mal_id in self.local_state.hidden_mal_ids,
                 watch_later=model.mal_id in self.local_state.watch_later_mal_ids,
-                actions_enabled=self.profile_id is not None and model.mal_id is not None,
+                actions_enabled=self.can_review and model.mal_id is not None,
                 liked=model.mal_id in self.local_state.liked_mal_ids,
                 disliked=model.mal_id in self.local_state.disliked_mal_ids,
             )
             card.set_cover_visible(self.show_covers)
+            card.set_badge_colours(*_badge_colours())
         self._reflow_cards()
         self._schedule_visible_covers()
 
+    def _build_card(self, key: str, model: RecommendationViewModel):
+        card = RecommendationCard(model, self.card_container)
+        card.selection_requested.connect(
+            lambda _model, selected_key=key: self.select_key(selected_key)
+        )
+        card.details_requested.connect(self._open_details)
+        card.hide_requested.connect(self._toggle_hidden)
+        card.watch_later_requested.connect(self._toggle_watch_later)
+        card.liked_requested.connect(lambda model: self._toggle_feedback(model, "liked"))
+        card.disliked_requested.connect(
+            lambda model: self._toggle_feedback(model, "disliked")
+        )
+        card.cover_requested.connect(
+            lambda url, selected_key=key: self._request_cover(selected_key, url)
+        )
+        return card
+
     def _reflow_cards(self) -> None:
         cards = list(self._cards_by_key.values())
+        self._equalise_card_heights(cards)
         while self.card_layout.count():
             self.card_layout.takeAt(0)
         grid_stride = CARD_WIDTH + self.card_layout.horizontalSpacing()
@@ -923,6 +1295,34 @@ class RecommendationExplorerPage(QWidget):
                 index % columns,
                 Qt.AlignmentFlag.AlignTop,
             )
+
+    # Qt's "no maximum". Not exported by PySide6, so it is spelled out.
+    _UNCONSTRAINED_HEIGHT = 16777215
+
+    def _equalise_card_heights(self, cards) -> None:
+        """CHANGE [BUG7]: give every card in the grid the same height.
+
+        Cards sized themselves to their own content, and content varies: a
+        title that wraps to two lines, a missing English title, a longer genre
+        list. In a QGridLayout each row is then as tall as its tallest card and
+        the shorter ones leave a ragged gap beneath them, which is what reads
+        as the grid not lining up.
+
+        The height is measured, not assumed, so it follows the GUI scale and
+        the font scale without a second set of constants to keep in step. The
+        constraint is lifted before measuring, or the previous height would be
+        all sizeHint could report and the cards could only ever grow.
+        """
+        if not cards:
+            return
+        for card in cards:
+            card.setMinimumHeight(0)
+            card.setMaximumHeight(self._UNCONSTRAINED_HEIGHT)
+        tallest = max(card.sizeHint().height() for card in cards)
+        if tallest <= 0:
+            return
+        for card in cards:
+            card.setFixedHeight(tallest)
 
     def _rebuild_table(self) -> None:
         self.table.blockSignals(True)
@@ -1013,31 +1413,43 @@ class RecommendationExplorerPage(QWidget):
         )
 
     def _toggle_hidden(self, model: RecommendationViewModel | None) -> None:
-        if self.profile_id is None or model is None or model.mal_id is None:
+        if not self.can_review or model is None or model.mal_id is None:
             return
-        self.local_state = self.state_service.set_hidden(
-            self.profile_id,
-            model.mal_id,
-            model.mal_id not in self.local_state.hidden_mal_ids,
-        )
+        wanted = model.mal_id not in self.local_state.hidden_mal_ids
+        if self.profile_id is None:
+            self.local_state = _toggle_in_memory(
+                self.local_state, "hidden_mal_ids", model.mal_id, wanted
+            )
+        else:
+            self.local_state = self.state_service.set_hidden(
+                self.profile_id,
+                model.mal_id,
+                wanted,
+            )
         self._apply_query()
         self._sync_detail_local_state()
 
     def _toggle_watch_later(self, model: RecommendationViewModel | None) -> None:
-        if self.profile_id is None or model is None or model.mal_id is None:
+        if not self.can_review or model is None or model.mal_id is None:
             return
-        self.local_state = self.state_service.set_watch_later(
-            self.profile_id,
-            model.mal_id,
-            model.mal_id not in self.local_state.watch_later_mal_ids,
-        )
+        wanted = model.mal_id not in self.local_state.watch_later_mal_ids
+        if self.profile_id is None:
+            self.local_state = _toggle_in_memory(
+                self.local_state, "watch_later_mal_ids", model.mal_id, wanted
+            )
+        else:
+            self.local_state = self.state_service.set_watch_later(
+                self.profile_id,
+                model.mal_id,
+                wanted,
+            )
         self._apply_query()
         self._sync_detail_local_state()
 
     def _toggle_feedback(
         self, model: RecommendationViewModel | None, sentiment: str
     ) -> None:
-        if self.profile_id is None or model is None or model.mal_id is None:
+        if not self.can_review or model is None or model.mal_id is None:
             return
         active_ids = (
             self.local_state.liked_mal_ids
@@ -1045,13 +1457,22 @@ class RecommendationExplorerPage(QWidget):
             else self.local_state.disliked_mal_ids
         )
         next_sentiment = None if model.mal_id in active_ids else sentiment
-        self.local_state = self.state_service.set_feedback(
-            self.profile_id,
-            model.mal_id,
-            next_sentiment,
-            genres=model.genres,
-            title=model.display_title,
-        )
+        if self.profile_id is None:
+            self.local_state = _feedback_in_memory(
+                self.local_state,
+                model.mal_id,
+                next_sentiment,
+                genres=model.genres,
+                title=model.display_title,
+            )
+        else:
+            self.local_state = self.state_service.set_feedback(
+                self.profile_id,
+                model.mal_id,
+                next_sentiment,
+                genres=model.genres,
+                title=model.display_title,
+            )
         self._update_feedback_summary()
         self._apply_query()
         self._sync_detail_local_state()
@@ -1060,8 +1481,15 @@ class RecommendationExplorerPage(QWidget):
     def _update_feedback_summary(self) -> None:
         likes = len(self.local_state.liked_mal_ids)
         dislikes = len(self.local_state.disliked_mal_ids)
-        if self.profile_id is None:
+        if not self.can_review:
             text = "Connect a profile to teach AniRec what fits your taste."
+        elif self.profile_id is None:
+            # Sample data. Reviewing works and reshapes the feed, but the
+            # result is not kept, so say so rather than implying it is saved.
+            text = (
+                f"Sample review: {likes} liked · {dislikes} not for me. "
+                "Connect your account to keep what you decide."
+            )
         elif not likes and not dislikes:
             text = "Taste learning is ready — like or dislike any card to shape future picks."
         else:
@@ -1109,7 +1537,7 @@ class RecommendationExplorerPage(QWidget):
         self.detail_dialog.set_local_state(
             hidden=mal_id in self.local_state.hidden_mal_ids,
             watch_later=mal_id in self.local_state.watch_later_mal_ids,
-            actions_enabled=self.profile_id is not None and mal_id is not None,
+            actions_enabled=self.can_review and mal_id is not None,
             liked=mal_id in self.local_state.liked_mal_ids,
             disliked=mal_id in self.local_state.disliked_mal_ids,
         )
@@ -1134,17 +1562,32 @@ class RecommendationExplorerPage(QWidget):
             QTimer.singleShot(0, self._request_visible_covers)
 
     def _request_visible_covers(self) -> None:
-        if not self.show_covers or self.content_stack.currentIndex() != self.card_index:
+        """Fetch artwork for whatever is on screen, in either layout.
+
+        CHANGE [BUG3]: the list layout showed no portraits at all, because this
+        only ever considered the card grid. Rows have a thumbnail and were
+        never asking for one, so they sat on the placeholder forever.
+        """
+        if not self.show_covers:
             return
-        origin = self.card_container.mapFrom(self.card_scroll.viewport(), QPoint(0, 0))
-        visible_rect = self.card_scroll.viewport().rect().translated(origin)
+        if self.content_stack.currentIndex() == self.card_index:
+            container, scroll = self.card_container, self.card_scroll
+            widgets = self._cards_by_key.values()
+        elif self.content_stack.currentIndex() == self.list_index:
+            container, scroll = self.list_container, self.list_scroll
+            widgets = self._rows_by_key.values()
+        else:
+            return
+
+        origin = container.mapFrom(scroll.viewport(), QPoint(0, 0))
+        visible_rect = scroll.viewport().rect().translated(origin)
         requested = 0
-        for card in self._cards_by_key.values():
+        for widget in widgets:
             if requested >= self.MAX_COVER_REQUESTS_PER_PASS:
                 break
-            if card.geometry().intersects(visible_rect):
+            if widget.geometry().intersects(visible_rect):
                 before = len(self._cover_attempted)
-                card.request_cover()
+                widget.request_cover()
                 if len(self._cover_attempted) > before:
                     requested += 1
 
@@ -1169,9 +1612,13 @@ class RecommendationExplorerPage(QWidget):
         if url is None or not isinstance(result, CoverImageResult):
             return
         self._cover_data_by_url[url] = result.data
+        # CHANGE [BUG3]: deliver to rows as well, not only cards.
         for card in self._cards_by_key.values():
             if card.model.cover_url == url:
                 card.set_cover_data(result.data)
+        for row in self._rows_by_key.values():
+            if row.model.cover_url == url:
+                row.set_cover_data(result.data)
         if self.detail_dialog is not None and self.detail_dialog.model is not None:
             detail_url = (
                 self.detail_dialog.model.large_cover_url

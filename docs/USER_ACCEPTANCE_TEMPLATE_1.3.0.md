@@ -1,4 +1,4 @@
-# AniRec 2.0.0 second-computer user acceptance
+# AniRec 1.3.0 second-computer user acceptance
 
 Do not include a Client ID, Client Secret, authorization code, token, username, anime history, profile data, or unredacted log content.
 

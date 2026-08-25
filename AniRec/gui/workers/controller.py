@@ -1,5 +1,8 @@
 """Single owner for AniRec worker threads and their cleanup."""
 
+# Addresses: BUG1. See main_window for the root cause write-up; the change
+# here retires a handle whose thread has stopped so the next start is allowed.
+
 from __future__ import annotations
 
 import time
@@ -91,8 +94,18 @@ class WorkerController(QObject):
         key = operation_key.strip()
         if not key:
             raise ValueError("operation_key is required.")
-        if key in self._operations:
-            raise OperationAlreadyRunningError(f"Operation is already running: {key}")
+        existing = self._operations.get(key)
+        if existing is not None:
+            if existing.thread.isRunning():
+                raise OperationAlreadyRunningError(
+                    f"Operation is already running: {key}"
+                )
+            # CHANGE [BUG1]: a finished operation is only removed when its
+            # queued thread.finished signal is delivered, so between the thread
+            # stopping and that callback running the key was still registered.
+            # is_running() reported False while start() refused, which silently
+            # dropped the next press. Retire the stale handle instead.
+            self._finalize_operation(key)
         if worker.parent() is not None:
             raise ValueError("A worker must not have a parent before moveToThread().")
 

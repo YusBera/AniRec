@@ -100,9 +100,9 @@ def test_dialog_shows_complete_matrix_and_retry_is_guarded_against_duplicates():
     dialog.close()
 
 
-def test_non_retryable_dialog_hides_try_again_and_main_window_deduplicates_by_operation():
+def test_a_non_retryable_error_hides_try_again():
+    """The dialog itself still behaves correctly when one is opened explicitly."""
     create_application([])
-    window = MainWindow()
     error = UserFacingError(
         "config_error",
         "Settings problem",
@@ -111,12 +111,35 @@ def test_non_retryable_dialog_hides_try_again_and_main_window_deduplicates_by_op
         retryable=False,
         technical_details="ConfigError (config_error)",
     )
-    window._on_operation_error("settings-api-test:global", error)
-    first = window.error_dialogs["settings-api-test:global"]
-    window._on_operation_error("settings-api-test:global", error)
+    dialog = ErrorDialog(error)
 
-    assert window.error_dialogs["settings-api-test:global"] is first
-    assert not first.retry_button.isVisible()
-    assert "Traceback" not in first.technical_details.toPlainText()
-    first.close()
+    assert not dialog.retry_button.isVisible()
+    assert "Traceback" not in dialog.technical_details.toPlainText()
+    dialog.close()
+
+
+def test_a_failed_operation_reports_inline_rather_than_opening_a_window():
+    """BUG1: routine failures must not raise windows.
+
+    An error box appearing on top of a progress box that was already closing
+    itself is what produced the reported flashing. The message and the offer to
+    retry now land on the surface the user is looking at.
+    """
+    create_application([])
+    window = MainWindow()
+    error = UserFacingError(
+        "network_error",
+        "Could not reach MyAnimeList",
+        "The request timed out.",
+        "Check your connection and try again.",
+        retryable=True,
+    )
+
+    window._on_operation_error("sync:p1", error)
+    window._on_operation_error("sync:p1", error)
+
+    assert window.error_dialogs == {}
+    status = window.discover_page.status_label.text()
+    assert "Could not reach MyAnimeList" in status
+    assert "Check your connection" in status
     window.close()

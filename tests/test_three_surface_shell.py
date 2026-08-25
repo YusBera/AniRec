@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from AniRec.gui.main_window import DISCOVER_STATES, LIBRARY_STATES, MainWindow, PageId
+from PySide6.QtWidgets import QApplication
+
 from AniRec.gui_main import create_application
 from AniRec.services import SampleDataService
 
@@ -149,6 +151,81 @@ def test_demo_mode_fills_every_surface_and_says_that_it_is_a_sample(window):
     # Sample data is read only, so it is deliberately bound to no profile
     # and cannot write likes or hidden items to anyone's stored state.
     assert window.library_page.profile_id is None
+
+
+def test_the_card_is_short_enough_for_the_review_loop_to_fit(window):
+    """The whole review loop has to fit the default window.
+
+    Measured against the card's own height rather than against screen
+    positions, because realised geometry varies with the Qt platform and with
+    whatever ran before. Roughly 390px of feed is visible at 1280x720 once the
+    surrounding chrome is accounted for, and everything up to and including the
+    feedback buttons has to sit inside that.
+    """
+    window._enter_demo_mode()
+    card = next(iter(window.recommendations_page._cards_by_key.values()))
+
+    hint = card.sizeHint()
+    below_actions = sum(
+        widget.sizeHint().height()
+        for widget in (card.mal_score_label, card.meta_label, card.genres_label,
+                       card.reason_label, card.details_button, card.mal_button)
+    )
+    through_actions = hint.height() - below_actions
+
+    assert through_actions <= 390, (
+        f"cover through feedback buttons needs {through_actions}px, "
+        "which pushes the review actions below the fold"
+    )
+
+
+def test_the_sample_can_actually_be_reviewed(window):
+    """Looking around must demonstrate the product, not a dead feed.
+
+    Reviewing a pick is the whole loop, so disabling Like and Not for me when
+    there is no profile left the one mode meant to sell AniRec unable to show
+    anything working.
+    """
+    window._enter_demo_mode()
+    feed = window.recommendations_page
+    before = len(feed.visible_models)
+    card = next(iter(feed._cards_by_key.values()))
+
+    assert card.like_button.isEnabled()
+    assert card.dislike_button.isEnabled()
+
+    card.like_button.click()
+
+    assert card.model.mal_id in feed.local_state.liked_mal_ids
+    # A reviewed pick leaves the queue, exactly as it would with an account.
+    assert len(feed.visible_models) == before - 1
+
+
+def test_reviewing_the_sample_writes_nothing(window, tmp_path):
+    """No profile means no directory, and none is created."""
+    window._enter_demo_mode()
+    feed = window.recommendations_page
+    card = next(iter(feed._cards_by_key.values()))
+
+    card.like_button.click()
+    card_two = next(iter(feed._cards_by_key.values()))
+    card_two.dislike_button.click()
+
+    assert feed.profile_id is None
+    assert feed.local_state.liked_mal_ids or feed.local_state.disliked_mal_ids
+    # The isolated app-data root for this test stays empty of profile state.
+    assert not list(tmp_path.rglob("recommendation_state.json"))
+
+
+def test_the_sample_summary_does_not_claim_the_result_is_saved(window):
+    window._enter_demo_mode()
+    feed = window.recommendations_page
+    next(iter(feed._cards_by_key.values())).like_button.click()
+
+    summary = feed.feedback_summary_label.text().casefold()
+
+    assert "1 liked" in summary
+    assert "connect" in summary
 
 
 def test_a_refresh_cannot_quietly_empty_the_sample(window):

@@ -1,4 +1,34 @@
-"""Top-level AniRec desktop window and navigation shell."""
+"""Top-level AniRec desktop window and navigation shell.
+
+Addresses: BUG1 (flashing popups), BUG2 (DPI and GUI scale), FEAT2 (match badge).
+
+BUG1 root cause and fix strategy
+--------------------------------
+Reported as "multiple popups flash open and closed" when pressing Recommend 5
+More. Measured rather than assumed, and it is none of the three usual suspects:
+
+* not listener duplication. ``more_requested`` has exactly one receiver.
+* not re-instantiation from a re-render. Qt widgets here are built once.
+* not a missing event guard on the click itself.
+
+What actually happens is that every operation start called
+``show_operation_progress``, which opens a modal progress dialog, and that
+dialog closes itself a moment after the work succeeds. Fetching more
+recommendations reads an already generated candidate pool from disk, so it
+finishes almost immediately. The dialog therefore appears and vanishes, which
+is exactly the reported flash. Several can overlap because the button stays
+enabled until the worker thread actually starts, because the automatic refill
+prompt starts a second operation of its own, and because a failure adds a
+non modal ErrorDialog on top.
+
+Fix strategy: stop reporting routine background work through windows at all.
+These operations already have two inline affordances, the button text and the
+Discover status line, so progress and failure are now reported there. The
+dialog classes and ``show_operation_progress`` remain for explicit callers,
+but nothing opens them automatically. A guard also disables the action the
+moment it is pressed, and the existing finished handler re-enables it, so a
+second press cannot start a second run and the control always comes back.
+"""
 
 from __future__ import annotations
 
@@ -52,6 +82,7 @@ from .error_dialog import ErrorDialog
 from .progress_dialog import OperationProgressDialog
 from .recommendation_page import RecommendationExplorerPage
 from .resources import app_icon, placeholder_pixmap
+from .scaling import set_gui_scale
 from .settings_page import SettingsPage
 from .setup_wizard import SetupWizard
 from .texts import UI_TEXT, WIZARD_TEXT
@@ -102,7 +133,7 @@ class ConnectionStatusBar(QFrame):
         self.setAccessibleName("Profile and MyAnimeList connection status")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setContentsMargins(16, 4, 16, 4)
         layout.setSpacing(16)
 
         self.profile_label = QLabel()
@@ -181,6 +212,8 @@ class MainWindow(QMainWindow):
         self.operation_dialogs: dict[str, OperationProgressDialog] = {}
         self.error_dialogs: dict[str, ErrorDialog] = {}
         self._last_more_count = 5
+        # CHANGE [BUG1]: retry state for the last failure, offered inline.
+        self._pending_retry = None
         self.setCentralWidget(self._build_shell())
         self._connect_dashboard_actions()
         self.sync_requested.connect(self._start_sync)
@@ -245,9 +278,11 @@ class MainWindow(QMainWindow):
         if self.setup_wizard is not None:
             self.setup_wizard.reject()
         for view in self._recommendation_views():
-            # No profile: sample data is read only, so likes and hidden
-            # items must not be written anywhere.
+            # No profile, so nothing is written to disk, but the review
+            # loop still works in memory. Being able to press Like and
+            # watch the feed respond is the point of looking around.
             view.set_profile(None)
+            view.set_ephemeral(True)
             view.set_recommendations(result.recommendations)
         self.discover_page.set_genre_stats(result.genre_stats)
         self.genre_analysis_page.set_genre_stats(result.genre_stats)
@@ -257,6 +292,8 @@ class MainWindow(QMainWindow):
 
     def _leave_demo_mode(self) -> None:
         self.demo_mode = False
+        for view in self._recommendation_views():
+            view.set_ephemeral(False)
         self.demo_banner.setVisible(False)
         self.open_setup_wizard()
 
@@ -384,8 +421,8 @@ class MainWindow(QMainWindow):
         content = QWidget()
         content.setObjectName("contentArea")
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(24, 20, 24, 24)
-        layout.setSpacing(20)
+        layout.setContentsMargins(24, 12, 24, 12)
+        layout.setSpacing(10)
 
         self.connection_status = ConnectionStatusBar()
         layout.addWidget(self.connection_status)
@@ -430,6 +467,7 @@ class MainWindow(QMainWindow):
                     state_service=self.recommendation_state_service,
                 )
                 self.recommendations_page.set_visible_states(DISCOVER_STATES)
+                self.recommendations_page.set_compact_header(True)
                 page = DiscoverPage(self.recommendations_page)
                 page.refresh_requested.connect(self.recommendations_requested.emit)
                 self.discover_page = page
@@ -439,6 +477,7 @@ class MainWindow(QMainWindow):
                     state_service=self.recommendation_state_service,
                 )
                 self.library_page.set_visible_states(LIBRARY_STATES)
+                self.library_page.set_compact_header(True)
                 page = self.library_page
             elif definition.page_id is PageId.SETTINGS:
                 page = SettingsPage(
@@ -450,6 +489,7 @@ class MainWindow(QMainWindow):
                     data_management=self.data_management_service,
                     advanced_page=self.advanced_operations_page,
                     about_page=self.about_page,
+                    theme_manager=self.theme_manager,
                 )
                 self.settings_page = page
             else:
@@ -527,6 +567,10 @@ class MainWindow(QMainWindow):
         self.recommendations_page.feedback_changed.connect(
             lambda _state: self.refresh_dashboard()
         )
+        for view in (self.recommendations_page, self.library_page):
+            view.view_mode_changed.connect(self._persist_view_mode)
+        # CHANGE [BUG2]: rebuild the sized widgets when the GUI scale changes.
+        self.settings_page.gui_scale_changed.connect(self._on_gui_scale_changed)
         self.recommendations_page.more_requested.connect(
             lambda: self._start_more_recommendations(5)
         )
@@ -538,8 +582,8 @@ class MainWindow(QMainWindow):
         if self.active_profile is None or self.pipeline_orchestrator is None:
             return False
         key = operation_key("sync", self.active_profile.profile_id)
+        # CHANGE [BUG1]: report progress inline instead of opening a window.
         if self.worker_controller.is_running(key):
-            self.show_operation_progress(key)
             return False
         worker = SyncWorker(
             self.pipeline_orchestrator,
@@ -550,15 +594,15 @@ class MainWindow(QMainWindow):
             self.worker_controller.start(key, worker)
         except OperationAlreadyRunningError:
             return False
-        self.show_operation_progress(key)
+        # CHANGE [BUG1]: no progress window; the button and status line report it.
         return True
 
     def _start_recommendations(self) -> bool:
         if self.active_profile is None or self.pipeline_orchestrator is None:
             return False
         key = operation_key("recommendation", self.active_profile.profile_id)
+        # CHANGE [BUG1]: report progress inline instead of opening a window.
         if self.worker_controller.is_running(key):
-            self.show_operation_progress(key)
             return False
         state = self.recommendation_state_service.load(self.active_profile.profile_id)
         # Generation stays feedback-neutral on purpose. TasteFeedbackService
@@ -574,7 +618,7 @@ class MainWindow(QMainWindow):
             self.worker_controller.start(key, worker)
         except OperationAlreadyRunningError:
             return False
-        self.show_operation_progress(key)
+        # CHANGE [BUG1]: no progress window; the button and status line report it.
         return True
 
     def _start_more_recommendations(self, count: int = 5) -> bool:
@@ -588,9 +632,14 @@ class MainWindow(QMainWindow):
         if existing is None or not existing.recommendations:
             return False
         key = operation_key("more-recommendations", self.active_profile.profile_id)
+        # CHANGE [BUG1]: a second press must not start a second run.
         if self.worker_controller.is_running(key):
-            self.show_operation_progress(key)
             return False
+        # CHANGE [BUG1]: guard immediately, before the worker thread starts, and
+        # let _on_operation_finished clear it so later presses still work.
+        for view in self._recommendation_views():
+            view.set_more_running(True)
+        self._more_guard_engaged = True
         self._last_more_count = max(1, int(count))
         state = self.recommendation_state_service.load(self.active_profile.profile_id)
         worker = MoreRecommendationsWorker(
@@ -604,9 +653,33 @@ class MainWindow(QMainWindow):
         try:
             self.worker_controller.start(key, worker)
         except OperationAlreadyRunningError:
+            # CHANGE [BUG1]: clear the guard on every path that gives up after
+            # setting it, or the control stays disabled for good.
+            for view in self._recommendation_views():
+                view.set_more_running(False)
             return False
-        self.show_operation_progress(key)
+        # CHANGE [BUG1]: no progress window; the button and status line report it.
         return True
+
+    def _on_gui_scale_changed(self, factor: float) -> None:
+        """CHANGE [BUG2]: cards and rows are built with fixed sizes, so a scale
+        change has to rebuild them rather than just restyle."""
+        set_gui_scale(factor)
+        for view in self._recommendation_views():
+            view.rebuild_for_scale()
+
+    def _persist_view_mode(self, mode: str) -> None:
+        """Remember the layout choice, so it survives a restart."""
+        try:
+            settings = self.settings_service.load()
+            if settings.recommendation_view_mode == mode:
+                return
+            self.settings_service.save_preferences(
+                replace(settings, recommendation_view_mode=mode)
+            )
+        except (AniRecError, OSError, TypeError, ValueError):
+            # A preference is not worth interrupting the session over.
+            return
 
     def _recommendation_views(self):
         """Every explorer instance that should reflect the same library."""
@@ -627,10 +700,20 @@ class MainWindow(QMainWindow):
                 manager = ThemeManager(application)
                 self.theme_manager = manager
         if manager is not None:
-            manager.apply(settings.theme, font_scale=settings.font_scale)
+            # CHANGE [BUG2]: text scales with the GUI scale as well, so the
+            # whole interface grows together rather than geometry alone.
+            set_gui_scale(settings.gui_scale)
+            manager.apply(
+                settings.theme,
+                font_scale=settings.font_scale,
+                gui_scale=settings.gui_scale,
+                gradient_start=settings.gradient_start,
+                gradient_end=settings.gradient_end,
+            )
         for view in self._recommendation_views():
             view.set_default_sort(settings.default_recommendation_sort)
             view.set_show_covers(settings.show_covers)
+            view.set_view_mode(settings.recommendation_view_mode)
         if self.active_profile is not None:
             for view in self._recommendation_views():
                 view.set_show_hidden_preference(
@@ -714,24 +797,32 @@ class MainWindow(QMainWindow):
             and wizard.owns_operation(operation_key)
         ):
             return
-        if operation_key.startswith(("sync:", "recommendation:", "more-recommendations:")):
-            self._report_activity(error.title, tone="error")
-        existing = self.error_dialogs.get(operation_key)
-        if existing is not None and existing.isVisible():
-            existing.raise_()
-            return
-        retry = self._retry_callback(operation_key) if error.retryable else None
-        dialog = ErrorDialog(
-            error,
-            self,
-            retry=retry,
-            open_logs=self.data_management_service.open_logs,
-        )
-        dialog.finished.connect(
-            lambda _result, key=operation_key: self.error_dialogs.pop(key, None)
-        )
-        self.error_dialogs[operation_key] = dialog
-        dialog.show()
+        # CHANGE [BUG1]: report failures inline rather than opening a window.
+        # An error box that appears on top of a progress box that is already
+        # closing itself is what produced the reported flashing. The message,
+        # what to do about it, and a retry all live on the surface the user is
+        # already looking at. Technical detail stays reachable from the log
+        # folder button in Settings.
+        self._report_activity(f"{error.title} {error.solution}".strip(), tone="error")
+        if error.retryable:
+            retry = self._retry_callback(operation_key)
+            if retry is not None:
+                self._offer_retry(operation_key, retry)
+
+    def _offer_retry(self, operation_key: str, retry) -> None:
+        """Expose a retry for a failed operation without opening a window."""
+        # CHANGE [BUG1]: retry is offered through the surface, not a dialog.
+        self._pending_retry = (operation_key, retry)
+
+    def retry_last_failure(self) -> bool:
+        """Run the retry recorded by the last failure, if there is one."""
+        # CHANGE [BUG1]: replaces the retry button that lived on the error dialog.
+        pending = getattr(self, "_pending_retry", None)
+        if pending is None:
+            return False
+        _key, retry = pending
+        self._pending_retry = None
+        return bool(retry())
 
     def _retry_callback(self, operation_key: str):
         if operation_key.startswith("advanced-"):

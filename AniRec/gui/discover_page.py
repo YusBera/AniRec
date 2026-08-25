@@ -1,5 +1,7 @@
 """The Discover surface: one action, your taste, and the feed to review.
 
+Addresses: BUG5 (the header left too little room to browse).
+
 Everything a first time user needs sits on one page. What used to be a
 dashboard, a separate genre analysis page and a seven step pipeline view is
 now a single primary action, a taste summary folded away until asked for, and
@@ -23,6 +25,10 @@ from .design_tokens import SPACE
 from .texts import DISCOVER_TEXT
 
 
+# How far the feed must scroll before the introductory header folds away.
+COLLAPSE_THRESHOLD_PX = 24
+
+
 class TastePanel(QFrame):
     """A collapsible summary of the genres driving the current feed."""
 
@@ -30,8 +36,8 @@ class TastePanel(QFrame):
         super().__init__(parent)
         self.setObjectName("dashboardPanel")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACE["lg"], SPACE["md"], SPACE["lg"], SPACE["md"])
-        layout.setSpacing(SPACE["sm"])
+        layout.setContentsMargins(SPACE["lg"], SPACE["sm"], SPACE["lg"], SPACE["sm"])
+        layout.setSpacing(SPACE["xs"])
 
         header = QHBoxLayout()
         header.setSpacing(SPACE["sm"])
@@ -106,8 +112,8 @@ class DiscoverPage(QWidget):
         self.setAccessibleName("Discover page")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACE["xl"], SPACE["lg"], SPACE["xl"], SPACE["lg"])
-        layout.setSpacing(SPACE["md"])
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE["sm"])
 
         strip = QFrame()
         strip.setObjectName("discoverActionStrip")
@@ -140,6 +146,32 @@ class DiscoverPage(QWidget):
 
         self.explorer = explorer
         layout.addWidget(explorer, 1)
+
+        # CHANGE [BUG5]: the header took 41% of a 1280x720 window, leaving about
+        # a third of the height to actually browse in. The parts that are only
+        # needed before you start reading now fold away as soon as the feed is
+        # scrolled, and come back when you return to the top.
+        self._collapsed = False
+        if hasattr(explorer, "feed_scrolled"):
+            explorer.feed_scrolled.connect(self._on_feed_scrolled)
+
+    def _on_feed_scrolled(self, position: int) -> None:
+        self.set_header_collapsed(position > COLLAPSE_THRESHOLD_PX)
+
+    def set_header_collapsed(self, collapsed: bool) -> None:
+        """Fold the introductory header away while browsing."""
+        collapsed = bool(collapsed)
+        if collapsed == self._collapsed:
+            return
+        self._collapsed = collapsed
+        # The taste summary and the status line are orientation, not controls.
+        # The action stays, because it is the reason to be on this page.
+        self.taste_panel.setVisible(not collapsed)
+        self.status_label.setVisible(not collapsed)
+
+    @property
+    def header_collapsed(self) -> bool:
+        return self._collapsed
 
     def set_genre_stats(self, stats) -> None:
         self.taste_panel.set_genre_stats(tuple(stats or ()))

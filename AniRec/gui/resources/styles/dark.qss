@@ -6,6 +6,7 @@ QWidget {
     font-size: 9.0pt;
 }
 QLabel { background: transparent; }
+QWidget#contentArea { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0B0B0F, stop:1 #101015); }
 QToolTip {
     background: #1E1E26; color: #F2F0ED; border: 1px solid #3A3A44;
     border-radius: 6px; padding: 6px;
@@ -23,11 +24,12 @@ QLabel#pageDescription, QLabel#sidebarFooter { color: #9A968F; }
 QFrame#connectionStatusBar { background: transparent; border: none; }
 QLabel#activeProfileLabel {
     background: #16161C; color: #F2F0ED; border: 1px solid #26262E;
-    border-radius: 11px; padding: 7px 11px; font-weight: 600;
+    /* CHANGE [BUG-TEXT]: extra vertical padding so descenders clear the edge. */
+    border-radius: 11px; padding: 6px 12px; min-height: 17px; font-weight: 600;
 }
 QLabel#malConnectionLabel {
     background: #2B1518; color: #F09A96; border: 1px solid #5E2C31;
-    border-radius: 9px; padding: 4px 10px; font-weight: 600;
+    border-radius: 9px; padding: 6px 12px; min-height: 15px; font-weight: 600;
 }
 QLabel#malConnectionLabel[connected="true"] {
     background: #14251C; color: #7BD5A6; border-color: #2A5240;
@@ -38,7 +40,11 @@ QPushButton {
     border: 1px solid #3A3A44;
     border-radius: 9px;
     color: #F2F0ED;
-    padding: 8px 12px;
+    /* CHANGE [BUG8]: one padding and one minimum height for every button, so
+       controls sitting in a row share a baseline instead of each sizing to its
+       own label. */
+    padding: 7px 12px;
+    min-height: 20px;
     text-align: center;
     font-weight: 600;
 }
@@ -55,15 +61,32 @@ QPushButton[buttonRole="secondary"] { background: #16161C; border-color: #3A3A44
 QPushButton[buttonRole="ghost"] { background: transparent; border-color: #26262E; color: #9A968F; }
 QPushButton[buttonRole="link"] {
     background: transparent; border-color: transparent; color: #F0958A;
-    padding: 4px 2px; text-align: left;
+    /* CHANGE [BUG8]: matches the height and centring of the buttons beside it. */
+    padding: 7px 8px; min-height: 20px; text-align: center;
 }
 QPushButton[buttonRole="link"]:hover { color: #EC7A6C; background: transparent; }
 QPushButton[buttonRole="danger"] { background: #2B1518; border-color: #5E2C31; color: #F09A96; }
+/* CHANGE [BUG7]: the feedback actions carried no colour of their own, so a
+   Like and a Not for me looked identical until after they were pressed. They
+   now preview their meaning on hover, in the greens and reds the active theme
+   already defines, so the colour follows light, dark, OLED and gradient
+   without a second palette. */
+QPushButton[feedback="liked"]:hover {
+    background: #14251C; border-color: #2A5240; color: #7BD5A6;
+}
 QPushButton[feedback="liked"]:checked {
     background: #14251C; border-color: #2A5240; color: #7BD5A6;
 }
+QPushButton[feedback="liked"]:checked:hover { border-color: #7BD5A6; }
+QPushButton[feedback="disliked"]:hover {
+    background: #2B1518; border-color: #5E2C31; color: #F09A96;
+}
 QPushButton[feedback="disliked"]:checked {
     background: #2B1518; border-color: #5E2C31; color: #F09A96;
+}
+QPushButton[feedback="disliked"]:checked:hover { border-color: #F09A96; }
+QPushButton[savedAction="true"]:hover {
+    background: #13202B; border-color: #2F5670; color: #91C4E0;
 }
 
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit {
@@ -82,6 +105,8 @@ QComboBox::drop-down { border: none; width: 28px; }
 QComboBox QAbstractItemView {
     background: #1E1E26; color: #F2F0ED; border: 1px solid #3A3A44;
     selection-background-color: #3A211E; padding: 4px;
+    /* CHANGE [BUG-CORNERS]: the dropdown was a hard rectangle. */
+    border-radius: 10px;
 }
 QMenu {
     background: #1E1E26; color: #F2F0ED; border: 1px solid #26262E;
@@ -146,7 +171,11 @@ QLabel#dashboardActivity[tone="busy"] { background: #1E1E2E; border-color: #4343
 QLabel#dashboardActivity[tone="error"] { background: #2B1518; border-color: #5E2C31; color: #F09A96; }
 QLabel#dashboardGenreName { color: #F2F0ED; font-weight: 600; }
 QLabel#dashboardGenreScore { color: #F0958A; font-weight: 700; }
-QProgressBar#dashboardGenreBar { min-height: 9px; max-height: 9px; border: none; background: #0F0F14; }
+/* CHANGE [BUG-CORNERS]: the genre bars were square-ended. */
+QProgressBar#dashboardGenreBar {
+    min-height: 9px; max-height: 9px; border: none;
+    background: #0F0F14; border-radius: 4px;
+}
 QFrame[homeRecommendationCard="true"] {
     background: #16161C; border: 1px solid #26262E; border-radius: 12px;
 }
@@ -183,7 +212,7 @@ QFrame#recommendationControls, QTableWidget {
 QFrame#recommendationControls { padding: 4px; }
 QLabel#recommendationFeedbackSummary {
     background: #1E1E26; border: 1px solid #26262E; border-radius: 10px;
-    color: #F2F0ED; padding: 8px 11px; font-weight: 600;
+    color: #F2F0ED; padding: 9px 13px; font-weight: 600;
 }
 QFrame#recommendationLibraryBar {
     background: #0F0F14; border: 1px solid #26262E; border-radius: 15px;
@@ -221,9 +250,32 @@ QLabel#recommendationCover { background: #08080B; border-radius: 10px; }
 QPushButton[savedAction="true"]:checked {
     background: #13202B; border-color: #2F5670; color: #91C4E0;
 }
+QFrame[recommendationRow="true"] {
+    background: #16161C; border: 1px solid #26262E; border-radius: 12px;
+}
+QFrame[recommendationRow="true"]:hover { background: #1E1E26; border-color: #E0685A; }
+QFrame[recommendationRow="true"][tasteState="liked"] { border-color: #2A5240; }
+QFrame[recommendationRow="true"][tasteState="disliked"] { border-color: #5E2C31; }
+QFrame[recommendationRow="true"]:focus,
+QFrame[recommendationRow="true"][selected="true"] { border: 2px solid #E0685A; }
+QLabel#recommendationRowCover { background: #08080B; border-radius: 8px; }
+QLabel#recommendationRowTitle { color: #FFFFFF; font-size: 9.0pt; font-weight: 700; }
+QLabel#recommendationRowReason { color: #9A968F; font-size: 8.3pt; }
+QLabel#recommendationRowMatchTag {
+    background: #3A211E; color: #F0958A; border: 1px solid #E0685A;
+    border-radius: 10px; padding: 5px 11px; font-weight: 700;
+    min-height: 15px;
+}
+QLabel#recommendationRowGenreTag {
+    background: #0F0F14; color: #9A968F; border: 1px solid #26262E;
+    border-radius: 10px; padding: 5px 11px; min-height: 15px;
+}
+QWidget#gradientPreview { border-radius: 10px; }
 QHeaderView::section {
     background: #0F0F14; color: #9A968F; border: none;
     border-bottom: 1px solid #26262E; padding: 8px; font-weight: 600;
+    /* CHANGE [BUG-CORNERS]: softened to match every other surface. */
+    border-radius: 6px;
 }
 QTableWidget { gridline-color: #26262E; selection-background-color: #3A211E; }
 

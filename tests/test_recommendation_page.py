@@ -338,7 +338,8 @@ def test_visible_library_tabs_allow_watch_later_to_be_reviewed_and_removed(
     application.processEvents()
     assert titles(page.visible_models) == ["Alpha"]
     saved_card = page._cards_by_key["mal:1"]
-    assert saved_card.watch_later_button.text() == "Remove saved"
+    # Shortened for BUG2: the longer wording clipped at 75% GUI scale.
+    assert saved_card.watch_later_button.text() == "Saved"
     assert saved_card.watch_later_button.isChecked()
     saved_card.watch_later_button.click()
     application.processEvents()
@@ -379,6 +380,15 @@ def test_library_tabs_and_view_controls_fit_at_compact_desktop_width():
         button.geometry().right() <= page.library_bar.contentsRect().right()
         for button in page.library_tabs.values()
     )
-    assert page.cards_button.geometry().right() <= page.library_bar.contentsRect().right()
-    assert page.table_button.geometry().right() <= page.library_bar.contentsRect().right()
+    # The view buttons live in view_bar, not library_bar, so they have to be
+    # measured against their own container. The two bars are siblings of equal
+    # width but library_bar carries a 1px border and view_bar does not, so its
+    # content area is a pixel narrower. Comparing across the two made this
+    # assertion pass or fail purely on whether an earlier test had left a
+    # stylesheet on the shared QApplication, which is a test-order accident
+    # rather than anything about whether the controls fit.
+    view_area = page.view_bar.contentsRect().right()
+    assert page.cards_button.geometry().right() <= view_area
+    assert page.list_button.geometry().right() <= view_area
+    assert page.table_button.geometry().right() <= view_area
     page.close()

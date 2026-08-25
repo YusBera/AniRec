@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from .recommendation_card import open_mal_url
+from .cover_art import rounded_cover
+from .design_tokens import RADIUS
 from .recommendation_view_model import RecommendationViewModel
 from .resources import cover_placeholder_pixmap
 
@@ -272,19 +274,10 @@ class RecommendationDetailDialog(QDialog):
 
 
 def _fit_detail_cover(source: QPixmap) -> QPixmap:
-    scaled = source.scaled(
+    """CHANGE [BUG7]: rounded, matching the card and row portraits."""
+    return rounded_cover(
+        source,
         DETAIL_COVER_WIDTH,
         DETAIL_COVER_HEIGHT,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-        Qt.TransformationMode.SmoothTransformation,
+        RADIUS["md"],
     )
-    canvas = QPixmap(DETAIL_COVER_WIDTH, DETAIL_COVER_HEIGHT)
-    canvas.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(canvas)
-    painter.drawPixmap(
-        (DETAIL_COVER_WIDTH - scaled.width()) // 2,
-        (DETAIL_COVER_HEIGHT - scaled.height()) // 2,
-        scaled,
-    )
-    painter.end()
-    return canvas

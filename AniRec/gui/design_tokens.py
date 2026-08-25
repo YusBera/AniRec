@@ -182,12 +182,149 @@ LIGHT = MappingProxyType(
 )
 
 
-PALETTES = MappingProxyType({"dark": DARK, "light": LIGHT})
+# True black for OLED panels, where an unlit pixel emits no light and draws no
+# power. Derived from DARK rather than written out again, so the two cannot
+# drift: only the surfaces that should reach black are overridden, and the
+# borders lift slightly because separators disappear entirely against #000000.
+OLED = MappingProxyType(
+    {
+        **DARK,
+        "bg": "#000000",
+        "bg_alt": "#000000",
+        "sidebar": "#000000",
+        "surface": "#0A0A0D",
+        "surface_raised": "#141418",
+        "surface_sunken": "#050506",
+        "well": "#000000",
+        "border": "#232329",
+        "border_strong": "#3E3E48",
+        "border_subtle": "#141418",
+        "gradient_card": (
+            "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+            "stop:0 #101014, stop:1 #050506)"
+        ),
+        "gradient_page": "#000000",
+        "gradient_hero": (
+            "qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+            "stop:0 #0C0C0F, stop:0.55 #14100F, stop:1 #1C1210)"
+        ),
+    }
+)
 
 
-def palette(theme: str):
+PALETTES = MappingProxyType({"dark": DARK, "light": LIGHT, "oled": OLED})
+
+
+def _luminance(colour: str) -> float:
+    """Perceived brightness of a hex colour, 0 for black and 1 for white."""
+    body = colour.lstrip("#")
+    if len(body) == 3:
+        body = "".join(character * 2 for character in body)
+    red, green, blue = (int(body[index : index + 2], 16) / 255 for index in (0, 2, 4))
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _mix(first: str, second: str, weight: float = 0.5) -> str:
+    """Blend two hex colours."""
+    parts = []
+    for colour in (first, second):
+        body = colour.lstrip("#")
+        if len(body) == 3:
+            body = "".join(character * 2 for character in body)
+        parts.append([int(body[index : index + 2], 16) for index in (0, 2, 4)])
+    blended = [
+        round(one * (1 - weight) + two * weight) for one, two in zip(parts[0], parts[1])
+    ]
+    return "#" + "".join(f"{value:02X}" for value in blended)
+
+
+def _saturation(colour: str) -> float:
+    """How colourful a value is, 0 for grey and 1 for a pure hue."""
+    body = colour.lstrip("#")
+    if len(body) == 3:
+        body = "".join(character * 2 for character in body)
+    channels = [int(body[index : index + 2], 16) / 255 for index in (0, 2, 4)]
+    high, low = max(channels), min(channels)
+    return 0.0 if high == 0 else (high - low) / high
+
+
+def _shift(colour: str, amount: float, base) -> str:
+    """Move a colour toward white on a dark base, toward black on a light one."""
+    target = "#FFFFFF" if _luminance(base["bg"]) < 0.5 else "#000000"
+    return _mix(colour, target, amount)
+
+
+def _accent_for(start: str, end: str, base) -> str:
+    """Pick a highlight from the user's colours that stays readable.
+
+    The more saturated end is the one that reads as "their" colour. It is then
+    lifted away from the background until there is real contrast, because a
+    gradient of two dark blues would otherwise give a dark blue accent that
+    disappeared into it.
+    """
+    candidate = start if _saturation(start) >= _saturation(end) else end
+    background = _luminance(base["bg"])
+    for _attempt in range(6):
+        if abs(_luminance(candidate) - background) >= 0.28:
+            return candidate
+        candidate = _shift(candidate, 0.18, base)
+    return candidate
+
+
+def gradient_palette(start: str, end: str):
+    """Build a full palette around two colours the user chose.
+
+    Only the page background is actually theirs. Everything else is derived so
+    the result stays legible whatever they pick: the base palette is chosen by
+    the brightness of their colours, surfaces are mixed toward it so cards
+    still read as raised, and text keeps the contrast of that base rather than
+    being tinted into illegibility.
+    """
+    base = LIGHT if (_luminance(start) + _luminance(end)) / 2 > 0.5 else DARK
+    midpoint = _mix(start, end)
+    # CHANGE [BUG-ACCENT]: derive the accent from the chosen colours. It used to
+    # stay the default terracotta whatever the user picked, so buttons, the
+    # match bar and every highlight ignored their gradient entirely. The more
+    # colourful of the two ends is taken and pushed away from the background
+    # until it is clearly readable against it.
+    accent = _accent_for(start, end, base)
+    return MappingProxyType(
+        {
+            **base,
+            "accent": accent,
+            "accent_hover": _shift(accent, 0.14, base),
+            "accent_soft": _shift(accent, 0.28, base),
+            "accent_muted": _mix(accent, midpoint, 0.78),
+            "accent_contrast": "#FFFFFF" if _luminance(accent) < 0.55 else "#101014",
+            "focus": accent,
+            "selection": _mix(accent, midpoint, 0.62),
+            "bg": midpoint,
+            "bg_alt": _mix(midpoint, base["surface"], 0.35),
+            "sidebar": _mix(start, base["sidebar"], 0.55),
+            "surface": _mix(midpoint, base["surface"], 0.72),
+            "surface_raised": _mix(midpoint, base["surface_raised"], 0.80),
+            "surface_sunken": _mix(midpoint, base["surface_sunken"], 0.60),
+            "gradient_page": (
+                f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+                f"stop:0 {start}, stop:1 {end})"
+            ),
+            "gradient_hero": (
+                f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
+                f"stop:0 {_mix(start, base['surface'], 0.5)}, "
+                f"stop:1 {_mix(end, base['surface'], 0.5)})"
+            ),
+        }
+    )
+
+
+def palette(theme: str, *, gradient_start: str | None = None, gradient_end: str | None = None):
     """Return the colour map for a theme name."""
+    name = str(theme).strip().casefold()
+    if name == "gradient":
+        return gradient_palette(
+            gradient_start or "#1B1A20", gradient_end or "#2A1D1B"
+        )
     try:
-        return PALETTES[str(theme).strip().casefold()]
+        return PALETTES[name]
     except KeyError as error:
         raise ValueError(f"Unknown theme: {theme!r}") from error

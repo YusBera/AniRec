@@ -1,11 +1,30 @@
-"""Validated recommendation, profile, API, and appearance settings UI."""
+"""Settings surface.
+
+Addresses: BUG2 (GUI Scale setting), FEAT1 (live colour preview with Cancel).
+
+Configuration keys owned by this surface
+----------------------------------------
+``theme``            one of system, light, dark, oled, gradient. Default "system".
+``gradient_start``   hex colour, the gradient's first stop. Default "#1B1A20".
+``gradient_end``     hex colour, the gradient's second stop. Default "#2A1D1B".
+``gui_scale``        float, one of 0.75, 1.0, 1.25, 1.5. Default 1.0. Multiplies
+                     every hand-chosen dimension in the interface, so cards,
+                     portraits, badges, spacing, buttons and text all resize
+                     together. Stored in the same settings.json as everything
+                     else and applied at startup.
+``font_scale``       float 0.80 to 1.40. Default 1.0. Text only, independent of
+                     gui_scale and multiplied with it.
+``recommendation_view_mode``  one of cards, list, table. Default "cards".
+Validated recommendation, profile, API, and appearance settings UI.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
     QSlider,
     QCheckBox,
@@ -40,12 +59,21 @@ from ..services import (
 )
 from ..infrastructure.logging_config import close_all_anirec_loggers
 from .recommendation_card import MEMORY_COVER_CACHE
+from .gradient_picker import GradientPicker
+from .scaling import GUI_SCALE_CHOICES, clamp_gui_scale, set_gui_scale
 from .texts import SETTINGS_TEXT
+
+
+# Long enough to skip the intermediate frames of a drag, short enough that the
+# preview still tracks the pointer.
+PREVIEW_COALESCE_MS = 90
 from .workers import ApiConnectionWorker, TokenRefreshWorker, WorkerController
 
 
 class SettingsPage(QWidget):
     open_setup_requested = Signal()
+    # CHANGE [BUG2]: announced so the shell can rebuild everything it sizes.
+    gui_scale_changed = Signal(float)
     settings_saved = Signal(object)
     profile_changed = Signal(object)
     show_hidden_changed = Signal(bool)
@@ -68,6 +96,7 @@ class SettingsPage(QWidget):
         confirm_data_delete: Callable[[DataDeletionPlan], bool] | None = None,
         advanced_page: QWidget | None = None,
         about_page: QWidget | None = None,
+        theme_manager=None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("page-settings")
@@ -84,6 +113,13 @@ class SettingsPage(QWidget):
         self.active_profile: UserProfile | None = None
         self.advanced_page = advanced_page
         self.about_page = about_page
+        self.theme_manager = theme_manager
+        # CHANGE [FEAT1]: one pending preview at a time.
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.timeout.connect(self._apply_preview_now)
+        # CHANGE [BUG-PREVIEW]: true while controls are being populated.
+        self._loading = False
         self._saved_secret: str | None = None
         self._refresh_key: str | None = None
         self._build_ui()
@@ -323,16 +359,128 @@ class SettingsPage(QWidget):
         self.theme_input.addItem("System", "system")
         self.theme_input.addItem("Dark", "dark")
         self.theme_input.addItem("Light", "light")
+        self.theme_input.addItem("OLED black", "oled")
+        self.theme_input.addItem("Gradient", "gradient")
+        self.theme_input.currentIndexChanged.connect(self._on_theme_changed)
         self.font_scale_input = QDoubleSpinBox()
         self.font_scale_input.setRange(0.80, 1.40)
         self.font_scale_input.setDecimals(2)
         self.font_scale_input.setSingleStep(0.05)
         self.font_scale_input.setSuffix("×")
         self.show_covers_input = QCheckBox("Show anime covers")
+        # CHANGE [BUG2]: GUI Scale. Qt stylesheets have no relative units, so the
+        # equivalent is one factor that every hand-sized dimension is routed
+        # through, applied here and consumed by gui/scaling.py.
+        self.gui_scale_input = QComboBox()
+        self.gui_scale_input.setObjectName("settingsGuiScale")
+        self.gui_scale_input.setAccessibleName("Overall size of the interface")
+        for factor in GUI_SCALE_CHOICES:
+            self.gui_scale_input.addItem(f"{round(factor * 100)}%", factor)
+        self.gui_scale_input.currentIndexChanged.connect(self._on_gui_scale_changed)
+        self.gui_scale_hint = QLabel(
+            "Resizes everything together: cards, portraits, badges, spacing and "
+            "text. Separate from the Windows display scaling."
+        )
+        self.gui_scale_hint.setObjectName("settingsDataScopeHint")
+        self.gui_scale_hint.setWordWrap(True)
+
+        self.oled_hint = QLabel(
+            "OLED black uses true black, which switches pixels off entirely on "
+            "OLED panels."
+        )
+        self.oled_hint.setObjectName("settingsDataScopeHint")
+        self.oled_hint.setWordWrap(True)
+
+        self.gradient_picker = GradientPicker()
+        self.gradient_picker.changed.connect(lambda *_args: self._preview_theme())
+        # CHANGE [FEAT1]: only a committed colour is written to the config.
+        self.gradient_picker.committed.connect(
+            lambda *_args: self._persist_appearance()
+        )
+
         form.addRow("Theme", self.theme_input)
+        form.addRow("", self.oled_hint)
+        self.gradient_row_label = QLabel("Gradient colours")
+        form.addRow(self.gradient_row_label, self.gradient_picker)
+        form.addRow("GUI scale", self.gui_scale_input)
+        form.addRow("", self.gui_scale_hint)
         form.addRow("Font scale", self.font_scale_input)
         form.addRow("Recommendation artwork", self.show_covers_input)
+        self._on_theme_changed()
         return group
+
+    def _on_gui_scale_changed(self, *_args) -> None:
+        """CHANGE [BUG2]: apply the scale immediately and rebuild what it sizes."""
+        factor = self.gui_scale_input.currentData()
+        if factor is None:
+            return
+        set_gui_scale(factor)
+        self._preview_theme()
+        # CHANGE [BUG2]: persist immediately through the preferences path, which
+        # does not require credentials. The Save button keeps its existing
+        # contract of refusing an API configuration with no Client ID, so
+        # appearance would otherwise be unsavable until an account existed.
+        self._persist_appearance()
+        self.gui_scale_changed.emit(float(factor))
+
+    def _persist_appearance(self) -> None:
+        """Store appearance choices without demanding an API configuration."""
+        try:
+            current = self.settings_service.load()
+            self.settings_service.save_preferences(
+                replace(
+                    current,
+                    theme=self.theme_input.currentData() or current.theme,
+                    gradient_start=self.gradient_picker.start,
+                    gradient_end=self.gradient_picker.end,
+                    gui_scale=float(self.gui_scale_input.currentData() or 1.0),
+                )
+            )
+        except (AniRecError, OSError, TypeError, ValueError):
+            # A preference is never worth interrupting the session over.
+            return
+
+    def _on_theme_changed(self, *_args) -> None:
+        """Show only the controls the selected theme actually uses."""
+        theme = self.theme_input.currentData()
+        for widget in (self.gradient_row_label, self.gradient_picker):
+            widget.setVisible(theme == "gradient")
+        self.oled_hint.setVisible(theme == "oled")
+        self._preview_theme()
+
+    def _preview_theme(self) -> None:
+        """Apply the selection immediately, so the choice can be seen.
+
+        CHANGE [BUG-PREVIEW]: only when the user changed something. Populating
+        these controls from stored settings also fires their change signals, so
+        a preview was being queued during every reload and then applied a
+        moment later, overwriting whatever theme had just been applied
+        elsewhere. A theme chosen anywhere reverted to whatever this page
+        happened to be showing.
+
+        A theme is judged by looking at it. Requiring Save first would mean
+        picking two gradient colours blind.
+
+        CHANGE [FEAT1]: coalesced. Applying a stylesheet makes Qt re-polish
+        every widget in the tree, which costs about a second here, and the
+        colour picker emits a change on every mouse move. Applying each one
+        made dragging unusable. The latest request wins after a short pause,
+        so the preview keeps up with the drag instead of queueing behind it.
+        """
+        if self.theme_manager is None or self._loading:
+            return
+        self._preview_timer.start(PREVIEW_COALESCE_MS)
+
+    def _apply_preview_now(self) -> None:
+        if self.theme_manager is None or self._loading:
+            return
+        self.theme_manager.apply(
+            self.theme_input.currentData() or "system",
+            font_scale=float(self.font_scale_input.value()),
+            gui_scale=float(self.gui_scale_input.currentData() or 1.0),
+            gradient_start=self.gradient_picker.start,
+            gradient_end=self.gradient_picker.end,
+        )
 
     def _build_data_group(self) -> QGroupBox:
         group = QGroupBox("Local data")
@@ -382,6 +530,20 @@ class SettingsPage(QWidget):
         self._sync_profile_buttons()
 
     def reload(self) -> None:
+        # CHANGE [BUG-PREVIEW]: populating these controls fires their change
+        # signals, which used to queue a theme preview that then overwrote the
+        # theme the application had just applied.
+        self._loading = True
+        try:
+            self._reload_controls()
+        finally:
+            self._loading = False
+            # CHANGE [BUG-PREVIEW]: discard anything queued while populating,
+            # including a preview armed while the page was being constructed.
+            # Otherwise it fires afterwards and reverts the applied theme.
+            self._preview_timer.stop()
+
+    def _reload_controls(self) -> None:
         settings = self.settings_service.load()
         self._saved_secret = settings.client_secret
         pipeline = settings.pipeline
@@ -403,6 +565,11 @@ class SettingsPage(QWidget):
             "Saved securely — leave blank to keep" if self._saved_secret else ""
         )
         self.redirect_uri_input.setText(settings.redirect_uri)
+        # CHANGE [BUG2]: restore the saved GUI scale before anything is sized.
+        set_gui_scale(settings.gui_scale)
+        index = self.gui_scale_input.findData(clamp_gui_scale(settings.gui_scale))
+        self.gui_scale_input.setCurrentIndex(max(0, index))
+        self.gradient_picker.set_colours(settings.gradient_start, settings.gradient_end)
         self.theme_input.setCurrentIndex(max(0, self.theme_input.findData(settings.theme)))
         self.font_scale_input.setValue(settings.font_scale)
         self.show_covers_input.setChecked(settings.show_covers)
@@ -434,6 +601,10 @@ class SettingsPage(QWidget):
             default_recommendation_sort=self.default_sort_input.currentData(),
             include_hidden_recommendations=self.include_hidden_input.isChecked(),
             theme=self.theme_input.currentData(),
+            gradient_start=self.gradient_picker.start,
+            gradient_end=self.gradient_picker.end,
+            # CHANGE [BUG2]: persist the GUI scale with everything else.
+            gui_scale=float(self.gui_scale_input.currentData() or 1.0),
             font_scale=self.font_scale_input.value(),
             show_covers=self.show_covers_input.isChecked(),
         )

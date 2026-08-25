@@ -37,6 +37,7 @@ QWidget {
     font-size: $font_md;
 }
 QLabel { background: transparent; }
+QWidget#contentArea { background: $gradient_page; }
 QToolTip {
     background: $surface_raised; color: $text; border: 1px solid $border_strong;
     border-radius: ${radius_sm}px; padding: 6px;
@@ -54,11 +55,12 @@ QLabel#pageDescription, QLabel#sidebarFooter { color: $text_muted; }
 QFrame#connectionStatusBar { background: transparent; border: none; }
 QLabel#activeProfileLabel {
     background: $surface; color: $text; border: 1px solid $border;
-    border-radius: 11px; padding: 7px 11px; font-weight: 600;
+    /* CHANGE [BUG-TEXT]: extra vertical padding so descenders clear the edge. */
+    border-radius: 11px; padding: 6px 12px; min-height: 17px; font-weight: 600;
 }
 QLabel#malConnectionLabel {
     background: $danger_bg; color: $danger_text; border: 1px solid $danger_border;
-    border-radius: 9px; padding: 4px 10px; font-weight: 600;
+    border-radius: 9px; padding: 6px 12px; min-height: 15px; font-weight: 600;
 }
 QLabel#malConnectionLabel[connected="true"] {
     background: $success_bg; color: $success_text; border-color: $success_border;
@@ -69,7 +71,11 @@ QPushButton {
     border: 1px solid $border_strong;
     border-radius: 9px;
     color: $text;
-    padding: 8px 12px;
+    /* CHANGE [BUG8]: one padding and one minimum height for every button, so
+       controls sitting in a row share a baseline instead of each sizing to its
+       own label. */
+    padding: 7px 12px;
+    min-height: 20px;
     text-align: center;
     font-weight: 600;
 }
@@ -86,15 +92,32 @@ QPushButton[buttonRole="secondary"] { background: $surface; border-color: $borde
 QPushButton[buttonRole="ghost"] { background: transparent; border-color: $border; color: $text_muted; }
 QPushButton[buttonRole="link"] {
     background: transparent; border-color: transparent; color: $accent_soft;
-    padding: 4px 2px; text-align: left;
+    /* CHANGE [BUG8]: matches the height and centring of the buttons beside it. */
+    padding: 7px 8px; min-height: 20px; text-align: center;
 }
 QPushButton[buttonRole="link"]:hover { color: $accent_hover; background: transparent; }
 QPushButton[buttonRole="danger"] { background: $danger_bg; border-color: $danger_border; color: $danger_text; }
+/* CHANGE [BUG7]: the feedback actions carried no colour of their own, so a
+   Like and a Not for me looked identical until after they were pressed. They
+   now preview their meaning on hover, in the greens and reds the active theme
+   already defines, so the colour follows light, dark, OLED and gradient
+   without a second palette. */
+QPushButton[feedback="liked"]:hover {
+    background: $success_bg; border-color: $success_border; color: $success_text;
+}
 QPushButton[feedback="liked"]:checked {
     background: $success_bg; border-color: $success_border; color: $success_text;
 }
+QPushButton[feedback="liked"]:checked:hover { border-color: $success_text; }
+QPushButton[feedback="disliked"]:hover {
+    background: $danger_bg; border-color: $danger_border; color: $danger_text;
+}
 QPushButton[feedback="disliked"]:checked {
     background: $danger_bg; border-color: $danger_border; color: $danger_text;
+}
+QPushButton[feedback="disliked"]:checked:hover { border-color: $danger_text; }
+QPushButton[savedAction="true"]:hover {
+    background: $saved_bg; border-color: $saved_border; color: $saved_text;
 }
 
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit {
@@ -113,6 +136,8 @@ QComboBox::drop-down { border: none; width: 28px; }
 QComboBox QAbstractItemView {
     background: $surface_raised; color: $text; border: 1px solid $border_strong;
     selection-background-color: $selection; padding: 4px;
+    /* CHANGE [BUG-CORNERS]: the dropdown was a hard rectangle. */
+    border-radius: ${radius_md}px;
 }
 QMenu {
     background: $surface_raised; color: $text; border: 1px solid $border;
@@ -177,7 +202,11 @@ QLabel#dashboardActivity[tone="busy"] { background: $busy_bg; border-color: $bus
 QLabel#dashboardActivity[tone="error"] { background: $danger_bg; border-color: $danger_border; color: $danger_text; }
 QLabel#dashboardGenreName { color: $text; font-weight: 600; }
 QLabel#dashboardGenreScore { color: $accent_soft; font-weight: 700; }
-QProgressBar#dashboardGenreBar { min-height: 9px; max-height: 9px; border: none; background: $surface_sunken; }
+/* CHANGE [BUG-CORNERS]: the genre bars were square-ended. */
+QProgressBar#dashboardGenreBar {
+    min-height: 9px; max-height: 9px; border: none;
+    background: $surface_sunken; border-radius: 4px;
+}
 QFrame[homeRecommendationCard="true"] {
     background: $surface; border: 1px solid $border; border-radius: 12px;
 }
@@ -214,7 +243,7 @@ QFrame#recommendationControls, QTableWidget {
 QFrame#recommendationControls { padding: 4px; }
 QLabel#recommendationFeedbackSummary {
     background: $surface_raised; border: 1px solid $border; border-radius: 10px;
-    color: $text; padding: 8px 11px; font-weight: 600;
+    color: $text; padding: 9px 13px; font-weight: 600;
 }
 QFrame#recommendationLibraryBar {
     background: $surface_sunken; border: 1px solid $border; border-radius: 15px;
@@ -252,9 +281,32 @@ QLabel#recommendationCover { background: $well; border-radius: 10px; }
 QPushButton[savedAction="true"]:checked {
     background: $saved_bg; border-color: $saved_border; color: $saved_text;
 }
+QFrame[recommendationRow="true"] {
+    background: $surface; border: 1px solid $border; border-radius: 12px;
+}
+QFrame[recommendationRow="true"]:hover { background: $surface_raised; border-color: $accent; }
+QFrame[recommendationRow="true"][tasteState="liked"] { border-color: $success_border; }
+QFrame[recommendationRow="true"][tasteState="disliked"] { border-color: $danger_border; }
+QFrame[recommendationRow="true"]:focus,
+QFrame[recommendationRow="true"][selected="true"] { border: 2px solid $focus; }
+QLabel#recommendationRowCover { background: $well; border-radius: 8px; }
+QLabel#recommendationRowTitle { color: $text_strong; font-size: $font_md; font-weight: 700; }
+QLabel#recommendationRowReason { color: $text_muted; font-size: $font_sm; }
+QLabel#recommendationRowMatchTag {
+    background: $accent_muted; color: $accent_soft; border: 1px solid $accent;
+    border-radius: 10px; padding: 5px 11px; font-weight: 700;
+    min-height: 15px;
+}
+QLabel#recommendationRowGenreTag {
+    background: $surface_sunken; color: $text_muted; border: 1px solid $border;
+    border-radius: 10px; padding: 5px 11px; min-height: 15px;
+}
+QWidget#gradientPreview { border-radius: 10px; }
 QHeaderView::section {
     background: $surface_sunken; color: $text_muted; border: none;
     border-bottom: 1px solid $border; padding: 8px; font-weight: 600;
+    /* CHANGE [BUG-CORNERS]: softened to match every other surface. */
+    border-radius: ${radius_sm}px;
 }
 QTableWidget { gridline-color: $border; selection-background-color: $selection; }
 
@@ -298,9 +350,13 @@ def build_stylesheet(
     *,
     base_point_size: float = DEFAULT_BASE_POINT_SIZE,
     font_scale: float = 1.0,
+    gradient_start: str | None = None,
+    gradient_end: str | None = None,
 ) -> str:
     """Render the stylesheet for a theme at a given font scale."""
-    colours = palette(theme)
+    colours = palette(
+        theme, gradient_start=gradient_start, gradient_end=gradient_end
+    )
     base = base_point_size if base_point_size > 0 else DEFAULT_BASE_POINT_SIZE
     values = dict(colours)
     values["theme_name"] = str(theme).strip().casefold()
