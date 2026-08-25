@@ -10,8 +10,13 @@ from typing import Any, Mapping
 MODEL_SCHEMA_VERSION = 1
 SETTINGS_SCHEMA_VERSION = 1
 TOKEN_SCHEMA_VERSION = 1
-APP_THEME_VALUES = {"light", "dark", "system"}
+# "oled" is a true black variant for OLED panels, where an unlit pixel draws
+# no power. "gradient" blends between two colours the user picks.
+APP_THEME_VALUES = {"light", "dark", "oled", "gradient", "system"}
+DEFAULT_GRADIENT_START = "#1B1A20"
+DEFAULT_GRADIENT_END = "#2A1D1B"
 RECOMMENDATION_SORT_VALUES = {"personal-match", "mal-score", "year", "alphabetical"}
+RECOMMENDATION_VIEW_MODES = {"cards", "list", "table"}
 UNKNOWN_TITLE = "Unknown title"
 NOT_AVAILABLE = "Not available"
 NOT_RATED = "Not rated"
@@ -40,6 +45,26 @@ def _optional_float(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return None if math.isnan(number) else number
+
+
+def _hex_colour(value: object, fallback: str) -> str:
+    """Normalise a user chosen colour, falling back rather than raising.
+
+    A stored theme colour is cosmetic. A malformed one should not stop the
+    application from loading its settings.
+    """
+    text = _optional_text(value)
+    if text is None:
+        return fallback
+    candidate = text if text.startswith("#") else f"#{text}"
+    body = candidate[1:]
+    if len(body) not in (3, 6) or any(
+        character not in "0123456789abcdefABCDEF" for character in body
+    ):
+        return fallback
+    if len(body) == 3:
+        body = "".join(character * 2 for character in body)
+    return f"#{body.upper()}"
 
 
 def _text_tuple(values: object) -> tuple[str, ...]:
@@ -337,8 +362,11 @@ class AppSettings:
     default_recommendation_sort: str = "personal-match"
     include_hidden_recommendations: bool = False
     theme: str = "system"
+    gradient_start: str = DEFAULT_GRADIENT_START
+    gradient_end: str = DEFAULT_GRADIENT_END
     font_scale: float = 1.0
     show_covers: bool = True
+    recommendation_view_mode: str = "cards"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "client_id", _optional_text(self.client_id))
@@ -354,8 +382,21 @@ class AppSettings:
             self, "include_hidden_recommendations", bool(self.include_hidden_recommendations)
         )
         object.__setattr__(self, "theme", (_optional_text(self.theme) or "system").casefold())
+        object.__setattr__(
+            self, "gradient_start", _hex_colour(self.gradient_start, DEFAULT_GRADIENT_START)
+        )
+        object.__setattr__(
+            self, "gradient_end", _hex_colour(self.gradient_end, DEFAULT_GRADIENT_END)
+        )
         object.__setattr__(self, "font_scale", float(self.font_scale))
         object.__setattr__(self, "show_covers", bool(self.show_covers))
+        object.__setattr__(
+            self,
+            "recommendation_view_mode",
+            (_optional_text(self.recommendation_view_mode) or "cards").casefold(),
+        )
+        if self.recommendation_view_mode not in RECOMMENDATION_VIEW_MODES:
+            raise ValueError("Recommendation view mode is invalid.")
 
     @property
     def masked_client_secret(self) -> str:
@@ -373,8 +414,11 @@ class AppSettings:
             "default_recommendation_sort": self.default_recommendation_sort,
             "include_hidden_recommendations": self.include_hidden_recommendations,
             "theme": self.theme,
+            "gradient_start": self.gradient_start,
+            "gradient_end": self.gradient_end,
             "font_scale": self.font_scale,
             "show_covers": self.show_covers,
+            "recommendation_view_mode": self.recommendation_view_mode,
         }
 
     def to_diagnostic_dict(self) -> dict[str, Any]:
@@ -389,8 +433,11 @@ class AppSettings:
             "default_recommendation_sort": self.default_recommendation_sort,
             "include_hidden_recommendations": self.include_hidden_recommendations,
             "theme": self.theme,
+            "gradient_start": self.gradient_start,
+            "gradient_end": self.gradient_end,
             "font_scale": self.font_scale,
             "show_covers": self.show_covers,
+            "recommendation_view_mode": self.recommendation_view_mode,
         }
 
     @classmethod
@@ -415,8 +462,11 @@ class AppSettings:
                 data.get("include_hidden_recommendations", False)
             ),
             theme=data.get("theme") or "system",
+            gradient_start=data.get("gradient_start") or DEFAULT_GRADIENT_START,
+            gradient_end=data.get("gradient_end") or DEFAULT_GRADIENT_END,
             font_scale=data.get("font_scale", 1.0),
             show_covers=bool(data.get("show_covers", True)),
+            recommendation_view_mode=data.get("recommendation_view_mode") or "cards",
         )
 
 

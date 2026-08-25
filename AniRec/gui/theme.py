@@ -10,6 +10,7 @@ from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
 from ..infrastructure.paths import resource_path
+from ..models.domain import DEFAULT_GRADIENT_END, DEFAULT_GRADIENT_START
 from .qss_builder import DEFAULT_BASE_POINT_SIZE, build_stylesheet
 
 
@@ -20,6 +21,8 @@ MAXIMUM_FONT_SCALE = 1.40
 class ThemePreference(str, Enum):
     LIGHT = "light"
     DARK = "dark"
+    OLED = "oled"
+    GRADIENT = "gradient"
     SYSTEM = "system"
 
 
@@ -39,6 +42,8 @@ class ThemeManager:
         self.requested_theme = ThemePreference.SYSTEM
         self.active_theme = ThemePreference.LIGHT
         self.font_scale = 1.0
+        self.gradient_start = DEFAULT_GRADIENT_START
+        self.gradient_end = DEFAULT_GRADIENT_END
         self._base_font = QFont(application.font())
         # Follow the desktop when the user asked for "System". Without this the
         # app kept whichever mode was in force at startup until it was
@@ -61,8 +66,14 @@ class ThemeManager:
         preference: ThemePreference | str,
         *,
         font_scale: float = 1.0,
+        gradient_start: str | None = None,
+        gradient_end: str | None = None,
     ) -> ThemePreference:
         self.requested_theme = ThemePreference(preference)
+        if gradient_start:
+            self.gradient_start = gradient_start
+        if gradient_end:
+            self.gradient_end = gradient_end
         self.active_theme = self._resolve_theme(self.requested_theme)
         self.font_scale = max(MINIMUM_FONT_SCALE, min(MAXIMUM_FONT_SCALE, float(font_scale)))
 
@@ -99,6 +110,8 @@ class ThemeManager:
                 theme.value,
                 base_point_size=self._base_point_size(),
                 font_scale=self.font_scale,
+                gradient_start=self.gradient_start,
+                gradient_end=self.gradient_end,
             )
         except (KeyError, ValueError):
             return self._packaged_stylesheet(theme)

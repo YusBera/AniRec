@@ -102,7 +102,7 @@ class ConnectionStatusBar(QFrame):
         self.setAccessibleName("Profile and MyAnimeList connection status")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setContentsMargins(16, 4, 16, 4)
         layout.setSpacing(16)
 
         self.profile_label = QLabel()
@@ -245,9 +245,11 @@ class MainWindow(QMainWindow):
         if self.setup_wizard is not None:
             self.setup_wizard.reject()
         for view in self._recommendation_views():
-            # No profile: sample data is read only, so likes and hidden
-            # items must not be written anywhere.
+            # No profile, so nothing is written to disk, but the review
+            # loop still works in memory. Being able to press Like and
+            # watch the feed respond is the point of looking around.
             view.set_profile(None)
+            view.set_ephemeral(True)
             view.set_recommendations(result.recommendations)
         self.discover_page.set_genre_stats(result.genre_stats)
         self.genre_analysis_page.set_genre_stats(result.genre_stats)
@@ -257,6 +259,8 @@ class MainWindow(QMainWindow):
 
     def _leave_demo_mode(self) -> None:
         self.demo_mode = False
+        for view in self._recommendation_views():
+            view.set_ephemeral(False)
         self.demo_banner.setVisible(False)
         self.open_setup_wizard()
 
@@ -384,8 +388,8 @@ class MainWindow(QMainWindow):
         content = QWidget()
         content.setObjectName("contentArea")
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(24, 20, 24, 24)
-        layout.setSpacing(20)
+        layout.setContentsMargins(24, 12, 24, 12)
+        layout.setSpacing(10)
 
         self.connection_status = ConnectionStatusBar()
         layout.addWidget(self.connection_status)
@@ -430,6 +434,7 @@ class MainWindow(QMainWindow):
                     state_service=self.recommendation_state_service,
                 )
                 self.recommendations_page.set_visible_states(DISCOVER_STATES)
+                self.recommendations_page.set_compact_header(True)
                 page = DiscoverPage(self.recommendations_page)
                 page.refresh_requested.connect(self.recommendations_requested.emit)
                 self.discover_page = page
@@ -439,6 +444,7 @@ class MainWindow(QMainWindow):
                     state_service=self.recommendation_state_service,
                 )
                 self.library_page.set_visible_states(LIBRARY_STATES)
+                self.library_page.set_compact_header(True)
                 page = self.library_page
             elif definition.page_id is PageId.SETTINGS:
                 page = SettingsPage(
@@ -450,6 +456,7 @@ class MainWindow(QMainWindow):
                     data_management=self.data_management_service,
                     advanced_page=self.advanced_operations_page,
                     about_page=self.about_page,
+                    theme_manager=self.theme_manager,
                 )
                 self.settings_page = page
             else:
@@ -527,6 +534,8 @@ class MainWindow(QMainWindow):
         self.recommendations_page.feedback_changed.connect(
             lambda _state: self.refresh_dashboard()
         )
+        for view in (self.recommendations_page, self.library_page):
+            view.view_mode_changed.connect(self._persist_view_mode)
         self.recommendations_page.more_requested.connect(
             lambda: self._start_more_recommendations(5)
         )
@@ -608,6 +617,19 @@ class MainWindow(QMainWindow):
         self.show_operation_progress(key)
         return True
 
+    def _persist_view_mode(self, mode: str) -> None:
+        """Remember the layout choice, so it survives a restart."""
+        try:
+            settings = self.settings_service.load()
+            if settings.recommendation_view_mode == mode:
+                return
+            self.settings_service.save_preferences(
+                replace(settings, recommendation_view_mode=mode)
+            )
+        except (AniRecError, OSError, TypeError, ValueError):
+            # A preference is not worth interrupting the session over.
+            return
+
     def _recommendation_views(self):
         """Every explorer instance that should reflect the same library."""
         return tuple(
@@ -627,10 +649,16 @@ class MainWindow(QMainWindow):
                 manager = ThemeManager(application)
                 self.theme_manager = manager
         if manager is not None:
-            manager.apply(settings.theme, font_scale=settings.font_scale)
+            manager.apply(
+                settings.theme,
+                font_scale=settings.font_scale,
+                gradient_start=settings.gradient_start,
+                gradient_end=settings.gradient_end,
+            )
         for view in self._recommendation_views():
             view.set_default_sort(settings.default_recommendation_sort)
             view.set_show_covers(settings.show_covers)
+            view.set_view_mode(settings.recommendation_view_mode)
         if self.active_profile is not None:
             for view in self._recommendation_views():
                 view.set_show_hidden_preference(

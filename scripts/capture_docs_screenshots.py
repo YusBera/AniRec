@@ -75,6 +75,14 @@ def capture(output_dir: Path, theme: str) -> list[Path]:
     return written
 
 
+def _display(path: Path) -> str:
+    """Repository-relative where possible, absolute when the target is elsewhere."""
+    try:
+        return str(path.relative_to(REPOSITORY_ROOT))
+    except ValueError:
+        return str(path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -89,7 +97,7 @@ def main() -> int:
 
     for path in capture(arguments.output, arguments.theme):
         size = path.stat().st_size if path.is_file() else 0
-        print(f"wrote {path.relative_to(REPOSITORY_ROOT)} ({size} bytes)")
+        print(f"wrote {_display(path)} ({size} bytes)")
         if size <= 0:
             return 1
     return 0

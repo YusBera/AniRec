@@ -17,7 +17,9 @@ The English desktop interface provides:
 - **Recommend 5 more** plus an automatic refill prompt when the feed is exhausted;
 - a single **Adventurousness** control in place of the sampler's internals;
 - optional developer tools exposing the individual data steps;
-- warm cinematic dark and light themes generated from one set of design tokens, with a font scale that moves the whole type hierarchy;
+- four themes generated from one set of design tokens: light, dark, OLED black, and a gradient built from two colours you pick, with a live preview;
+- grid and list layouts for the feed, plus a table, each remembered between sessions;
+- a font scale that moves the whole type hierarchy together;
 - cancellable background work, guarded retry, safe error dialogs, and redacted logs.
 
 ![AniRec first-run setup](docs/images/anirec-first-run-wizard.png)

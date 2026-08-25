@@ -22,9 +22,12 @@ from .recommendation_view_model import RecommendationViewModel
 from .resources import cover_placeholder_pixmap
 
 
-CARD_WIDTH = 238
-COVER_WIDTH = 190
-COVER_HEIGHT = 285
+CARD_WIDTH = 224
+# A 2:3 poster, the standard shape for anime cover art. Sized so that a whole
+# card, including the review actions, fits the default window without
+# scrolling; at the previous size the buttons sat below the fold.
+COVER_WIDTH = 176
+COVER_HEIGHT = 264
 
 
 class CoverMemoryCache:
@@ -95,8 +98,9 @@ class RecommendationCard(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACE['md'], SPACE['md'], SPACE['md'], SPACE['md'])
-        layout.setSpacing(7)
+        layout.setContentsMargins(SPACE['md'], SPACE['sm'], SPACE['md'], SPACE['sm'])
+        # Ten stacked items, so the gap between them dominates the card height.
+        layout.setSpacing(SPACE['xs'])
         self.cover_label = QLabel()
         self.cover_label.setObjectName("recommendationCover")
         self.cover_label.setFixedSize(COVER_WIDTH, COVER_HEIGHT)
@@ -153,15 +157,20 @@ class RecommendationCard(QFrame):
         self.mal_button.clicked.connect(
             lambda: open_mal_url(self.model.mal_url, opener=self._mal_opener)
         )
+        # Identity first, then the decision, then the supporting detail.
+        #
+        # A 2:3 poster plus six buttons cannot fit the default window: a whole
+        # card measures around 565px against roughly 448px of visible feed, and
+        # shrinking the cover far enough to close that gap would leave artwork
+        # too small to recognise. So the ordering decides what falls below the
+        # fold. Reviewing a pick is the core loop, so Like and Not for me sit
+        # directly under the title where the eye already is, and the metadata
+        # a user reads only when undecided moves beneath them.
         for widget in (
             self.cover_label,
             self.match_label,
             self.title_label,
             self.secondary_title_label,
-            self.mal_score_label,
-            self.meta_label,
-            self.genres_label,
-            self.reason_label,
         ):
             layout.addWidget(widget)
         feedback_row = QHBoxLayout()
@@ -169,6 +178,13 @@ class RecommendationCard(QFrame):
         feedback_row.addWidget(self.like_button, 1)
         feedback_row.addWidget(self.dislike_button, 1)
         layout.addLayout(feedback_row)
+        for widget in (
+            self.mal_score_label,
+            self.meta_label,
+            self.genres_label,
+            self.reason_label,
+        ):
+            layout.addWidget(widget)
         action_row = QHBoxLayout()
         action_row.setSpacing(8)
         action_row.addWidget(self.details_button, 1)

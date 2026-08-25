@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
-from PySide6.QtCore import QEvent, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPoint,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QGraphicsOpacityEffect,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -32,17 +41,28 @@ from ..models import Recommendation
 from ..services import (
     CoverImageResult,
     CoverImageService,
+    RecommendationFeedback,
     RecommendationLocalState,
     RecommendationStateService,
 )
 from .recommendation_card import CARD_WIDTH, RecommendationCard
+from .design_tokens import SPACE
 from .recommendation_detail_dialog import RecommendationDetailDialog
+from .recommendation_row import RecommendationRow
 from .recommendation_view_model import RecommendationViewModel, recommendation_view_models
 from .workers import CoverDownloadWorker, OperationAlreadyRunningError, WorkerController
 
 
 class RecommendationViewMode(str, Enum):
+    """How the feed is laid out.
+
+    CARDS leads with artwork in a responsive grid. LIST trades the poster
+    for density, fitting several times as many titles in the same space.
+    TABLE remains for scanning many rows by column.
+    """
+
     CARDS = "cards"
+    LIST = "list"
     TABLE = "table"
 
 
@@ -102,6 +122,38 @@ def filter_and_sort_recommendations(
     return tuple(sorted(filtered, key=key))
 
 
+def _toggle_in_memory(
+    state: RecommendationLocalState, field: str, mal_id: int, wanted: bool
+) -> RecommendationLocalState:
+    """Add or remove one id from a saved-state set, without persisting."""
+    current = set(getattr(state, field))
+    current.add(mal_id) if wanted else current.discard(mal_id)
+    return replace(state, **{field: frozenset(current)})
+
+
+def _feedback_in_memory(
+    state: RecommendationLocalState,
+    mal_id: int,
+    sentiment: str | None,
+    *,
+    genres: tuple[str, ...],
+    title: str,
+) -> RecommendationLocalState:
+    """Record or clear one vote, without persisting."""
+    kept = [record for record in state.feedback if record.mal_id != mal_id]
+    if sentiment is not None:
+        kept.append(
+            RecommendationFeedback(
+                mal_id=mal_id, sentiment=sentiment, genres=genres, title=title
+            )
+        )
+    return replace(state, feedback=tuple(kept))
+
+
+# Long enough to read as a transition, short enough not to delay the switch.
+VIEW_FADE_MILLISECONDS = 160
+
+
 def recommendation_key(model: RecommendationViewModel, source_index: int) -> str:
     if model.mal_id is not None:
         return f"mal:{model.mal_id}"
@@ -117,6 +169,7 @@ class RecommendationExplorerPage(QWidget):
     feedback_changed = Signal(object)
     more_requested = Signal()
     refill_requested = Signal()
+    view_mode_changed = Signal(str)
     MAX_COVER_REQUESTS_PER_PASS = 6
 
     def __init__(
@@ -140,6 +193,7 @@ class RecommendationExplorerPage(QWidget):
         self._key_by_model: dict[int, str] = {}
         self._model_by_key: dict[str, RecommendationViewModel] = {}
         self._cards_by_key: dict[str, RecommendationCard] = {}
+        self._rows_by_key: dict[str, RecommendationRow] = {}
         self._selected_key: str | None = None
         self._view_mode = RecommendationViewMode.CARDS
         self.show_covers = True
@@ -150,6 +204,8 @@ class RecommendationExplorerPage(QWidget):
         self._more_available = False
         self._more_running = False
         self._more_unavailable_reason = ""
+        self._ephemeral = False
+        self._view_animation = None
         self._build_ui()
         self._update_feedback_summary()
         if self.worker_controller is not None:
@@ -245,12 +301,15 @@ class RecommendationExplorerPage(QWidget):
         resolved = RecommendationViewMode(mode)
         self._view_mode = resolved
         self.cards_button.setChecked(resolved is RecommendationViewMode.CARDS)
+        self.list_button.setChecked(resolved is RecommendationViewMode.LIST)
         self.table_button.setChecked(resolved is RecommendationViewMode.TABLE)
         self._show_current_view()
         self._restore_selection()
         self._update_selected_actions_visibility()
-        if resolved is RecommendationViewMode.CARDS:
+        if resolved in (RecommendationViewMode.CARDS, RecommendationViewMode.LIST):
             QTimer.singleShot(0, self._request_visible_covers)
+        self._fade_in_current_view()
+        self.view_mode_changed.emit(resolved.value)
 
     def set_default_sort(self, sort_mode: RecommendationSortMode | str) -> None:
         resolved = RecommendationSortMode(sort_mode)
@@ -310,21 +369,24 @@ class RecommendationExplorerPage(QWidget):
         self.hero = QFrame()
         self.hero.setObjectName("recommendationHero")
         hero_layout = QHBoxLayout(self.hero)
-        hero_layout.setContentsMargins(24, 22, 24, 22)
-        hero_layout.setSpacing(24)
+        hero_layout.setContentsMargins(20, 14, 20, 14)
+        hero_layout.setSpacing(20)
         heading_copy = QVBoxLayout()
         heading_copy.setSpacing(6)
         eyebrow = QLabel("PERSONAL DISCOVERY")
         eyebrow.setObjectName("recommendationEyebrow")
+        self.hero_eyebrow = eyebrow
         title = QLabel("Find your next favorite")
         title.setObjectName("recommendationHeroTitle")
         title.setAccessibleName("Your recommendations heading")
+        self.hero_title = title
         description = QLabel(
             "Review each pick once. AniRec learns from every decision and reshapes "
             "the remaining feed in real time."
         )
         description.setObjectName("recommendationHeroDescription")
         description.setWordWrap(True)
+        self.hero_description = description
         heading_copy.addWidget(eyebrow)
         heading_copy.addWidget(title)
         heading_copy.addWidget(description)
@@ -341,6 +403,7 @@ class RecommendationExplorerPage(QWidget):
         action_caption = QLabel("READY FOR SOMETHING NEW?")
         action_caption.setObjectName("recommendationActionCaption")
         action_caption.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.hero_action_caption = action_caption
         hero_actions.addWidget(action_caption)
 
         # Kept as a compatibility hook for earlier local state tests; visible
@@ -468,6 +531,11 @@ class RecommendationExplorerPage(QWidget):
         self.cards_button.setObjectName("recommendationCardsViewButton")
         self.cards_button.setProperty("viewToggle", True)
         self.cards_button.setCheckable(True)
+        self.list_button = QPushButton("List")
+        self.list_button.setObjectName("recommendationListViewButton")
+        self.list_button.setProperty("viewToggle", True)
+        self.list_button.setCheckable(True)
+        self.list_button.setAccessibleName("Show recommendations as a compact list")
         self.table_button = QPushButton("Table")
         self.table_button.setObjectName("recommendationTableViewButton")
         self.table_button.setProperty("viewToggle", True)
@@ -475,9 +543,11 @@ class RecommendationExplorerPage(QWidget):
         group = QButtonGroup(self)
         group.setExclusive(True)
         group.addButton(self.cards_button)
+        group.addButton(self.list_button)
         group.addButton(self.table_button)
         self.cards_button.setChecked(True)
         view_row.addWidget(self.cards_button)
+        view_row.addWidget(self.list_button)
         view_row.addWidget(self.table_button)
         library_layout.addLayout(view_row)
         root.addWidget(self.library_bar)
@@ -517,6 +587,18 @@ class RecommendationExplorerPage(QWidget):
         self.card_scroll.setObjectName("recommendationCardScroll")
         self.card_scroll.setWidgetResizable(True)
         self.card_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.list_scroll = QScrollArea()
+        self.list_scroll.setObjectName("recommendationListScroll")
+        self.list_scroll.setWidgetResizable(True)
+        self.list_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.list_container = QWidget()
+        self.list_container.setObjectName("recommendationListContainer")
+        self.list_layout = QVBoxLayout(self.list_container)
+        self.list_layout.setContentsMargins(0, 0, 0, 0)
+        self.list_layout.setSpacing(SPACE["sm"])
+        self.list_layout.addStretch()
+        self.list_scroll.setWidget(self.list_container)
+
         self.card_container = QWidget()
         self.card_container.setObjectName("recommendationCardContainer")
         self.card_layout = QGridLayout(self.card_container)
@@ -596,6 +678,7 @@ class RecommendationExplorerPage(QWidget):
         empty_layout.addStretch()
 
         self.card_index = self.content_stack.addWidget(self.card_scroll)
+        self.list_index = self.content_stack.addWidget(self.list_scroll)
         self.table_index = self.content_stack.addWidget(self.table)
         self.empty_index = self.content_stack.addWidget(self.empty_widget)
         root.addWidget(self.content_stack, 1)
@@ -613,6 +696,7 @@ class RecommendationExplorerPage(QWidget):
             else:
                 widget.valueChanged.connect(lambda _value: self._apply_query())
         self.cards_button.clicked.connect(lambda: self.set_view_mode(RecommendationViewMode.CARDS))
+        self.list_button.clicked.connect(lambda: self.set_view_mode(RecommendationViewMode.LIST))
         self.table_button.clicked.connect(lambda: self.set_view_mode(RecommendationViewMode.TABLE))
         self.clear_filters_button.clicked.connect(self.clear_filters)
         self.state_filter.currentIndexChanged.connect(lambda _index: self._apply_query())
@@ -668,6 +752,45 @@ class RecommendationExplorerPage(QWidget):
             self._apply_query()
         else:
             self.state_filter.setCurrentIndex(index)
+
+    def set_ephemeral(self, ephemeral: bool) -> None:
+        """Allow reviewing without a profile, keeping the result in memory.
+
+        The sample library exists so someone can judge AniRec before creating a
+        MyAnimeList application. Reviewing a pick is the whole product, so
+        disabling Like and Not for me there left the one mode meant to sell it
+        unable to demonstrate anything. Nothing is written: there is no profile
+        directory to write to, and the state is discarded when the sample is.
+        """
+        self._ephemeral = bool(ephemeral)
+        if self._ephemeral:
+            self.local_state = RecommendationLocalState()
+        self._update_feedback_summary()
+        self._apply_query()
+
+    @property
+    def can_review(self) -> bool:
+        """Whether feedback and saved state can be recorded at all."""
+        return self.profile_id is not None or self._ephemeral
+
+    def set_compact_header(self, compact: bool) -> None:
+        """Fold away the decorative header copy.
+
+        Measured on a 1280x720 window, the full header put half the viewport
+        above the first recommendation, so almost nothing was visible without
+        scrolling. The two parts that do work, the feedback summary and the
+        action to fetch more, stay; the standing title and description do not,
+        because the surface already carries its own heading and the empty state
+        explains the review loop where that explanation is actually useful.
+        """
+        decorative = bool(compact)
+        for widget in (
+            self.hero_eyebrow,
+            self.hero_title,
+            self.hero_description,
+            self.hero_action_caption,
+        ):
+            widget.setVisible(not decorative)
 
     def set_visible_states(self, states) -> None:
         """Restrict which library collections this view offers.
@@ -811,10 +934,34 @@ class RecommendationExplorerPage(QWidget):
         if self._selected_key not in visible_keys:
             self._selected_key = None
         self._rebuild_cards()
+        self._rebuild_rows()
         self._rebuild_table()
         self._show_current_view()
         self._restore_selection()
         self._update_local_action_state()
+
+    def _fade_in_current_view(self) -> None:
+        """Cross fade when the layout changes, so the switch is not a jump cut.
+
+        Short and opacity only. A longer or moving transition would fight the
+        scroll position the user is holding, and Qt has no CSS transition to
+        lean on here.
+        """
+        widget = self.content_stack.currentWidget()
+        if widget is None:
+            return
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", self)
+        animation.setDuration(VIEW_FADE_MILLISECONDS)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        # Detach afterwards: a lingering effect forces the whole subtree
+        # through an offscreen buffer on every repaint.
+        animation.finished.connect(lambda: widget.setGraphicsEffect(None))
+        self._view_animation = animation
+        animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _show_current_view(self) -> None:
         if not self._visible_models:
@@ -872,8 +1019,47 @@ class RecommendationExplorerPage(QWidget):
         self.clear_filters_button.setVisible(False)
         self.browse_liked_button.setVisible(False)
         self.content_stack.setCurrentIndex(
-            self.card_index if self._view_mode is RecommendationViewMode.CARDS else self.table_index
+            {
+                RecommendationViewMode.CARDS: self.card_index,
+                RecommendationViewMode.LIST: self.list_index,
+                RecommendationViewMode.TABLE: self.table_index,
+            }[self._view_mode]
         )
+
+    def _rebuild_rows(self) -> None:
+        """Rebuild the compact list. Mirrors _rebuild_cards for the row widget."""
+        while self.list_layout.count():
+            item = self.list_layout.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        self._rows_by_key.clear()
+        for model in self._visible_models:
+            key = self._key_by_model[id(model)]
+            row = RecommendationRow(model, self.list_container)
+            row.selection_requested.connect(
+                lambda _model, selected_key=key: self.select_key(selected_key)
+            )
+            row.details_requested.connect(self._open_details)
+            row.hide_requested.connect(self._toggle_hidden)
+            row.watch_later_requested.connect(self._toggle_watch_later)
+            row.liked_requested.connect(lambda model: self._toggle_feedback(model, "liked"))
+            row.disliked_requested.connect(
+                lambda model: self._toggle_feedback(model, "disliked")
+            )
+            row.cover_requested.connect(
+                lambda url, selected_key=key: self._request_cover(selected_key, url)
+            )
+            self._rows_by_key[key] = row
+            row.set_local_state(
+                hidden=model.mal_id in self.local_state.hidden_mal_ids,
+                watch_later=model.mal_id in self.local_state.watch_later_mal_ids,
+                actions_enabled=self.can_review and model.mal_id is not None,
+                liked=model.mal_id in self.local_state.liked_mal_ids,
+                disliked=model.mal_id in self.local_state.disliked_mal_ids,
+            )
+            row.set_cover_visible(self.show_covers)
+            self.list_layout.addWidget(row)
+        self.list_layout.addStretch()
 
     def _rebuild_cards(self) -> None:
         while self.card_layout.count():
@@ -901,7 +1087,7 @@ class RecommendationExplorerPage(QWidget):
             card.set_local_state(
                 hidden=model.mal_id in self.local_state.hidden_mal_ids,
                 watch_later=model.mal_id in self.local_state.watch_later_mal_ids,
-                actions_enabled=self.profile_id is not None and model.mal_id is not None,
+                actions_enabled=self.can_review and model.mal_id is not None,
                 liked=model.mal_id in self.local_state.liked_mal_ids,
                 disliked=model.mal_id in self.local_state.disliked_mal_ids,
             )
@@ -1013,31 +1199,43 @@ class RecommendationExplorerPage(QWidget):
         )
 
     def _toggle_hidden(self, model: RecommendationViewModel | None) -> None:
-        if self.profile_id is None or model is None or model.mal_id is None:
+        if not self.can_review or model is None or model.mal_id is None:
             return
-        self.local_state = self.state_service.set_hidden(
-            self.profile_id,
-            model.mal_id,
-            model.mal_id not in self.local_state.hidden_mal_ids,
-        )
+        wanted = model.mal_id not in self.local_state.hidden_mal_ids
+        if self.profile_id is None:
+            self.local_state = _toggle_in_memory(
+                self.local_state, "hidden_mal_ids", model.mal_id, wanted
+            )
+        else:
+            self.local_state = self.state_service.set_hidden(
+                self.profile_id,
+                model.mal_id,
+                wanted,
+            )
         self._apply_query()
         self._sync_detail_local_state()
 
     def _toggle_watch_later(self, model: RecommendationViewModel | None) -> None:
-        if self.profile_id is None or model is None or model.mal_id is None:
+        if not self.can_review or model is None or model.mal_id is None:
             return
-        self.local_state = self.state_service.set_watch_later(
-            self.profile_id,
-            model.mal_id,
-            model.mal_id not in self.local_state.watch_later_mal_ids,
-        )
+        wanted = model.mal_id not in self.local_state.watch_later_mal_ids
+        if self.profile_id is None:
+            self.local_state = _toggle_in_memory(
+                self.local_state, "watch_later_mal_ids", model.mal_id, wanted
+            )
+        else:
+            self.local_state = self.state_service.set_watch_later(
+                self.profile_id,
+                model.mal_id,
+                wanted,
+            )
         self._apply_query()
         self._sync_detail_local_state()
 
     def _toggle_feedback(
         self, model: RecommendationViewModel | None, sentiment: str
     ) -> None:
-        if self.profile_id is None or model is None or model.mal_id is None:
+        if not self.can_review or model is None or model.mal_id is None:
             return
         active_ids = (
             self.local_state.liked_mal_ids
@@ -1045,13 +1243,22 @@ class RecommendationExplorerPage(QWidget):
             else self.local_state.disliked_mal_ids
         )
         next_sentiment = None if model.mal_id in active_ids else sentiment
-        self.local_state = self.state_service.set_feedback(
-            self.profile_id,
-            model.mal_id,
-            next_sentiment,
-            genres=model.genres,
-            title=model.display_title,
-        )
+        if self.profile_id is None:
+            self.local_state = _feedback_in_memory(
+                self.local_state,
+                model.mal_id,
+                next_sentiment,
+                genres=model.genres,
+                title=model.display_title,
+            )
+        else:
+            self.local_state = self.state_service.set_feedback(
+                self.profile_id,
+                model.mal_id,
+                next_sentiment,
+                genres=model.genres,
+                title=model.display_title,
+            )
         self._update_feedback_summary()
         self._apply_query()
         self._sync_detail_local_state()
@@ -1060,8 +1267,15 @@ class RecommendationExplorerPage(QWidget):
     def _update_feedback_summary(self) -> None:
         likes = len(self.local_state.liked_mal_ids)
         dislikes = len(self.local_state.disliked_mal_ids)
-        if self.profile_id is None:
+        if not self.can_review:
             text = "Connect a profile to teach AniRec what fits your taste."
+        elif self.profile_id is None:
+            # Sample data. Reviewing works and reshapes the feed, but the
+            # result is not kept, so say so rather than implying it is saved.
+            text = (
+                f"Sample review: {likes} liked · {dislikes} not for me. "
+                "Connect your account to keep what you decide."
+            )
         elif not likes and not dislikes:
             text = "Taste learning is ready — like or dislike any card to shape future picks."
         else:
@@ -1109,7 +1323,7 @@ class RecommendationExplorerPage(QWidget):
         self.detail_dialog.set_local_state(
             hidden=mal_id in self.local_state.hidden_mal_ids,
             watch_later=mal_id in self.local_state.watch_later_mal_ids,
-            actions_enabled=self.profile_id is not None and mal_id is not None,
+            actions_enabled=self.can_review and mal_id is not None,
             liked=mal_id in self.local_state.liked_mal_ids,
             disliked=mal_id in self.local_state.disliked_mal_ids,
         )

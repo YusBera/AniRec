@@ -6,6 +6,7 @@ QWidget {
     font-size: 9.0pt;
 }
 QLabel { background: transparent; }
+QWidget#contentArea { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0B0B0F, stop:1 #101015); }
 QToolTip {
     background: #1E1E26; color: #F2F0ED; border: 1px solid #3A3A44;
     border-radius: 6px; padding: 6px;
@@ -221,6 +222,26 @@ QLabel#recommendationCover { background: #08080B; border-radius: 10px; }
 QPushButton[savedAction="true"]:checked {
     background: #13202B; border-color: #2F5670; color: #91C4E0;
 }
+QFrame[recommendationRow="true"] {
+    background: #16161C; border: 1px solid #26262E; border-radius: 12px;
+}
+QFrame[recommendationRow="true"]:hover { background: #1E1E26; border-color: #E0685A; }
+QFrame[recommendationRow="true"][tasteState="liked"] { border-color: #2A5240; }
+QFrame[recommendationRow="true"][tasteState="disliked"] { border-color: #5E2C31; }
+QFrame[recommendationRow="true"]:focus,
+QFrame[recommendationRow="true"][selected="true"] { border: 2px solid #E0685A; }
+QLabel#recommendationRowCover { background: #08080B; border-radius: 8px; }
+QLabel#recommendationRowTitle { color: #FFFFFF; font-size: 9.0pt; font-weight: 700; }
+QLabel#recommendationRowReason { color: #9A968F; font-size: 8.3pt; }
+QLabel#recommendationRowMatchTag {
+    background: #3A211E; color: #F0958A; border: 1px solid #E0685A;
+    border-radius: 9px; padding: 3px 9px; font-weight: 700;
+}
+QLabel#recommendationRowGenreTag {
+    background: #0F0F14; color: #9A968F; border: 1px solid #26262E;
+    border-radius: 9px; padding: 3px 9px;
+}
+QWidget#gradientPreview { border-radius: 10px; }
 QHeaderView::section {
     background: #0F0F14; color: #9A968F; border: none;
     border-bottom: 1px solid #26262E; padding: 8px; font-weight: 600;

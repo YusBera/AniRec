@@ -9,12 +9,22 @@ try:
     from ..errors import ConfigError
     from ..infrastructure.json_storage import JsonStore
     from ..infrastructure.paths import config_dir
-    from ..models import APP_THEME_VALUES, RECOMMENDATION_SORT_VALUES, AppSettings
+    from ..models import (
+        APP_THEME_VALUES,
+        RECOMMENDATION_SORT_VALUES,
+        RECOMMENDATION_VIEW_MODES,
+        AppSettings,
+    )
 except ImportError:  # Compatibility with the S01 top-level import path.
     from errors import ConfigError
     from infrastructure.json_storage import JsonStore
     from infrastructure.paths import config_dir
-    from models import APP_THEME_VALUES, RECOMMENDATION_SORT_VALUES, AppSettings
+    from models import (
+        APP_THEME_VALUES,
+        RECOMMENDATION_SORT_VALUES,
+        RECOMMENDATION_VIEW_MODES,
+        AppSettings,
+    )
 
 
 class SettingsService:
@@ -47,10 +57,22 @@ class SettingsService:
         self.validate(settings)
         return self._store.write(settings.to_storage_dict(), self._path)
 
+    def save_preferences(self, settings: AppSettings) -> Path:
+        """Persist appearance and layout choices without demanding credentials.
+
+        ``validate`` refuses settings that carry no Client ID, which is right
+        for an API configuration and wrong for a preference: it meant a theme
+        or a layout could not be remembered until an account existed, so
+        someone still looking around lost every choice they made.
+        """
+        self.validate_preferences(settings)
+        return self._store.write(settings.to_storage_dict(), self._path)
+
     @staticmethod
     def validate(settings: AppSettings) -> None:
         if not settings.client_id:
             raise ConfigError("MAL client ID is required.")
+        SettingsService.validate_preferences(settings)
         parsed = urlparse(settings.redirect_uri)
         if (
             parsed.scheme != "http"
@@ -62,9 +84,15 @@ class SettingsService:
             or parsed.fragment
         ):
             raise ConfigError("Redirect URI must be a local HTTP /callback URL.")
+
+    @staticmethod
+    def validate_preferences(settings: AppSettings) -> None:
+        """Check the parts of the settings that are not credentials."""
         if settings.default_recommendation_sort not in RECOMMENDATION_SORT_VALUES:
             raise ConfigError("Default recommendation sort is invalid.")
         if settings.theme not in APP_THEME_VALUES:
             raise ConfigError("Theme preference is invalid.")
+        if settings.recommendation_view_mode not in RECOMMENDATION_VIEW_MODES:
+            raise ConfigError("Recommendation view mode is invalid.")
         if not 0.80 <= settings.font_scale <= 1.40:
             raise ConfigError("Font scale must be between 0.80 and 1.40.")

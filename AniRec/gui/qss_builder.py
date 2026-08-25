@@ -37,6 +37,7 @@ QWidget {
     font-size: $font_md;
 }
 QLabel { background: transparent; }
+QWidget#contentArea { background: $gradient_page; }
 QToolTip {
     background: $surface_raised; color: $text; border: 1px solid $border_strong;
     border-radius: ${radius_sm}px; padding: 6px;
@@ -252,6 +253,26 @@ QLabel#recommendationCover { background: $well; border-radius: 10px; }
 QPushButton[savedAction="true"]:checked {
     background: $saved_bg; border-color: $saved_border; color: $saved_text;
 }
+QFrame[recommendationRow="true"] {
+    background: $surface; border: 1px solid $border; border-radius: 12px;
+}
+QFrame[recommendationRow="true"]:hover { background: $surface_raised; border-color: $accent; }
+QFrame[recommendationRow="true"][tasteState="liked"] { border-color: $success_border; }
+QFrame[recommendationRow="true"][tasteState="disliked"] { border-color: $danger_border; }
+QFrame[recommendationRow="true"]:focus,
+QFrame[recommendationRow="true"][selected="true"] { border: 2px solid $focus; }
+QLabel#recommendationRowCover { background: $well; border-radius: 8px; }
+QLabel#recommendationRowTitle { color: $text_strong; font-size: $font_md; font-weight: 700; }
+QLabel#recommendationRowReason { color: $text_muted; font-size: $font_sm; }
+QLabel#recommendationRowMatchTag {
+    background: $accent_muted; color: $accent_soft; border: 1px solid $accent;
+    border-radius: 9px; padding: 3px 9px; font-weight: 700;
+}
+QLabel#recommendationRowGenreTag {
+    background: $surface_sunken; color: $text_muted; border: 1px solid $border;
+    border-radius: 9px; padding: 3px 9px;
+}
+QWidget#gradientPreview { border-radius: 10px; }
 QHeaderView::section {
     background: $surface_sunken; color: $text_muted; border: none;
     border-bottom: 1px solid $border; padding: 8px; font-weight: 600;
@@ -298,9 +319,13 @@ def build_stylesheet(
     *,
     base_point_size: float = DEFAULT_BASE_POINT_SIZE,
     font_scale: float = 1.0,
+    gradient_start: str | None = None,
+    gradient_end: str | None = None,
 ) -> str:
     """Render the stylesheet for a theme at a given font scale."""
-    colours = palette(theme)
+    colours = palette(
+        theme, gradient_start=gradient_start, gradient_end=gradient_end
+    )
     base = base_point_size if base_point_size > 0 else DEFAULT_BASE_POINT_SIZE
     values = dict(colours)
     values["theme_name"] = str(theme).strip().casefold()

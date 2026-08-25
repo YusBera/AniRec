@@ -61,17 +61,41 @@ def test_card_preserves_two_by_three_cover_and_reference_text_hierarchy():
     assert card.focusPolicy().name == "StrongFocus"
 
 
-def test_card_actions_follow_content_without_viewport_sized_vertical_gap():
-    application = create_application([])
-    card = RecommendationCard(model())
-    card.show()
-    application.processEvents()
+def test_the_review_decision_sits_above_the_supporting_detail():
+    """Like and Not for me must precede the metadata in the card.
 
-    content_bottom = card.reason_label.geometry().bottom()
-    action_top = card.like_button.geometry().top()
+    A 2:3 poster plus six buttons does not fit the default window, so the
+    ordering decides what falls below the fold. Reviewing a pick is the core
+    loop, so the two feedback actions belong directly under the title, and the
+    detail a user reads only when undecided belongs beneath them.
+
+    Asserted against the layout rather than against pixel positions: geometry
+    depends on whether the widget has been realised and on the font metrics of
+    whichever Qt platform is in use, which made an earlier version of this test
+    pass alone and fail inside the full suite.
+    """
+    create_application([])
+    card = RecommendationCard(model())
+    layout = card.layout()
+
+    def row_of(widget):
+        for index in range(layout.count()):
+            item = layout.itemAt(index)
+            if item.widget() is widget:
+                return index
+            child = item.layout()
+            if child is not None:
+                for inner in range(child.count()):
+                    if child.itemAt(inner).widget() is widget:
+                        return index
+        raise AssertionError(f"{widget} is not in the card layout")
+
     assert card.sizePolicy().verticalPolicy() is QSizePolicy.Policy.Maximum
-    assert 0 <= action_top - content_bottom <= 24
-    card.close()
+    assert row_of(card.title_label) < row_of(card.like_button)
+    assert row_of(card.like_button) == row_of(card.dislike_button)
+    for later in (card.mal_score_label, card.meta_label, card.reason_label,
+                  card.details_button, card.watch_later_button):
+        assert row_of(card.like_button) < row_of(later)
 
 
 def test_card_requests_cover_lazily_and_uses_placeholder_for_corrupt_bytes():

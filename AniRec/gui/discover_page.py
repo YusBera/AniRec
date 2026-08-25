@@ -30,8 +30,8 @@ class TastePanel(QFrame):
         super().__init__(parent)
         self.setObjectName("dashboardPanel")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACE["lg"], SPACE["md"], SPACE["lg"], SPACE["md"])
-        layout.setSpacing(SPACE["sm"])
+        layout.setContentsMargins(SPACE["lg"], SPACE["sm"], SPACE["lg"], SPACE["sm"])
+        layout.setSpacing(SPACE["xs"])
 
         header = QHBoxLayout()
         header.setSpacing(SPACE["sm"])
@@ -106,8 +106,8 @@ class DiscoverPage(QWidget):
         self.setAccessibleName("Discover page")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACE["xl"], SPACE["lg"], SPACE["xl"], SPACE["lg"])
-        layout.setSpacing(SPACE["md"])
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE["sm"])
 
         strip = QFrame()
         strip.setObjectName("discoverActionStrip")

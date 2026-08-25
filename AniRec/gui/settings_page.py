@@ -40,6 +40,7 @@ from ..services import (
 )
 from ..infrastructure.logging_config import close_all_anirec_loggers
 from .recommendation_card import MEMORY_COVER_CACHE
+from .gradient_picker import GradientPicker
 from .texts import SETTINGS_TEXT
 from .workers import ApiConnectionWorker, TokenRefreshWorker, WorkerController
 
@@ -68,6 +69,7 @@ class SettingsPage(QWidget):
         confirm_data_delete: Callable[[DataDeletionPlan], bool] | None = None,
         advanced_page: QWidget | None = None,
         about_page: QWidget | None = None,
+        theme_manager=None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("page-settings")
@@ -84,6 +86,7 @@ class SettingsPage(QWidget):
         self.active_profile: UserProfile | None = None
         self.advanced_page = advanced_page
         self.about_page = about_page
+        self.theme_manager = theme_manager
         self._saved_secret: str | None = None
         self._refresh_key: str | None = None
         self._build_ui()
@@ -323,16 +326,56 @@ class SettingsPage(QWidget):
         self.theme_input.addItem("System", "system")
         self.theme_input.addItem("Dark", "dark")
         self.theme_input.addItem("Light", "light")
+        self.theme_input.addItem("OLED black", "oled")
+        self.theme_input.addItem("Gradient", "gradient")
+        self.theme_input.currentIndexChanged.connect(self._on_theme_changed)
         self.font_scale_input = QDoubleSpinBox()
         self.font_scale_input.setRange(0.80, 1.40)
         self.font_scale_input.setDecimals(2)
         self.font_scale_input.setSingleStep(0.05)
         self.font_scale_input.setSuffix("×")
         self.show_covers_input = QCheckBox("Show anime covers")
+        self.oled_hint = QLabel(
+            "OLED black uses true black, which switches pixels off entirely on "
+            "OLED panels."
+        )
+        self.oled_hint.setObjectName("settingsDataScopeHint")
+        self.oled_hint.setWordWrap(True)
+
+        self.gradient_picker = GradientPicker()
+        self.gradient_picker.changed.connect(lambda *_args: self._preview_theme())
+
         form.addRow("Theme", self.theme_input)
+        form.addRow("", self.oled_hint)
+        self.gradient_row_label = QLabel("Gradient colours")
+        form.addRow(self.gradient_row_label, self.gradient_picker)
         form.addRow("Font scale", self.font_scale_input)
         form.addRow("Recommendation artwork", self.show_covers_input)
+        self._on_theme_changed()
         return group
+
+    def _on_theme_changed(self, *_args) -> None:
+        """Show only the controls the selected theme actually uses."""
+        theme = self.theme_input.currentData()
+        for widget in (self.gradient_row_label, self.gradient_picker):
+            widget.setVisible(theme == "gradient")
+        self.oled_hint.setVisible(theme == "oled")
+        self._preview_theme()
+
+    def _preview_theme(self) -> None:
+        """Apply the selection immediately, so the choice can be seen.
+
+        A theme is judged by looking at it. Requiring Save first would mean
+        picking two gradient colours blind.
+        """
+        if self.theme_manager is None:
+            return
+        self.theme_manager.apply(
+            self.theme_input.currentData() or "system",
+            font_scale=float(self.font_scale_input.value()),
+            gradient_start=self.gradient_picker.start,
+            gradient_end=self.gradient_picker.end,
+        )
 
     def _build_data_group(self) -> QGroupBox:
         group = QGroupBox("Local data")
@@ -403,6 +446,7 @@ class SettingsPage(QWidget):
             "Saved securely — leave blank to keep" if self._saved_secret else ""
         )
         self.redirect_uri_input.setText(settings.redirect_uri)
+        self.gradient_picker.set_colours(settings.gradient_start, settings.gradient_end)
         self.theme_input.setCurrentIndex(max(0, self.theme_input.findData(settings.theme)))
         self.font_scale_input.setValue(settings.font_scale)
         self.show_covers_input.setChecked(settings.show_covers)
@@ -434,6 +478,8 @@ class SettingsPage(QWidget):
             default_recommendation_sort=self.default_sort_input.currentData(),
             include_hidden_recommendations=self.include_hidden_input.isChecked(),
             theme=self.theme_input.currentData(),
+            gradient_start=self.gradient_picker.start,
+            gradient_end=self.gradient_picker.end,
             font_scale=self.font_scale_input.value(),
             show_covers=self.show_covers_input.isChecked(),
         )
