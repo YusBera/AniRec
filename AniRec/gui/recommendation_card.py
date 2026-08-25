@@ -1,4 +1,10 @@
-"""Reference-aligned recommendation card with safe cover and MAL actions."""
+"""Addresses: BUG2 (DPI and GUI scale, portrait centring), FEAT2 (match badge).
+
+Every hand-chosen pixel dimension here goes through ``scaled()`` so the whole
+card grows and shrinks with the GUI Scale setting. Qt stylesheets have no
+relative units to use instead.
+Reference-aligned recommendation card with safe cover and MAL actions.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +12,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFocusEvent, QMouseEvent, QPainter, QPixmap
+from PySide6.QtGui import QDesktopServices, QFocusEvent, QMouseEvent, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -17,7 +23,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .design_tokens import SPACE
+from .cover_art import rounded_cover
+from .design_tokens import RADIUS, SPACE
+from .match_badge import (
+    BADGE_BOTTOM_INSET,
+    BAR_SIDE_INSET,
+    MatchBadge,
+    should_show_badge,
+)
+from .scaling import scaled
 from .recommendation_view_model import RecommendationViewModel
 from .resources import cover_placeholder_pixmap
 
@@ -28,6 +42,17 @@ CARD_WIDTH = 224
 # scrolling; at the previous size the buttons sat below the fold.
 COVER_WIDTH = 176
 COVER_HEIGHT = 264
+# Matches the card's own corner radius so the portrait sits inside it rather
+# than cutting across it.
+COVER_RADIUS = RADIUS["md"]
+
+# Line budgets for the wrapped labels. Generous enough that clipping is rare,
+# and identical for every card so the rows line up across the grid.
+TITLE_LINES = 2
+SECONDARY_TITLE_LINES = 1
+META_LINES = 1
+GENRE_LINES = 2
+REASON_LINES = 3
 
 
 class CoverMemoryCache:
@@ -94,28 +119,66 @@ class RecommendationCard(QFrame):
         self.setProperty("recommendationCard", True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName(f"Anime recommendation: {model.display_title}")
-        self.setFixedWidth(CARD_WIDTH)
+        # CHANGE [BUG2]: was a fixed 224px, so the card kept one size while the
+        # logical window shrank at higher DPI and took a larger share of it.
+        self.setFixedWidth(scaled(CARD_WIDTH))
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SPACE['md'], SPACE['sm'], SPACE['md'], SPACE['sm'])
-        # Ten stacked items, so the gap between them dominates the card height.
-        layout.setSpacing(SPACE['xs'])
+        # CHANGE [BUG2]: margins and spacing scale too, or the card's proportions
+        # change as it grows.
+        layout.setContentsMargins(
+            scaled(SPACE['md']), scaled(SPACE['md']),
+            scaled(SPACE['md']), scaled(SPACE['md']),
+        )
+        # CHANGE [BUG7]: 4px between eleven stacked items left every label
+        # touching the control above it, so the buttons read as part of the
+        # text rather than as separate things to press. The card is taller for
+        # it, which is the correct trade: the grid equalises heights anyway.
+        layout.setSpacing(scaled(SPACE['sm']))
         self.cover_label = QLabel()
         self.cover_label.setObjectName("recommendationCover")
-        self.cover_label.setFixedSize(COVER_WIDTH, COVER_HEIGHT)
+        # CHANGE [BUG2]: scale the portrait with the rest of the card.
+        self.cover_label.setFixedSize(scaled(COVER_WIDTH), scaled(COVER_HEIGHT))
         self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # CHANGE [BUG7]: the portrait must not absorb any of the slack created
+        # by equalising card heights. Without this the leftover pixels were
+        # shared into the cells above the text and each card put its first
+        # line in a slightly different place.
+        self.cover_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self.cover_label.setAccessibleName(f"Cover for {model.display_title}")
         self.cover_label.setToolTip(f"Cover for {model.display_title}")
         self._show_placeholder()
 
+        # CHANGE [FEAT2]: match percentage stamped over the bottom of the
+        # portrait. Parented to the cover so it overlays the artwork, and
+        # omitted entirely when there is no score to show.
+        self.match_badge = None
+        if should_show_badge(model):
+            self.match_badge = MatchBadge(model.personal_match, self.cover_label)
+            self._position_badge()
+
         self.match_label = self._label(model.personal_match_text, "personalMatchLabel")
+        # CHANGE [FEAT2]: do not print the score twice. The bar across the
+        # portrait already states it, so this line only repeated it in words
+        # and cost a row of vertical space on every card. It stays as the
+        # fallback for a recommendation that carries no score at all, where
+        # there is no bar to read it from, and it keeps its text either way so
+        # nothing that reports the card's contents loses the figure.
+        self.match_label.setVisible(self.match_badge is None)
         self.title_label = self._label(model.display_title, "recommendationTitle")
         self.title_label.setWordWrap(True)
         self.secondary_title_label = self._label(
             model.secondary_title or "", "recommendationSecondaryTitle"
         )
-        self.secondary_title_label.setVisible(bool(model.secondary_title))
+        # CHANGE [BUG7]: keep the line even when there is no English title.
+        # Hiding it removed a row of height from that card alone, so every
+        # element below it sat higher than on its neighbours and nothing in
+        # the grid lined up across a row. An empty label still reserves one
+        # line, which is exactly the reservation needed.
+        self.secondary_title_label.setVisible(True)
         self.mal_score_label = self._label(model.mal_score_text, "malScoreLabel")
         self.meta_label = self._label(
             f"{model.year_text} · {model.status} · {model.episodes_text}",
@@ -126,6 +189,26 @@ class RecommendationCard(QFrame):
         self.genres_label.setWordWrap(True)
         self.reason_label = self._label(model.reason, "recommendationReason")
         self.reason_label.setWordWrap(True)
+        # CHANGE [BUG7]: fixed line budgets for every label that wraps.
+        #
+        # This is what actually makes the grid a grid. Equalising the outer
+        # card height only squares off the boxes; inside them a title that
+        # wrapped to two lines, or a fourth genre, still pushed everything
+        # below it down, so no two cards agreed on where the buttons sat. With
+        # each wrapped label reserving a set number of lines, every card has
+        # the same natural height and there is no slack left to distribute.
+        self._reserve_lines(self.title_label, TITLE_LINES)
+        # An empty secondary title does not measure the same as a filled one,
+        # so reserve its line explicitly rather than trusting the sizeHint.
+        self._reserve_lines(self.secondary_title_label, SECONDARY_TITLE_LINES)
+        self._reserve_lines(self.meta_label, META_LINES)
+        self._reserve_lines(self.genres_label, GENRE_LINES)
+        self._reserve_lines(self.reason_label, REASON_LINES)
+        # CHANGE [BUG7]: the single-line labels were cut off mid-word at the
+        # card edge with no ellipsis, which reads as text running into the
+        # border rather than as text that continues elsewhere.
+        self._elide(self.secondary_title_label)
+        self._elide(self.mal_score_label)
         self.like_button = QPushButton("Like")
         self.like_button.setObjectName("recommendationLikeButton")
         self.like_button.setProperty("feedback", "liked")
@@ -138,21 +221,26 @@ class RecommendationCard(QFrame):
         self.dislike_button.clicked.connect(
             lambda: self.disliked_requested.emit(self.model)
         )
-        self.details_button = QPushButton("View Details")
+        # CHANGE [BUG2]: shorter labels. At 75% GUI scale the card is 168px
+        # wide and the previous wording clipped mid-word ("iew Detail").
+        self.details_button = QPushButton("Details")
         self.details_button.setProperty("buttonRole", "secondary")
+        self.details_button.setAccessibleName("View full details for this anime")
         self.details_button.clicked.connect(lambda: self.details_requested.emit(self.model))
         self.hide_button = QPushButton("Hide")
         self.hide_button.setObjectName("recommendationHideButton")
         self.hide_button.clicked.connect(lambda: self.hide_requested.emit(self.model))
-        self.watch_later_button = QPushButton("Watch Later")
+        self.watch_later_button = QPushButton("Later")
         self.watch_later_button.setObjectName("recommendationWatchLaterButton")
         self.watch_later_button.setProperty("savedAction", True)
+        self.watch_later_button.setAccessibleName("Save this anime to Watch Later")
         self.watch_later_button.setCheckable(True)
         self.watch_later_button.clicked.connect(
             lambda: self.watch_later_requested.emit(self.model)
         )
-        self.mal_button = QPushButton("Open on MyAnimeList")
+        self.mal_button = QPushButton("MyAnimeList")
         self.mal_button.setProperty("buttonRole", "link")
+        self.mal_button.setAccessibleName("Open this anime on MyAnimeList")
         self.mal_button.setEnabled(bool(model.mal_url))
         self.mal_button.clicked.connect(
             lambda: open_mal_url(self.model.mal_url, opener=self._mal_opener)
@@ -166,15 +254,24 @@ class RecommendationCard(QFrame):
         # fold. Reviewing a pick is the core loop, so Like and Not for me sit
         # directly under the title where the eye already is, and the metadata
         # a user reads only when undecided moves beneath them.
+        # CHANGE [BUG2]: the cover is narrower than the card, and adding it
+        # without an alignment left it against the left margin. Centre it.
+        layout.addWidget(self.cover_label, 0, Qt.AlignmentFlag.AlignHCenter)
+        # CHANGE [BUG7]: the portrait and the first line of text were 4px
+        # apart, so the artwork appeared to sit on top of the words.
+        layout.addSpacing(scaled(SPACE['xs']))
         for widget in (
-            self.cover_label,
             self.match_label,
             self.title_label,
             self.secondary_title_label,
         ):
             layout.addWidget(widget)
+        # CHANGE [BUG7]: a clear break before a row of controls, and scaled
+        # gaps inside it. The 8 and 4 here were raw pixels that stayed put
+        # while everything around them grew with the GUI scale.
+        layout.addSpacing(scaled(SPACE['xs']))
         feedback_row = QHBoxLayout()
-        feedback_row.setSpacing(8)
+        feedback_row.setSpacing(scaled(SPACE['sm']))
         feedback_row.addWidget(self.like_button, 1)
         feedback_row.addWidget(self.dislike_button, 1)
         layout.addLayout(feedback_row)
@@ -185,21 +282,141 @@ class RecommendationCard(QFrame):
             self.reason_label,
         ):
             layout.addWidget(widget)
+        # CHANGE [BUG7]: collect the slack from equalised heights in one
+        # place. Without this Qt shares the extra pixels out between the
+        # stretchable labels, so identical cards still disagreed about where
+        # each line sat. Pooling it here pins the action rows to the bottom of
+        # every card and lets the text above align from the top.
+        layout.addStretch(1)
+        layout.addSpacing(scaled(SPACE['xs']))
         action_row = QHBoxLayout()
-        action_row.setSpacing(8)
+        action_row.setSpacing(scaled(SPACE['sm']))
         action_row.addWidget(self.details_button, 1)
         action_row.addWidget(self.watch_later_button, 1)
         layout.addLayout(action_row)
         utility_row = QHBoxLayout()
-        utility_row.setSpacing(4)
+        utility_row.setSpacing(scaled(SPACE['xs']))
         utility_row.addWidget(self.mal_button, 1)
         utility_row.addWidget(self.hide_button)
         layout.addLayout(utility_row)
 
+    def apply_scale(self) -> None:
+        """Re-apply every fixed dimension for the current GUI scale.
+
+        CHANGE [BUG2]: cards are reused rather than rebuilt, which is what
+        keeps a vote from tearing down the feed. The cost is that a size fixed
+        at construction never changes on its own, so a scale change left every
+        card at whatever size it was first built with. Re-applying here means
+        both properties hold: no teardown, and the card still resizes.
+        """
+        self.setFixedWidth(scaled(CARD_WIDTH))
+        self.cover_label.setFixedSize(scaled(COVER_WIDTH), scaled(COVER_HEIGHT))
+        layout = self.layout()
+        if layout is not None:
+            # CHANGE [BUG7]: these had drifted from the values used when the
+            # card is built, so a scale change quietly restored the cramped
+            # spacing the constructor no longer uses.
+            layout.setContentsMargins(
+                scaled(SPACE["md"]), scaled(SPACE["md"]),
+                scaled(SPACE["md"]), scaled(SPACE["md"]),
+            )
+            layout.setSpacing(scaled(SPACE["sm"]))
+        # CHANGE [BUG7]: the line budgets are in font pixels, so they have to
+        # be measured again whenever the scale, and with it the font, changes.
+        self._reserve_lines(self.title_label, TITLE_LINES)
+        # An empty secondary title does not measure the same as a filled one,
+        # so reserve its line explicitly rather than trusting the sizeHint.
+        self._reserve_lines(self.secondary_title_label, SECONDARY_TITLE_LINES)
+        self._reserve_lines(self.meta_label, META_LINES)
+        self._reserve_lines(self.genres_label, GENRE_LINES)
+        self._reserve_lines(self.reason_label, REASON_LINES)
+        self._elide(self.secondary_title_label)
+        self._elide(self.mal_score_label)
+        self._rescale_cover()
+        self._position_badge()
+
+    def _position_badge(self) -> None:
+        """CHANGE [FEAT2]: span the portrait's lower edge, inset from the corners."""
+        if self.match_badge is None:
+            return
+        self.match_badge.apply_scale()
+        cover = self.cover_label
+        badge = self.match_badge
+        inset = scaled(BAR_SIDE_INSET)
+        badge.setFixedWidth(max(1, cover.width() - inset * 2))
+        badge.move(
+            inset,
+            cover.height() - badge.height() - scaled(BADGE_BOTTOM_INSET),
+        )
+        badge.raise_()
+
+    def set_badge_colours(self, track, fill, text) -> None:
+        """CHANGE [FEAT2]: let the theme decide the bar's colours."""
+        if self.match_badge is not None:
+            self.match_badge.set_colours(track, fill, text)
+
+    def _elide(self, label: QLabel) -> None:
+        """Shorten a single-line label with an ellipsis instead of clipping it.
+
+        The full string stays on the widget as its tooltip and accessible
+        name, so nothing is actually lost to a user who wants it.
+        """
+        full = getattr(label, "_full_text", None)
+        if full is None:
+            full = label.text()
+            label._full_text = full
+        if not full:
+            return
+        available = scaled(CARD_WIDTH) - 2 * scaled(SPACE["md"])
+        label.setText(label.fontMetrics().elidedText(
+            full, Qt.TextElideMode.ElideRight, max(0, available)
+        ))
+        if label.text() != full:
+            label.setToolTip(full)
+            label.setAccessibleName(full)
+
     @staticmethod
-    def _label(text: str, object_name: str) -> QLabel:
-        label = QLabel(text)
+    def _reserve_lines(label: QLabel, lines: int) -> None:
+        """Pin a wrapped label to a fixed number of lines.
+
+        The single-line height is measured rather than computed, because the
+        stylesheet contributes padding that varies by object name and is not
+        knowable here. Measuring it with a one-character string and adding
+        whole line spacings for the rest keeps it correct under any font or
+        GUI scale.
+        """
+        # Clear any previous reservation first: sizeHint on a widget with a
+        # fixed height reports that height, so re-measuring without this would
+        # simply return the old value and the labels would never rescale.
+        label.setMinimumHeight(0)
+        label.setMaximumHeight(16777215)
+        original = label.text()
+        label.setText("X")
+        single = label.sizeHint().height()
+        label.setText(original)
+        height = single + max(0, lines - 1) * label.fontMetrics().lineSpacing()
+        label.setFixedHeight(height)
+
+    def _label(self, text: str, object_name: str) -> QLabel:
+        """CHANGE [BUG1]: parent the label to the card at creation.
+
+        A QWidget with no parent *is* a top-level window. These labels were
+        created parentless and only adopted later by the layout, so any
+        setVisible(True) in between, such as the one for the secondary title,
+        made Qt open a real window: a blank frame with its own title bar that
+        vanished the moment the layout took the widget. That is the flashing
+        the user reported on almost every interaction, because a card is built
+        for every title whose English name differs from its romaji one.
+
+        Parenting on creation costs nothing, the layout reparents to the same
+        widget anyway, and it makes the ordering irrelevant.
+        """
+        label = QLabel(text, self)
         label.setObjectName(object_name)
+        # CHANGE [BUG7]: natural height only. A label left free to grow soaks
+        # up part of the equalisation slack, which is what made otherwise
+        # identical cards disagree about where each row sat.
+        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         return label
 
     def request_cover(self) -> None:
@@ -227,7 +444,7 @@ class RecommendationCard(QFrame):
     ) -> None:
         self.hide_button.setText("Unhide" if hidden else "Hide")
         self.watch_later_button.setText(
-            "Remove saved" if watch_later else "Watch Later"
+            "Saved" if watch_later else "Later"
         )
         self.watch_later_button.setChecked(watch_later)
         self.like_button.setChecked(liked)
@@ -288,34 +505,42 @@ class RecommendationCard(QFrame):
         if not source.loadFromData(data):
             self._show_placeholder()
             return False
-        fitted = _fit_cover(source)
-        self.cover_label.setPixmap(fitted)
+        # CHANGE [BUG6]: keep the artwork at full resolution. The downscaled
+        # copy used to be what was cached, so every later resize enlarged an
+        # already shrunken image and the portraits looked soft. The original is
+        # cached and each display size is derived from it.
+        self._source_cover = source
+        self.cover_label.setPixmap(_fit_cover(source))
         if self.model.cover_url:
-            MEMORY_COVER_CACHE.put(self.model.cover_url, fitted)
+            MEMORY_COVER_CACHE.put(self.model.cover_url, source)
         return True
 
     def _show_placeholder(self) -> None:
         source = cover_placeholder_pixmap()
         if source.isNull():
-            source = QPixmap(COVER_WIDTH, COVER_HEIGHT)
+            source = QPixmap(scaled(COVER_WIDTH), scaled(COVER_HEIGHT))
             source.fill(Qt.GlobalColor.transparent)
+        self._source_cover = source
+        self.cover_label.setPixmap(_fit_cover(source))
+
+    def _rescale_cover(self) -> None:
+        """CHANGE [BUG6]: re-fit from the original after a scale change."""
+        source = getattr(self, "_source_cover", None)
+        if source is None or source.isNull():
+            self._show_placeholder()
+            return
         self.cover_label.setPixmap(_fit_cover(source))
 
 
 def _fit_cover(source: QPixmap) -> QPixmap:
-    scaled = source.scaled(
-        COVER_WIDTH,
-        COVER_HEIGHT,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-        Qt.TransformationMode.SmoothTransformation,
+    # CHANGE [BUG6]: fit to the size actually on screen. This used to fit to the
+    # unscaled constants, so at 150% a 176x264 image was stretched into a
+    # 264x396 label and looked blurry.
+    # CHANGE [BUG7]: rounded, because a stylesheet radius does not clip a
+    # QLabel's pixmap and every portrait stayed a hard rectangle.
+    return rounded_cover(
+        source,
+        scaled(COVER_WIDTH),
+        scaled(COVER_HEIGHT),
+        scaled(COVER_RADIUS),
     )
-    canvas = QPixmap(COVER_WIDTH, COVER_HEIGHT)
-    canvas.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(canvas)
-    painter.drawPixmap(
-        (COVER_WIDTH - scaled.width()) // 2,
-        (COVER_HEIGHT - scaled.height()) // 2,
-        scaled,
-    )
-    painter.end()
-    return canvas

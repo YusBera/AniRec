@@ -1,5 +1,7 @@
 """A compact horizontal row, for the list layout.
 
+Addresses: BUG2 (GUI scale), FEAT2 (match badge is shown on cards, not rows).
+
 Where a card leads with artwork, a row leads with text: a small fixed
 thumbnail, then the title, a truncated reason, and a tag carrying the match or
 community score. It trades the poster for density, so several times as many
@@ -21,14 +23,20 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .design_tokens import SPACE
+from .design_tokens import RADIUS, SPACE
+from .cover_art import rounded_cover
+from .scaling import scaled
 from .recommendation_card import MEMORY_COVER_CACHE, open_mal_url
 from .recommendation_view_model import RecommendationViewModel
 from .resources import cover_placeholder_pixmap
 
 
-# Square, so a row keeps one height whatever the poster's aspect ratio is.
-THUMBNAIL_SIZE = 80
+# CHANGE [BUG7]: a 2:3 poster, matching the card and the source artwork.
+# Cropping the thumbnail square was never intended and cut the artwork off.
+THUMBNAIL_SIZE = 56
+COVER_ROW_HEIGHT = 84
+# Smaller than the card's, in proportion to the smaller thumbnail.
+ROW_COVER_RADIUS = RADIUS["sm"]
 
 # Beyond this the reason is elided, keeping every row the same height.
 REASON_CHARACTERS = 150
@@ -62,14 +70,20 @@ class RecommendationRow(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(SPACE["md"], SPACE["sm"], SPACE["md"], SPACE["sm"])
-        layout.setSpacing(SPACE["md"])
+        # CHANGE [BUG2]: spacing scales with the rest of the row.
+        layout.setContentsMargins(
+            scaled(SPACE["md"]), scaled(SPACE["sm"]),
+            scaled(SPACE["md"]), scaled(SPACE["sm"]),
+        )
+        layout.setSpacing(scaled(SPACE["md"]))
 
         self.cover_label = QLabel()
         self.cover_label.setObjectName("recommendationRowCover")
-        self.cover_label.setFixedSize(THUMBNAIL_SIZE, THUMBNAIL_SIZE)
+        # CHANGE [BUG2]: the thumbnail scales with the GUI Scale setting.
+        self.cover_label.setFixedSize(scaled(THUMBNAIL_SIZE), scaled(COVER_ROW_HEIGHT))
         self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cover_label.setAccessibleName(f"Cover for {model.display_title}")
+        self._source_cover = None
         self._show_placeholder()
         layout.addWidget(self.cover_label)
 
@@ -97,8 +111,13 @@ class RecommendationRow(QFrame):
         self.genre_tag = QLabel(_primary_tag(model))
         self.genre_tag.setObjectName("recommendationRowGenreTag")
         self.genre_tag.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tag_column.addWidget(self.match_tag)
-        tag_column.addWidget(self.genre_tag)
+        # CHANGE [BUG-SIZES]: each tag hugs its own text. Stacked in a column
+        # they were both stretched to the width of the wider one, so a short
+        # genre sat in a pill several times longer than its label.
+        for tag in (self.match_tag, self.genre_tag):
+            tag.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        tag_column.addWidget(self.match_tag, 0, Qt.AlignmentFlag.AlignRight)
+        tag_column.addWidget(self.genre_tag, 0, Qt.AlignmentFlag.AlignRight)
         layout.addLayout(tag_column)
 
         self.like_button = QPushButton("Like")
@@ -128,14 +147,9 @@ class RecommendationRow(QFrame):
         if placeholder.isNull():
             self.cover_label.setText("")
             return
-        self.cover_label.setPixmap(
-            placeholder.scaled(
-                THUMBNAIL_SIZE,
-                THUMBNAIL_SIZE,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-        )
+        self._source_cover = placeholder
+        # CHANGE [BUG7]: rounded, like the card portraits.
+        self.cover_label.setPixmap(_fit_row_cover(placeholder))
 
     def request_cover(self) -> None:
         if not self.model.cover_url:
@@ -150,14 +164,39 @@ class RecommendationRow(QFrame):
         if pixmap.isNull():
             self._show_placeholder()
             return
-        self.cover_label.setPixmap(
-            pixmap.scaled(
-                THUMBNAIL_SIZE,
-                THUMBNAIL_SIZE,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
+        self._source_cover = pixmap
+        self.cover_label.setPixmap(_fit_row_cover(pixmap))
+
+    def apply_scale(self) -> None:
+        """CHANGE [BUG2]: rows are reused too, so re-apply their fixed sizes."""
+        self.cover_label.setFixedSize(scaled(THUMBNAIL_SIZE), scaled(COVER_ROW_HEIGHT))
+        layout = self.layout()
+        if layout is not None:
+            layout.setContentsMargins(
+                scaled(SPACE["md"]), scaled(SPACE["sm"]),
+                scaled(SPACE["md"]), scaled(SPACE["sm"]),
             )
-        )
+            layout.setSpacing(scaled(SPACE["md"]))
+        self._rescale_cover()
+
+    def set_cover_data(self, data: bytes) -> None:
+        """CHANGE [BUG3]: accept downloaded bytes, as the card does."""
+        pixmap = QPixmap()
+        if not data or not pixmap.loadFromData(data):
+            self._show_placeholder()
+            return
+        # CHANGE [BUG6]: cache the original, not a downscaled copy.
+        if self.model.cover_url:
+            MEMORY_COVER_CACHE.put(self.model.cover_url, pixmap)
+        self.set_cover(pixmap)
+
+    def _rescale_cover(self) -> None:
+        """CHANGE [BUG6]: re-fit from the original after a scale change."""
+        source = getattr(self, "_source_cover", None)
+        if source is None or source.isNull():
+            self._show_placeholder()
+            return
+        self.set_cover(source)
 
     def set_cover_visible(self, visible: bool) -> None:
         self.cover_label.setVisible(bool(visible))
@@ -217,3 +256,13 @@ def _primary_tag(model: RecommendationViewModel) -> str:
     if model.genres:
         return model.genres[0]
     return model.mal_score_text or ""
+
+
+def _fit_row_cover(source: QPixmap) -> QPixmap:
+    """CHANGE [BUG7]: one rounded, centre-cropped thumbnail for every row."""
+    return rounded_cover(
+        source,
+        scaled(THUMBNAIL_SIZE),
+        scaled(COVER_ROW_HEIGHT),
+        scaled(ROW_COVER_RADIUS),
+    )

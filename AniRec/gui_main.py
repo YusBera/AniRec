@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 from .application.pipeline import PipelineOrchestrator
 from .errors import AuthError
 from .gui.main_window import MainWindow
+from .gui import stray_window_guard
 from .gui.resources import app_icon
 from .gui.texts import UI_TEXT
 from .gui.theme import ThemeManager
@@ -78,6 +80,15 @@ def main(
     try:
         logger = configure_logging(root_override=root_override, logger_name="AniRec.gui")
         application = create_application(argv)
+        # CHANGE [BUG1]: opt-in diagnostic for accidental top-level windows.
+        # Off by default; it only watches and logs, and the reference must be
+        # kept because Qt does not own event filters.
+        stray_guard = (
+            stray_window_guard.install(application)
+            if os.environ.get("ANIREC_GUARD_STRAY_WINDOWS") == "1"
+            else None
+        )
+        application.setProperty("strayWindowGuard", bool(stray_guard))
         theme_manager = ThemeManager(application)
         startup_settings = SettingsService(root_override=root_override).load()
         theme_manager.apply(startup_settings.theme, font_scale=startup_settings.font_scale)

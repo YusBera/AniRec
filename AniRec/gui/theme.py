@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 
 from ..infrastructure.paths import resource_path
 from ..models.domain import DEFAULT_GRADIENT_END, DEFAULT_GRADIENT_START
+from .design_tokens import palette
 from .qss_builder import DEFAULT_BASE_POINT_SIZE, build_stylesheet
 
 
@@ -42,6 +43,7 @@ class ThemeManager:
         self.requested_theme = ThemePreference.SYSTEM
         self.active_theme = ThemePreference.LIGHT
         self.font_scale = 1.0
+        self.gui_scale = 1.0
         self.gradient_start = DEFAULT_GRADIENT_START
         self.gradient_end = DEFAULT_GRADIENT_END
         self._base_font = QFont(application.font())
@@ -68,6 +70,7 @@ class ThemeManager:
         font_scale: float = 1.0,
         gradient_start: str | None = None,
         gradient_end: str | None = None,
+        gui_scale: float = 1.0,
     ) -> ThemePreference:
         self.requested_theme = ThemePreference(preference)
         if gradient_start:
@@ -75,13 +78,30 @@ class ThemeManager:
         if gradient_end:
             self.gradient_end = gradient_end
         self.active_theme = self._resolve_theme(self.requested_theme)
+        # CHANGE [BUG-SCALE-MATCH]: the readability bound belongs to the user's
+        # font preference only. Multiplying the GUI scale in before clamping
+        # meant a 1.5 interface scale was capped to 1.4 for text, so the
+        # cards grew and the words in them did not, and nothing lined up.
         self.font_scale = max(MINIMUM_FONT_SCALE, min(MAXIMUM_FONT_SCALE, float(font_scale)))
+        self.gui_scale = max(0.5, min(2.0, float(gui_scale)))
 
         self._apply_font_scale()
         self.application.setStyleSheet(self._load_stylesheet(self.active_theme))
         self.application.setProperty("themePreference", self.requested_theme.value)
         self.application.setProperty("activeTheme", self.active_theme.value)
         self.application.setProperty("fontScale", self.font_scale)
+        # CHANGE [BUG-BADGE]: publish the resolved palette. Anything that
+        # paints itself rather than being styled by QSS, such as the match
+        # bar, needs the colours actually in force; asking for the palette
+        # by theme name returned defaults for gradient and left the bar grey.
+        colours = palette(
+            self.active_theme.value,
+            gradient_start=self.gradient_start,
+            gradient_end=self.gradient_end,
+        )
+        self.application.setProperty("resolvedAccent", colours["accent"])
+        self.application.setProperty("resolvedAccentContrast", colours["accent_contrast"])
+        self.application.setProperty("resolvedBackground", colours["bg"])
         return self.active_theme
 
     def _resolve_theme(self, preference: ThemePreference) -> ThemePreference:
@@ -109,7 +129,7 @@ class ThemeManager:
             return build_stylesheet(
                 theme.value,
                 base_point_size=self._base_point_size(),
-                font_scale=self.font_scale,
+                font_scale=self.font_scale * self.gui_scale,
                 gradient_start=self.gradient_start,
                 gradient_end=self.gradient_end,
             )
@@ -135,5 +155,5 @@ class ThemeManager:
         base_size = font.pointSizeF()
         if base_size <= 0:
             base_size = 10.0
-        font.setPointSizeF(max(8.0, base_size * self.font_scale))
+        font.setPointSizeF(max(8.0, base_size * self.font_scale * self.gui_scale))
         self.application.setFont(font)

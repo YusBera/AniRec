@@ -1,5 +1,9 @@
 """Schema-versioned AniRec settings with validation and safe fallback."""
 
+# Addresses: BUG2. save_preferences() writes appearance and layout without
+# demanding a Client ID, because a theme or a GUI scale is not an API
+# configuration and should not be unsavable until an account exists.
+
 from __future__ import annotations
 
 from pathlib import Path

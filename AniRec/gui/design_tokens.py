@@ -238,6 +238,39 @@ def _mix(first: str, second: str, weight: float = 0.5) -> str:
     return "#" + "".join(f"{value:02X}" for value in blended)
 
 
+def _saturation(colour: str) -> float:
+    """How colourful a value is, 0 for grey and 1 for a pure hue."""
+    body = colour.lstrip("#")
+    if len(body) == 3:
+        body = "".join(character * 2 for character in body)
+    channels = [int(body[index : index + 2], 16) / 255 for index in (0, 2, 4)]
+    high, low = max(channels), min(channels)
+    return 0.0 if high == 0 else (high - low) / high
+
+
+def _shift(colour: str, amount: float, base) -> str:
+    """Move a colour toward white on a dark base, toward black on a light one."""
+    target = "#FFFFFF" if _luminance(base["bg"]) < 0.5 else "#000000"
+    return _mix(colour, target, amount)
+
+
+def _accent_for(start: str, end: str, base) -> str:
+    """Pick a highlight from the user's colours that stays readable.
+
+    The more saturated end is the one that reads as "their" colour. It is then
+    lifted away from the background until there is real contrast, because a
+    gradient of two dark blues would otherwise give a dark blue accent that
+    disappeared into it.
+    """
+    candidate = start if _saturation(start) >= _saturation(end) else end
+    background = _luminance(base["bg"])
+    for _attempt in range(6):
+        if abs(_luminance(candidate) - background) >= 0.28:
+            return candidate
+        candidate = _shift(candidate, 0.18, base)
+    return candidate
+
+
 def gradient_palette(start: str, end: str):
     """Build a full palette around two colours the user chose.
 
@@ -249,9 +282,22 @@ def gradient_palette(start: str, end: str):
     """
     base = LIGHT if (_luminance(start) + _luminance(end)) / 2 > 0.5 else DARK
     midpoint = _mix(start, end)
+    # CHANGE [BUG-ACCENT]: derive the accent from the chosen colours. It used to
+    # stay the default terracotta whatever the user picked, so buttons, the
+    # match bar and every highlight ignored their gradient entirely. The more
+    # colourful of the two ends is taken and pushed away from the background
+    # until it is clearly readable against it.
+    accent = _accent_for(start, end, base)
     return MappingProxyType(
         {
             **base,
+            "accent": accent,
+            "accent_hover": _shift(accent, 0.14, base),
+            "accent_soft": _shift(accent, 0.28, base),
+            "accent_muted": _mix(accent, midpoint, 0.78),
+            "accent_contrast": "#FFFFFF" if _luminance(accent) < 0.55 else "#101014",
+            "focus": accent,
+            "selection": _mix(accent, midpoint, 0.62),
             "bg": midpoint,
             "bg_alt": _mix(midpoint, base["surface"], 0.35),
             "sidebar": _mix(start, base["sidebar"], 0.55),

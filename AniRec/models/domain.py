@@ -1,4 +1,7 @@
-"""Immutable, JSON-friendly models for the AniRec application boundary."""
+"""Immutable, JSON-friendly models for the AniRec application boundary.
+
+Addresses: BUG2 (gui_scale setting), FEAT1 (gradient colour storage).
+"""
 
 from __future__ import annotations
 
@@ -45,6 +48,17 @@ def _optional_float(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return None if math.isnan(number) else number
+
+
+def _bounded_scale(value: object, minimum: float = 0.75, maximum: float = 1.5) -> float:
+    """CHANGE [BUG2]: keep a stored GUI scale inside the supported range."""
+    try:
+        scale = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    if scale <= 0:
+        return 1.0
+    return max(minimum, min(maximum, scale))
 
 
 def _hex_colour(value: object, fallback: str) -> str:
@@ -365,6 +379,8 @@ class AppSettings:
     gradient_start: str = DEFAULT_GRADIENT_START
     gradient_end: str = DEFAULT_GRADIENT_END
     font_scale: float = 1.0
+    # CHANGE [BUG2]: GUI scale, applied to cards, portraits, spacing and text.
+    gui_scale: float = 1.0
     show_covers: bool = True
     recommendation_view_mode: str = "cards"
 
@@ -389,6 +405,8 @@ class AppSettings:
             self, "gradient_end", _hex_colour(self.gradient_end, DEFAULT_GRADIENT_END)
         )
         object.__setattr__(self, "font_scale", float(self.font_scale))
+        # CHANGE [BUG2]: bound the GUI scale rather than rejecting odd values.
+        object.__setattr__(self, "gui_scale", _bounded_scale(self.gui_scale))
         object.__setattr__(self, "show_covers", bool(self.show_covers))
         object.__setattr__(
             self,
@@ -417,6 +435,7 @@ class AppSettings:
             "gradient_start": self.gradient_start,
             "gradient_end": self.gradient_end,
             "font_scale": self.font_scale,
+            "gui_scale": self.gui_scale,
             "show_covers": self.show_covers,
             "recommendation_view_mode": self.recommendation_view_mode,
         }
@@ -436,6 +455,7 @@ class AppSettings:
             "gradient_start": self.gradient_start,
             "gradient_end": self.gradient_end,
             "font_scale": self.font_scale,
+            "gui_scale": self.gui_scale,
             "show_covers": self.show_covers,
             "recommendation_view_mode": self.recommendation_view_mode,
         }
@@ -465,6 +485,7 @@ class AppSettings:
             gradient_start=data.get("gradient_start") or DEFAULT_GRADIENT_START,
             gradient_end=data.get("gradient_end") or DEFAULT_GRADIENT_END,
             font_scale=data.get("font_scale", 1.0),
+            gui_scale=data.get("gui_scale", 1.0),
             show_covers=bool(data.get("show_covers", True)),
             recommendation_view_mode=data.get("recommendation_view_mode") or "cards",
         )

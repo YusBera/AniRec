@@ -338,7 +338,8 @@ def test_visible_library_tabs_allow_watch_later_to_be_reviewed_and_removed(
     application.processEvents()
     assert titles(page.visible_models) == ["Alpha"]
     saved_card = page._cards_by_key["mal:1"]
-    assert saved_card.watch_later_button.text() == "Remove saved"
+    # Shortened for BUG2: the longer wording clipped at 75% GUI scale.
+    assert saved_card.watch_later_button.text() == "Saved"
     assert saved_card.watch_later_button.isChecked()
     saved_card.watch_later_button.click()
     application.processEvents()
