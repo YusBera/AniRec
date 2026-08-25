@@ -1,7 +1,9 @@
-# AniRec 2.0.0 release notes
+# AniRec 1.3.0 release notes
 
-AniRec 2.0.0 rebuilds how recommendations are calculated, explained, and
-presented. Existing profiles keep working: stored settings and saved
+AniRec 1.3.0 rebuilds how recommendations are calculated, explained, and
+presented. It is the last release before the learned model: 2.0 is reserved
+for the neural recommender, which needs a corpus that is still being
+collected. Existing profiles keep working: stored settings and saved
 collections round trip unchanged, and a taste profile written by an earlier
 version still loads.
 
@@ -97,7 +99,10 @@ hierarchy together instead of growing body text while headings stayed fixed.
 
 - The collaborative signal is optional and absent until a run has walked the
   graph.
-- 2.0.0 has been exercised on the development Windows 11 machine. A second
+- The learned model is not in this release. The scoring blend already carries
+  its term at weight zero and renormalises without it, so it can be added
+  without disturbing anything here.
+- 1.3.0 has been exercised on the development Windows 11 machine. A second
   Windows 10 or 11 acceptance run is still required.
 - The package is unsigned and ships as `onedir`.
 - Local secrets are not held in an encrypted operating system vault.
