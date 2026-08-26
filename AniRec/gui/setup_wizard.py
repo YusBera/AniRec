@@ -130,16 +130,22 @@ class WelcomePage(WizardPage):
         self.connect_hint.setWordWrap(True)
         self.demo_button = QPushButton(WIZARD_TEXT.welcome_demo)
         self.demo_button.setObjectName("wizardDemoButton")
-        self.demo_button.setProperty("buttonRole", "secondary")
+        # CHANGE [ACTIVATION]: this was a secondary button sitting underneath
+        # the pitch for registering an API application. The cheapest path
+        # through the product was styled like the way out of it, while the
+        # footer's Next marched people at a Client ID field before they had
+        # seen a single recommendation. The free path leads now.
+        self.demo_button.setProperty("buttonRole", "primary")
+        self.demo_button.setMinimumHeight(40)
         self.demo_button.setAccessibleName(WIZARD_TEXT.welcome_demo_accessible)
         self.demo_hint = QLabel(WIZARD_TEXT.welcome_demo_hint)
         self.demo_hint.setObjectName("wizardFieldHint")
         self.demo_hint.setWordWrap(True)
         self.demo_button.clicked.connect(self.demo_requested.emit)
 
-        self.content_layout.insertWidget(2, self.connect_hint)
-        self.content_layout.insertWidget(3, self.demo_button)
-        self.content_layout.insertWidget(4, self.demo_hint)
+        self.content_layout.insertWidget(2, self.demo_button)
+        self.content_layout.insertWidget(3, self.demo_hint)
+        self.content_layout.insertWidget(4, self.connect_hint)
 
 
 class ApiSettingsPage(WizardPage):

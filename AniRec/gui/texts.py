@@ -148,18 +148,17 @@ class WizardTextCatalog:
         "affiliated with or endorsed by MyAnimeList."
     )
     welcome_connect_hint: str = (
-        "Connecting your MyAnimeList account takes about two minutes and "
-        "gives you recommendations built from your own ratings."
+        "Or choose Next to connect your MyAnimeList account. That takes about "
+        "two minutes and makes every recommendation yours."
     )
     welcome_demo: str = "Look around with sample data"
     welcome_demo_hint: str = "No account needed. Nothing is saved."
     welcome_demo_accessible: str = (
         "Explore AniRec using a bundled sample library, without connecting an account"
     )
-    demo_banner: str = (
-        "You are looking at sample data. Connect your MyAnimeList account to "
-        "get recommendations built from your own ratings."
-    )
+    # Short enough to sit on one line of the status strip. The long form said
+    # the same thing across two sentences and needed a banner of its own.
+    demo_banner: str = "Sample data — connect MyAnimeList to see your own picks."
     demo_banner_action: str = "Connect my account"
     client_id: str = "Client ID"
     client_secret: str = "Client Secret"

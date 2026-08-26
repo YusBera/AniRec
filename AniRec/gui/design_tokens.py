@@ -4,9 +4,18 @@ Both stylesheets are generated from the maps below, so light and dark cannot
 drift apart: a rule written once is emitted for both, and a role that exists in
 one mode necessarily exists in the other.
 
-The direction is cinematic. Chrome recedes to near neutral warm greys so that
-cover artwork carries the visual weight, one accent does all the signalling,
-and depth comes from tone rather than from drawing a line around everything.
+The direction is an instrument panel. Chrome recedes into a lacquer green-black
+that is barely a colour at all, so cover artwork carries the visual weight.
+Depth comes from tone rather than from drawing a line around everything.
+
+Two accents, and they mean different things. Brass is *you*: your match score,
+your taste, the one action a screen wants you to take. Aqua is *everyone else*
+and *the system*: focus rings, saved items, community ratings. Keeping them
+apart is what stops the interface shouting in one colour from eight places at
+once, which is what the single terracotta accent used to do.
+
+The same two accents carry the AniRec landing page, so the app a visitor
+downloads looks like the page that sold it to them.
 
 Colour roles rather than colour names. A rule asks for ``surface`` or
 ``text_muted``, never for a particular hex value, which is what lets the same
@@ -34,12 +43,17 @@ SPACE = MappingProxyType(
     }
 )
 
+# Tightened from 6/10/14/20. Everything being generously rounded made every
+# element read as the same kind of object: a nav item, a warning banner and a
+# recommendation card were all equally soft, so nothing looked more important
+# than anything else. Small radii on controls, larger only on the things that
+# genuinely are cards.
 RADIUS = MappingProxyType(
     {
-        "sm": 6,
-        "md": 10,
-        "lg": 14,
-        "xl": 20,
+        "sm": 4,
+        "md": 6,
+        "lg": 9,
+        "xl": 13,
         "pill": 999,
     }
 )
@@ -63,120 +77,152 @@ TYPE_SCALE = MappingProxyType(
 
 WEIGHT = MappingProxyType({"normal": 400, "medium": 600, "bold": 700, "heavy": 800})
 
-FONT_STACK = '"Segoe UI", "Inter", "Noto Sans", "DejaVu Sans", sans-serif'
+# Three roles, not one. The interface used to set a single family for
+# everything, which meant a match percentage, a section heading and a sentence
+# of body copy were all rendered by the same neutral face and the hierarchy had
+# to be carried entirely by size and weight.
+#
+# Every family named here ships with Windows 10 and 11, so there is nothing to
+# bundle and nothing to fall back from on the platform the app targets.
+FONT_STACK = '"Segoe UI Variable Text", "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif'
+
+# Bahnschrift is Microsoft's DIN: technical, slightly condensed, and nothing
+# like the default UI face, which is what makes a heading read as a heading.
+FONT_STACK_DISPLAY = (
+    '"Bahnschrift", "Segoe UI Variable Display", "Segoe UI Semibold", '
+    '"DejaVu Sans", sans-serif'
+)
+
+# Numbers that belong in a column - match scores, MAL ratings, counters - get a
+# monospaced face so digits line up instead of jittering between rows.
+FONT_STACK_MONO = '"Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace'
 
 
 DARK = MappingProxyType(
     {
-        # Surfaces, from furthest back to closest.
-        "bg": "#0B0B0F",
-        "bg_alt": "#0E0E13",
-        "sidebar": "#101015",
-        "surface": "#16161C",
-        "surface_raised": "#1E1E26",
-        "surface_sunken": "#0F0F14",
-        "well": "#08080B",
-        # Text.
-        "text": "#F2F0ED",
-        "text_strong": "#FFFFFF",
-        "text_muted": "#9A968F",
-        "text_subtle": "#6B6862",
-        "text_disabled": "#55524D",
+        # Surfaces, from furthest back to closest. Green-black rather than
+        # neutral black: a hue bias this slight is not read as "green", it is
+        # read as considered, and it keeps warm cover artwork from looking
+        # tinted the way a pure grey chrome does.
+        "bg": "#0A120E",
+        "bg_alt": "#0C1611",
+        "sidebar": "#070E0B",
+        "surface": "#12201A",
+        "surface_raised": "#182A21",
+        "surface_sunken": "#0C1712",
+        "well": "#06100C",
+        # Text. Bone rather than white; pure white on a near-black panel is
+        # harsher than anything a long session wants.
+        "text": "#E9E5D6",
+        "text_strong": "#F7F4EA",
+        "text_muted": "#9BA99E",
+        "text_subtle": "#7C8C80",
+        "text_disabled": "#5A6960",
         # Lines. Deliberately quiet: depth is carried by tone.
-        "border": "#26262E",
-        "border_strong": "#3A3A44",
-        "border_subtle": "#1C1C23",
-        # The single accent.
-        "accent": "#E0685A",
-        "accent_hover": "#EC7A6C",
-        "accent_soft": "#F0958A",
-        "accent_muted": "#3A211E",
-        "accent_contrast": "#FFFFFF",
-        "focus": "#E0685A",
-        "selection": "#3A211E",
-        # Status. Warm enough to sit beside the accent without clashing.
-        "success_bg": "#14251C",
-        "success_border": "#2A5240",
-        "success_text": "#7BD5A6",
-        "danger_bg": "#2B1518",
-        "danger_border": "#5E2C31",
-        "danger_text": "#F09A96",
-        "warning_bg": "#2A2113",
-        "warning_border": "#5C4A25",
+        "border": "#23372C",
+        "border_strong": "#35513F",
+        "border_subtle": "#182A21",
+        # Brass. This means "yours": your match, your taste, the one action
+        # the screen is asking for.
+        "accent": "#C6A15B",
+        "accent_hover": "#D8B570",
+        "accent_soft": "#E2C489",
+        "accent_muted": "#2A2417",
+        # Brass is a light colour, so anything sitting on it must be dark.
+        "accent_contrast": "#0A120E",
+        # Aqua. This means "the system": focus, selection, saved. Focus rings
+        # in a second colour are unmistakable against brass controls.
+        "focus": "#6FC6C0",
+        "selection": "#22403C",
+        # Status. Vivid enough to signal against a ground that is itself
+        # faintly green.
+        "success_bg": "#102A1E",
+        "success_border": "#2E6B4A",
+        "success_text": "#74D6A0",
+        "danger_bg": "#2C1417",
+        "danger_border": "#6B2F34",
+        "danger_text": "#F0989A",
+        "warning_bg": "#2A2213",
+        "warning_border": "#5E4C26",
         "warning_text": "#E5C27E",
-        "busy_bg": "#1E1E2E",
-        "busy_border": "#43436B",
-        "busy_text": "#B9B9E0",
-        "saved_bg": "#13202B",
-        "saved_border": "#2F5670",
-        "saved_text": "#91C4E0",
+        "busy_bg": "#16262B",
+        "busy_border": "#35606B",
+        "busy_text": "#9FCBD4",
+        "saved_bg": "#142A28",
+        "saved_border": "#2F6460",
+        "saved_text": "#8FD3CD",
         # Depth, used sparingly in place of borders.
         "gradient_card": (
             "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 #1A1A21, stop:1 #131318)"
+            "stop:0 #16261E, stop:1 #101B15)"
         ),
         "gradient_page": (
             "qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            "stop:0 #0B0B0F, stop:1 #101015)"
+            "stop:0 #0A120E, stop:1 #0D1813)"
         ),
         "gradient_hero": (
             "qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            "stop:0 #1B1A20, stop:0.55 #211B1D, stop:1 #2A1D1B)"
+            "stop:0 #14231B, stop:0.55 #1A2A20, stop:1 #24291B)"
         ),
     }
 )
 
 
+# Sage paper. The light mode is not the dark mode inverted, it is the
+# technical drawing the panel was printed from: a paper stock with the same
+# faint green in it, bronze where the dark mode has brass.
 LIGHT = MappingProxyType(
     {
-        "bg": "#FAF9F7",
-        "bg_alt": "#F5F4F1",
-        "sidebar": "#F3F2EF",
-        "surface": "#FFFFFF",
-        "surface_raised": "#FFFFFF",
-        "surface_sunken": "#F2F1EE",
-        "well": "#EDEBE7",
-        "text": "#1A1A1F",
-        "text_strong": "#0E0E12",
-        "text_muted": "#6E6A64",
-        "text_subtle": "#918C85",
-        "text_disabled": "#AFAAA3",
-        "border": "#E2E0DB",
-        "border_strong": "#C9C6BF",
-        "border_subtle": "#EDEBE7",
-        "accent": "#C4503F",
-        "accent_hover": "#AC4433",
-        "accent_soft": "#A8402F",
-        "accent_muted": "#F7E9E5",
-        "accent_contrast": "#FFFFFF",
-        "focus": "#C4503F",
-        "selection": "#F7DFDA",
-        "success_bg": "#E9F5EE",
-        "success_border": "#A8D4BC",
-        "success_text": "#1C6742",
-        "danger_bg": "#FCECEA",
-        "danger_border": "#E8B3AC",
-        "danger_text": "#A03327",
-        "warning_bg": "#FBF3E2",
-        "warning_border": "#DFC894",
-        "warning_text": "#6B5216",
-        "busy_bg": "#EEEDF7",
-        "busy_border": "#C3C1E0",
-        "busy_text": "#4A4780",
-        "saved_bg": "#E8F2F8",
-        "saved_border": "#A9C9DD",
-        "saved_text": "#245A78",
+        "bg": "#E9ECE4",
+        "bg_alt": "#E3E7DD",
+        "sidebar": "#DDE2D6",
+        "surface": "#F4F6EF",
+        "surface_raised": "#FAFBF5",
+        "surface_sunken": "#E3E7DD",
+        "well": "#D8DED0",
+        "text": "#16241F",
+        "text_strong": "#0C1613",
+        "text_muted": "#4C5B50",
+        "text_subtle": "#5C6858",
+        "text_disabled": "#97A294",
+        "border": "#C6CFBE",
+        "border_strong": "#A8B4A0",
+        "border_subtle": "#D5DCCC",
+        "accent": "#7A5D1C",
+        "accent_hover": "#634B14",
+        # accent_soft is used as a *text* colour, so on paper it has to be the
+        # darker end of the brass range, not the lighter one.
+        "accent_soft": "#5E4813",
+        "accent_muted": "#EDE7D5",
+        "accent_contrast": "#FBFCF7",
+        "focus": "#2C7C74",
+        "selection": "#CFE3DF",
+        "success_bg": "#E3F1E8",
+        "success_border": "#A5CDB4",
+        "success_text": "#1B6340",
+        "danger_bg": "#FAEAE8",
+        "danger_border": "#E0AFA9",
+        "danger_text": "#96301F",
+        "warning_bg": "#F7F0DC",
+        "warning_border": "#D9C48F",
+        "warning_text": "#6A5115",
+        "busy_bg": "#E6EFF0",
+        "busy_border": "#AEC9CC",
+        "busy_text": "#2A5A62",
+        "saved_bg": "#DFEEEC",
+        "saved_border": "#A6CBC6",
+        "saved_text": "#235C56",
         "gradient_card": (
             "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 #FFFFFF, stop:1 #FAF9F7)"
+            "stop:0 #FAFBF5, stop:1 #F1F4EB)"
         ),
         "gradient_page": (
             "qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            "stop:0 #FAF9F7, stop:1 #F4F2EF)"
+            "stop:0 #E9ECE4, stop:1 #E2E7DC)"
         ),
         "gradient_hero": (
             "qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            "stop:0 #FFFFFF, stop:0.55 #FBF5F3, stop:1 #F8EEEB)"
+            "stop:0 #FAFBF5, stop:0.55 #F4F5EA, stop:1 #F2EFDF)"
         ),
     }
 )
@@ -192,21 +238,21 @@ OLED = MappingProxyType(
         "bg": "#000000",
         "bg_alt": "#000000",
         "sidebar": "#000000",
-        "surface": "#0A0A0D",
-        "surface_raised": "#141418",
-        "surface_sunken": "#050506",
+        "surface": "#08120D",
+        "surface_raised": "#0F1C15",
+        "surface_sunken": "#040807",
         "well": "#000000",
-        "border": "#232329",
-        "border_strong": "#3E3E48",
-        "border_subtle": "#141418",
+        "border": "#1C2E24",
+        "border_strong": "#33503E",
+        "border_subtle": "#0F1C15",
         "gradient_card": (
             "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 #101014, stop:1 #050506)"
+            "stop:0 #0C1912, stop:1 #040807)"
         ),
         "gradient_page": "#000000",
         "gradient_hero": (
             "qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            "stop:0 #0C0C0F, stop:0.55 #14100F, stop:1 #1C1210)"
+            "stop:0 #08120D, stop:0.55 #0E1811, stop:1 #17190E)"
         ),
     }
 )

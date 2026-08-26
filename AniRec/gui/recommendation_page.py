@@ -50,6 +50,7 @@ from ..services import (
     RecommendationStateService,
 )
 from .recommendation_card import CARD_WIDTH, RecommendationCard
+from .scaling import scaled
 from .design_tokens import SPACE
 from .recommendation_detail_dialog import RecommendationDetailDialog
 from .recommendation_row import RecommendationRow
@@ -439,7 +440,7 @@ class RecommendationExplorerPage(QWidget):
         self.hero = QFrame()
         self.hero.setObjectName("recommendationHero")
         hero_layout = QHBoxLayout(self.hero)
-        hero_layout.setContentsMargins(20, 14, 20, 14)
+        hero_layout.setContentsMargins(20, 10, 20, 10)
         hero_layout.setSpacing(20)
         heading_copy = QVBoxLayout()
         heading_copy.setSpacing(6)
@@ -490,8 +491,14 @@ class RecommendationExplorerPage(QWidget):
         self.taste_folders_button.setMenu(self.taste_folders_menu)
         self.more_button = QPushButton("Recommend 5 more")
         self.more_button.setObjectName("recommendationMoreButton")
-        self.more_button.setProperty("buttonRole", "primary")
-        self.more_button.setMinimumSize(190, 46)
+        # CHANGE [HIERARCHY]: topping the feed up is an incremental action
+        # sitting beside a summary line, not the reason you opened the page.
+        # As a third accent-filled block on the same screen it competed with
+        # "Get new recommendations" and with the connect prompt above it.
+        self.more_button.setProperty("buttonRole", "secondary")
+        # 46px made this the tallest control in the app, which is a lot of
+        # band for a top-up action. Matches every other button now.
+        self.more_button.setMinimumSize(190, 36)
         self.more_button.setEnabled(False)
         hero_actions.addWidget(self.more_button)
         hero_layout.addLayout(hero_actions)
@@ -1285,7 +1292,12 @@ class RecommendationExplorerPage(QWidget):
         self._equalise_card_heights(cards)
         while self.card_layout.count():
             self.card_layout.takeAt(0)
-        grid_stride = CARD_WIDTH + self.card_layout.horizontalSpacing()
+        # CHANGE [SCALE]: the cards are laid out at scaled(CARD_WIDTH), so
+        # measuring the stride with the unscaled constant counted one
+        # column too many at any GUI scale above 100% and pushed the last
+        # one off the right edge. scaling.py says as much in its own
+        # docstring: hand-chosen pixel sizes go through scaled().
+        grid_stride = scaled(CARD_WIDTH) + self.card_layout.horizontalSpacing()
         available = max(self.card_scroll.viewport().width(), grid_stride)
         columns = max(1, available // grid_stride)
         for index, card in enumerate(cards):

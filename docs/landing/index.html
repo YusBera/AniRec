@@ -1,0 +1,726 @@
+<title>AniRec Scoring Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@300;400;500;600&family=Big+Shoulders+Display:wght@500;600;700;800&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+
+<style>
+/* ============================================================
+   AniRec - the scoring bench
+   Dark-first: the working machine. Light: the silkscreen artwork.
+   ============================================================ */
+
+:root {
+  /* lacquer green-black - a neutral biased toward the panel, not pure black */
+  --ground:      #0B1410;
+  --ground-deep: #070E0B;
+  --panel:       #132019;
+  --panel-hi:    #1A2A22;
+  --recess:      #0A130F;
+  --rule:        #24382E;
+  --rule-soft:   #1B2A22;
+
+  --bone:        #E9E5D6;
+  --bone-dim:    #A3B0A4;
+  --bone-faint:  #7E8E80;
+
+  --brass:       #C6A15B;
+  --brass-2:     #A98544;
+  --brass-3:     #8A6C36;
+  --brass-ink:   #0B1410;
+  --signal:      #6FC6C0;
+  --signal-dim:  #3E8B87;
+
+  --shadow: 0 18px 44px -22px rgba(0,0,0,.85);
+  --inset:  inset 0 1px 0 rgba(233,229,214,.05), inset 0 0 0 1px rgba(0,0,0,.35);
+
+  --display: "Big Shoulders Display", "Haettenschweiler", "Arial Narrow", sans-serif;
+  --body: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  --mono: "Azeret Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --shell: 1180px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground:      #E3E7DD;
+    --ground-deep: #D6DBD0;
+    --panel:       #EFF1E9;
+    --panel-hi:    #F7F8F2;
+    --recess:      #DCE1D6;
+    --rule:        #B9C2B2;
+    --rule-soft:   #CBD2C4;
+
+    --bone:        #16241F;
+    --bone-dim:    #4C5B50;
+    --bone-faint:  #5C6858;
+
+    --brass:       #8A6A22;
+    --brass-2:     #A5822F;
+    --brass-3:     #BD9C4E;
+    --brass-ink:   #F7F8F2;
+    --signal:      #2C7C74;
+    --signal-dim:  #5FA39C;
+
+    --shadow: 0 16px 36px -24px rgba(22,36,31,.45);
+    --inset:  inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 0 1px rgba(22,36,31,.08);
+  }
+}
+
+:root[data-theme="light"] {
+  --ground:      #E3E7DD;
+  --ground-deep: #D6DBD0;
+  --panel:       #EFF1E9;
+  --panel-hi:    #F7F8F2;
+  --recess:      #DCE1D6;
+  --rule:        #B9C2B2;
+  --rule-soft:   #CBD2C4;
+
+  --bone:        #16241F;
+  --bone-dim:    #4C5B50;
+  --bone-faint:  #5C6858;
+
+  --brass:       #8A6A22;
+  --brass-2:     #A5822F;
+  --brass-3:     #BD9C4E;
+  --brass-ink:   #F7F8F2;
+  --signal:      #2C7C74;
+  --signal-dim:  #5FA39C;
+
+  --shadow: 0 16px 36px -24px rgba(22,36,31,.45);
+  --inset:  inset 0 1px 0 rgba(255,255,255,.7), inset 0 0 0 1px rgba(22,36,31,.08);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(920px 520px at 88% -8%, color-mix(in srgb, var(--brass) 13%, transparent), transparent 68%),
+    radial-gradient(760px 480px at -6% 104%, color-mix(in srgb, var(--signal) 11%, transparent), transparent 66%),
+    repeating-linear-gradient(0deg, transparent 0 3px, color-mix(in srgb, var(--bone) 2%, transparent) 3px 4px),
+    var(--ground);
+  color: var(--bone);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+.shell { width: min(100% - 44px, var(--shell)); margin-inline: auto; }
+
+/* ---------- shared parts ---------- */
+
+.legend {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--bone-faint);
+}
+
+.rule-ticks {
+  height: 9px;
+  background-image: repeating-linear-gradient(90deg, var(--rule) 0 1px, transparent 1px 13px);
+  border-top: 1px solid var(--rule-soft);
+  opacity: .75;
+}
+
+h1, h2, h3 { font-family: var(--display); font-weight: 700; line-height: .94; margin: 0; text-wrap: balance; }
+
+a { color: var(--signal); text-underline-offset: 3px; }
+
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; border-radius: 2px; }
+
+/* ---------- rack header ---------- */
+
+.rack {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in srgb, var(--ground-deep) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.rack-in {
+  display: flex; align-items: center; gap: 18px;
+  padding-block: 11px;
+}
+.plate {
+  display: flex; align-items: baseline; gap: 9px;
+  padding: 4px 11px 5px;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+  box-shadow: var(--inset);
+}
+.plate b {
+  font-family: var(--display); font-size: 25px; font-weight: 800;
+  letter-spacing: .01em; color: var(--bone);
+}
+.plate span { font-family: var(--mono); font-size: 9px; letter-spacing: .18em; color: var(--brass); }
+
+.leds { display: flex; gap: 16px; margin-left: auto; }
+.led { display: flex; align-items: center; gap: 7px; }
+.led i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--signal); box-shadow: 0 0 9px var(--signal-dim);
+}
+.led.b i { background: var(--brass); box-shadow: 0 0 9px color-mix(in srgb, var(--brass) 60%, transparent); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--display); font-size: 19px; font-weight: 700;
+  letter-spacing: .015em;
+  padding: 9px 20px 10px;
+  border: 1px solid var(--brass);
+  background: var(--brass); color: var(--brass-ink);
+  text-decoration: none; cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.btn:hover { transform: translateY(-2px); box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--brass) 75%, transparent); }
+.btn.ghost {
+  background: transparent; color: var(--bone); border-color: var(--rule);
+}
+.btn.ghost:hover { border-color: var(--signal); color: var(--signal); box-shadow: none; }
+.btn.sm { font-size: 15px; padding: 6px 14px 7px; }
+
+@media (max-width: 860px) { .leds { display: none; } }
+
+/* ---------- hero ---------- */
+
+.hero { padding-block: clamp(46px, 7vw, 88px) clamp(40px, 6vw, 76px); }
+.hero-grid {
+  display: grid; gap: clamp(34px, 5vw, 60px);
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  align-items: start;
+}
+@media (max-width: 940px) { .hero-grid { grid-template-columns: 1fr; } }
+
+.kana {
+  font-family: var(--body); font-weight: 500; font-size: 12px;
+  letter-spacing: .5em; color: var(--brass); margin: 0 0 16px;
+}
+.hero h1 {
+  font-size: clamp(52px, 8.2vw, 96px);
+  letter-spacing: -.005em;
+  margin-bottom: 20px;
+}
+.hero h1 em { font-style: normal; color: var(--brass); }
+.lede {
+  font-size: 17.5px; color: var(--bone-dim); max-width: 46ch; margin: 0 0 30px;
+}
+.lede strong { color: var(--bone); font-weight: 500; }
+
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.cta-note {
+  margin: 16px 0 0; font-size: 13.5px; color: var(--bone-faint);
+  display: flex; align-items: center; gap: 9px;
+}
+.cta-note::before {
+  content: ""; width: 22px; height: 1px; background: var(--brass); flex: none;
+}
+
+/* ---------- the bench ---------- */
+
+.bench {
+  scroll-margin-top: 88px; /* clears the sticky rack header */
+  background: linear-gradient(178deg, var(--panel-hi), var(--panel) 46%);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow), var(--inset);
+  position: relative;
+}
+.bench::before,
+.bench::after {
+  content: ""; position: absolute; top: 14px; bottom: 14px; width: 3px;
+  background-image: repeating-linear-gradient(180deg, var(--rule) 0 1px, transparent 1px 9px);
+}
+.bench::before { left: 7px; }
+.bench::after { right: 7px; }
+
+.bench-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 13px 22px; border-bottom: 1px solid var(--rule-soft);
+}
+.bench-head .title { font-family: var(--display); font-size: 20px; letter-spacing: .02em; }
+
+.pick { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
+
+.tabs {
+  display: flex; flex-wrap: wrap;
+  border-bottom: 1px solid var(--rule-soft); padding: 0 22px;
+}
+.tab {
+  font-family: var(--mono); font-size: 10.5px; font-weight: 500;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--bone-faint); padding: 11px 14px 10px;
+  cursor: pointer; border-bottom: 2px solid transparent;
+  transition: color .18s ease, border-color .18s ease;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--bone); }
+.tab:first-of-type { padding-left: 0; }
+
+#p1:checked ~ .tabs [for="p1"],
+#p2:checked ~ .tabs [for="p2"],
+#p3:checked ~ .tabs [for="p3"],
+#p4:checked ~ .tabs [for="p4"] { color: var(--brass); border-bottom-color: var(--brass); }
+
+#p1:focus-visible ~ .tabs [for="p1"],
+#p2:focus-visible ~ .tabs [for="p2"],
+#p3:focus-visible ~ .tabs [for="p3"],
+#p4:focus-visible ~ .tabs [for="p4"] { outline: 2px solid var(--signal); outline-offset: -2px; }
+
+.unit { display: none; padding: 26px 22px 24px; }
+#p1:checked ~ .stack .u1,
+#p2:checked ~ .stack .u2,
+#p3:checked ~ .stack .u3,
+#p4:checked ~ .stack .u4 { display: block; }
+
+.meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 20px; }
+.meta span { font-family: var(--mono); font-size: 11px; color: var(--bone-faint); letter-spacing: .04em; }
+.meta span b { color: var(--bone-dim); font-weight: 400; }
+
+/* master readout */
+.readout {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 18px;
+  background: var(--recess); border: 1px solid var(--rule-soft);
+  padding: 16px 20px 14px;
+  box-shadow: inset 0 2px 12px rgba(0,0,0,.28);
+}
+.readout .big {
+  font-family: var(--mono); font-weight: 600; font-variant-numeric: tabular-nums;
+  font-size: clamp(46px, 7.4vw, 68px); line-height: .86; letter-spacing: -.04em;
+  color: var(--brass);
+}
+.readout .big sup { font-size: .36em; font-weight: 400; margin-left: 3px; vertical-align: super; }
+.readout .side { text-align: right; }
+.readout .side p { margin: 4px 0 0; font-size: 12.5px; color: var(--bone-dim); max-width: 24ch; }
+
+/* accumulation bar - the score being built, segment by segment */
+.accum {
+  display: flex; height: 26px; background: var(--recess);
+  border: 1px solid var(--rule-soft); border-top: 0;
+  position: relative; overflow: hidden;
+}
+.accum::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: repeating-linear-gradient(90deg, color-mix(in srgb, var(--bone) 14%, transparent) 0 1px, transparent 1px 10%);
+}
+.seg {
+  height: 100%; transform-origin: left center;
+  animation: grow .62s cubic-bezier(.22,.9,.28,1) backwards;
+}
+.seg.g1 { background: var(--brass); }
+.seg.g2 { background: var(--brass-2); }
+.seg.g3 { background: var(--brass-3); }
+.seg.c  { background: var(--signal); }
+/* a hairline where one contribution ends and the next begins - the point of
+   the bar is that it is made of parts, so the joins have to be visible */
+.seg + .seg { box-shadow: inset 1px 0 0 var(--recess); }
+.seg:nth-child(1) { animation-delay: .10s; }
+.seg:nth-child(2) { animation-delay: .26s; }
+.seg:nth-child(3) { animation-delay: .42s; }
+.seg:nth-child(4) { animation-delay: .58s; }
+@keyframes grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.scale {
+  display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 9px; color: var(--bone-faint);
+  letter-spacing: .1em; padding: 5px 1px 20px;
+}
+
+/* contribution rows */
+.rows { display: flex; flex-direction: column; }
+.row {
+  display: grid; grid-template-columns: 10px 1fr auto;
+  align-items: center; gap: 12px;
+  padding: 9px 0; border-top: 1px solid var(--rule-soft);
+  animation: slip .5s ease backwards;
+}
+.row:nth-child(1) { animation-delay: .34s; }
+.row:nth-child(2) { animation-delay: .44s; }
+.row:nth-child(3) { animation-delay: .54s; }
+.row:nth-child(4) { animation-delay: .64s; }
+@keyframes slip { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+.row i { width: 10px; height: 10px; display: block; }
+.row i.g1 { background: var(--brass); }
+.row i.g2 { background: var(--brass-2); }
+.row i.g3 { background: var(--brass-3); }
+.row i.c { background: var(--signal); }
+.row .name { font-size: 14.5px; color: var(--bone); }
+.row .name small { color: var(--bone-faint); font-size: 12px; margin-left: 7px; }
+.row .val { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; color: var(--bone-dim); }
+
+.sum {
+  display: flex; justify-content: space-between; align-items: baseline;
+  border-top: 2px solid var(--brass); margin-top: 4px; padding-top: 10px;
+}
+.sum .label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--bone-faint); }
+.sum .total { font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--brass); font-variant-numeric: tabular-nums; }
+
+/* ---------- bands ---------- */
+
+.band { border-top: 1px solid var(--rule-soft); padding-block: clamp(48px, 6.5vw, 84px); }
+.band-head { margin-bottom: 38px; max-width: 60ch; }
+.band-head h2 { font-size: clamp(34px, 4.6vw, 50px); margin: 12px 0 14px; }
+.band-head p { margin: 0; color: var(--bone-dim); font-size: 16.5px; max-width: 54ch; }
+
+.steps { display: grid; gap: 1px; grid-template-columns: repeat(3, 1fr); background: var(--rule-soft); border: 1px solid var(--rule-soft); }
+@media (max-width: 780px) { .steps { grid-template-columns: 1fr; } }
+.step { background: var(--panel); padding: 26px 24px 28px; }
+.step .n {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .2em; color: var(--brass);
+  display: block; margin-bottom: 14px;
+}
+.step h3 { font-size: 27px; margin-bottom: 9px; }
+.step p { margin: 0; color: var(--bone-dim); font-size: 15px; }
+
+.spec-wrap { overflow-x: auto; border: 1px solid var(--rule-soft); background: var(--panel); }
+table.spec { width: 100%; border-collapse: collapse; min-width: 560px; }
+table.spec th, table.spec td { text-align: left; padding: 12px 20px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+table.spec tr:last-child th, table.spec tr:last-child td { border-bottom: 0; }
+table.spec th {
+  font-family: var(--mono); font-weight: 500; font-size: 10.5px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--bone-faint); width: 210px; white-space: nowrap;
+}
+table.spec td { font-size: 15px; color: var(--bone); }
+table.spec tr:hover td, table.spec tr:hover th { background: var(--panel-hi); }
+
+.priv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--rule-soft); border: 1px solid var(--rule-soft); }
+@media (max-width: 780px) { .priv { grid-template-columns: 1fr; } }
+.priv div { background: var(--panel); padding: 24px 22px 26px; }
+.priv h3 { font-size: 22px; margin-bottom: 8px; color: var(--signal); }
+.priv p { margin: 0; font-size: 14.5px; color: var(--bone-dim); }
+
+.close-band { text-align: center; padding-block: clamp(56px, 7vw, 96px); border-top: 1px solid var(--rule-soft); }
+.close-band h2 { font-size: clamp(38px, 6vw, 66px); margin: 12px 0 16px; }
+.close-band p { color: var(--bone-dim); max-width: 44ch; margin: 0 auto 28px; }
+.close-band .cta-row { justify-content: center; }
+.fine { margin-top: 22px; font-size: 12.5px; color: var(--bone-faint); }
+
+footer { border-top: 1px solid var(--rule-soft); padding-block: 30px 44px; }
+.foot { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; justify-content: space-between; }
+.foot p { margin: 0; font-size: 12.5px; color: var(--bone-faint); max-width: 58ch; }
+
+/* load orchestration */
+.rise { animation: rise .8s cubic-bezier(.2,.8,.3,1) backwards; }
+.d1 { animation-delay: .05s; }
+.d2 { animation-delay: .16s; }
+.d3 { animation-delay: .27s; }
+.d4 { animation-delay: .38s; }
+.d5 { animation-delay: .46s; }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-delay: 0s !important;
+    transition-duration: .001ms !important;
+  }
+}
+</style>
+
+<header class="rack">
+  <div class="shell rack-in">
+    <div class="plate"><b>AniRec</b><span>MODEL 1.3.0</span></div>
+    <div class="leds">
+      <span class="led legend"><i></i>LOCAL ONLY</span>
+      <span class="led b legend"><i></i>GPL-3.0</span>
+    </div>
+    <a class="btn sm" href="https://github.com/YusBera/AniRec/releases">Download</a>
+  </div>
+</header>
+<div class="rule-ticks"></div>
+
+<main>
+  <section class="hero">
+    <div class="shell hero-grid">
+      <div>
+        <p class="kana rise d1">アニレク</p>
+        <h1 class="rise d2">Anime picks that <em>show their math.</em></h1>
+        <p class="lede rise d3">
+          AniRec reads your MyAnimeList history and learns what you actually reach for.
+          Every suggestion arrives with a match score, and with
+          <strong>the genres that produced it, adding up to the decimal.</strong>
+          No black box, no cloud, no account on anybody else's server.
+        </p>
+        <div class="cta-row rise d4">
+          <a class="btn" href="https://github.com/YusBera/AniRec/releases">Download for Windows</a>
+          <a class="btn ghost" href="#bench">See a score break down</a>
+        </div>
+        <p class="cta-note rise d5">Free, open source, and it ships with a sample library. Look around before you connect anything.</p>
+      </div>
+
+      <div class="bench rise d3" id="bench">
+        <input class="pick" type="radio" name="pick" id="p1" checked>
+        <input class="pick" type="radio" name="pick" id="p2">
+        <input class="pick" type="radio" name="pick" id="p3">
+        <input class="pick" type="radio" name="pick" id="p4">
+
+        <div class="bench-head">
+          <span class="title">Why this one?</span>
+          <span class="legend">SAMPLE LIBRARY &middot; 128 COMPLETED</span>
+        </div>
+
+        <div class="tabs">
+          <label class="tab" for="p1">Death Note</label>
+          <label class="tab" for="p2">Steins;Gate</label>
+          <label class="tab" for="p3">Evangelion</label>
+          <label class="tab" for="p4">Clannad AS</label>
+        </div>
+
+        <div class="stack">
+
+          <article class="unit u1">
+            <div class="meta">
+              <span>TV<b> &middot; 37 ep</b></span><span>2006</span><span>MADHOUSE</span><span>MAL<b> 8.62</b></span>
+            </div>
+            <div class="readout">
+              <div class="big"><span class="count" data-to="92.4">92.4</span><sup>%</sup></div>
+              <div class="side">
+                <span class="legend">PERSONAL MATCH</span>
+                <p>Built from your ratings, not from what is popular this season.</p>
+              </div>
+            </div>
+            <div class="accum">
+              <span class="seg g1" style="width:44.1%"></span>
+              <span class="seg g2" style="width:26.8%"></span>
+              <span class="seg g3" style="width:5.2%"></span>
+              <span class="seg c" style="width:16.3%"></span>
+            </div>
+            <div class="scale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+            <div class="rows">
+              <div class="row"><i class="g1"></i><span class="name">Psychological <small>11 finished &middot; you average 9.1</small></span><span class="val">+44.1</span></div>
+              <div class="row"><i class="g2"></i><span class="name">Thriller <small>9 finished &middot; you average 8.8</small></span><span class="val">+26.8</span></div>
+              <div class="row"><i class="g3"></i><span class="name">Supernatural</span><span class="val">+5.2</span></div>
+              <div class="row"><i class="c"></i><span class="name">Community rating <small>2.9M scores</small></span><span class="val">+16.3</span></div>
+            </div>
+            <div class="sum"><span class="label">Sums to</span><span class="total">92.4</span></div>
+          </article>
+
+          <article class="unit u2">
+            <div class="meta">
+              <span>TV<b> &middot; 24 ep</b></span><span>2011</span><span>WHITE FOX</span><span>MAL<b> 9.07</b></span>
+            </div>
+            <div class="readout">
+              <div class="big"><span class="count" data-to="90.8">90.8</span><sup>%</sup></div>
+              <div class="side">
+                <span class="legend">PERSONAL MATCH</span>
+                <p>Built from your ratings, not from what is popular this season.</p>
+              </div>
+            </div>
+            <div class="accum">
+              <span class="seg g1" style="width:38.6%"></span>
+              <span class="seg g2" style="width:24.9%"></span>
+              <span class="seg g3" style="width:10.4%"></span>
+              <span class="seg c" style="width:16.9%"></span>
+            </div>
+            <div class="scale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+            <div class="rows">
+              <div class="row"><i class="g1"></i><span class="name">Psychological <small>11 finished &middot; you average 9.1</small></span><span class="val">+38.6</span></div>
+              <div class="row"><i class="g2"></i><span class="name">Drama <small>24 finished &middot; you average 8.6</small></span><span class="val">+24.9</span></div>
+              <div class="row"><i class="g3"></i><span class="name">Sci-Fi</span><span class="val">+10.4</span></div>
+              <div class="row"><i class="c"></i><span class="name">Community rating <small>1.4M scores</small></span><span class="val">+16.9</span></div>
+            </div>
+            <div class="sum"><span class="label">Sums to</span><span class="total">90.8</span></div>
+          </article>
+
+          <article class="unit u3">
+            <div class="meta">
+              <span>TV<b> &middot; 26 ep</b></span><span>1995</span><span>GAINAX</span><span>MAL<b> 8.35</b></span>
+            </div>
+            <div class="readout">
+              <div class="big"><span class="count" data-to="88.1">88.1</span><sup>%</sup></div>
+              <div class="side">
+                <span class="legend">PERSONAL MATCH</span>
+                <p>Built from your ratings, not from what is popular this season.</p>
+              </div>
+            </div>
+            <div class="accum">
+              <span class="seg g1" style="width:40.2%"></span>
+              <span class="seg g2" style="width:22.7%"></span>
+              <span class="seg g3" style="width:9.6%"></span>
+              <span class="seg c" style="width:15.6%"></span>
+            </div>
+            <div class="scale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+            <div class="rows">
+              <div class="row"><i class="g1"></i><span class="name">Psychological <small>11 finished &middot; you average 9.1</small></span><span class="val">+40.2</span></div>
+              <div class="row"><i class="g2"></i><span class="name">Drama <small>24 finished &middot; you average 8.6</small></span><span class="val">+22.7</span></div>
+              <div class="row"><i class="g3"></i><span class="name">Sci-Fi</span><span class="val">+9.6</span></div>
+              <div class="row"><i class="c"></i><span class="name">Community rating <small>1.7M scores</small></span><span class="val">+15.6</span></div>
+            </div>
+            <div class="sum"><span class="label">Sums to</span><span class="total">88.1</span></div>
+          </article>
+
+          <article class="unit u4">
+            <div class="meta">
+              <span>TV<b> &middot; 24 ep</b></span><span>2008</span><span>KYOTO ANIMATION</span><span>MAL<b> 8.93</b></span>
+            </div>
+            <div class="readout">
+              <div class="big"><span class="count" data-to="78.5">78.5</span><sup>%</sup></div>
+              <div class="side">
+                <span class="legend">PERSONAL MATCH</span>
+                <p>Lower than the others, and it tells you which genre is missing.</p>
+              </div>
+            </div>
+            <div class="accum">
+              <span class="seg g1" style="width:46.2%"></span>
+              <span class="seg g2" style="width:14.9%"></span>
+              <span class="seg c" style="width:17.4%"></span>
+            </div>
+            <div class="scale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+            <div class="rows">
+              <div class="row"><i class="g1"></i><span class="name">Drama <small>24 finished &middot; you average 8.6</small></span><span class="val">+46.2</span></div>
+              <div class="row"><i class="g2"></i><span class="name">Supernatural</span><span class="val">+14.9</span></div>
+              <div class="row"><i class="c"></i><span class="name">Community rating <small>1.1M scores</small></span><span class="val">+17.4</span></div>
+            </div>
+            <div class="sum"><span class="label">Sums to</span><span class="total">78.5</span></div>
+          </article>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="shell">
+      <div class="band-head">
+        <span class="legend">GETTING THERE</span>
+        <h2>Three steps, and only one of them needs your account.</h2>
+        <p>The order matters. You should see the thing working before it asks you for anything.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <span class="n">01</span>
+          <h3>Unzip and run</h3>
+          <p>One folder, one executable. Python and every library it needs are already inside. Windows 10 or 11.</p>
+        </div>
+        <div class="step">
+          <span class="n">02</span>
+          <h3>Look around first</h3>
+          <p>A sample library opens on first launch: a real feed, real breakdowns, no account. Connect MyAnimeList when you want the picks to be about you.</p>
+        </div>
+        <div class="step">
+          <span class="n">03</span>
+          <h3>Argue with it</h3>
+          <p>Like it, pass on it, save it for later. The taste model updates on every decision and the rest of the feed reshapes to match.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="shell">
+      <div class="band-head">
+        <span class="legend">WHAT IS IN THE BOX</span>
+        <h2>The spec sheet.</h2>
+      </div>
+      <div class="spec-wrap">
+        <table class="spec">
+          <tbody>
+            <tr><th>Surfaces</th><td>Discover, My Library, Settings</td></tr>
+            <tr><th>Scoring</th><td>A genre-weighted taste model learned from your own ratings, plus the community score</td></tr>
+            <tr><th>Explanation</th><td>Per-title contribution breakdown that sums to the match percentage shown beside it</td></tr>
+            <tr><th>Feedback</th><td>Liked, Not for me, and Watch Later, kept per profile and keyed by MyAnimeList ID</td></tr>
+            <tr><th>Sampler</th><td>One Adventurousness control, Familiar through Surprising</td></tr>
+            <tr><th>Layouts</th><td>Grid, list, and table, each remembered between sessions</td></tr>
+            <tr><th>Themes</th><td>Light, dark, OLED black, and a gradient built from two colours you pick</td></tr>
+            <tr><th>Type</th><td>A font scale that moves the whole hierarchy together</td></tr>
+            <tr><th>Data source</th><td>The official MyAnimeList API, over OAuth, with tokens stored on your machine</td></tr>
+            <tr><th>Also included</th><td>The original command-line workflow, and developer tools for each pipeline step</td></tr>
+            <tr><th>Platform</th><td>Packaged build for Windows 10 and 11; runs from source on Python 3.10 and newer</td></tr>
+            <tr><th>Licence</th><td>GNU General Public License v3.0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="shell">
+      <div class="band-head">
+        <span class="legend">WHERE YOUR DATA GOES</span>
+        <h2>Nothing leaves this machine.</h2>
+        <p>AniRec reads your viewing history. That is a reasonable thing to be careful about, so here is the whole story.</p>
+      </div>
+      <div class="priv">
+        <div>
+          <h3>On your disk</h3>
+          <p>Ratings, tokens, generated results, and cached covers all live in your local AniRec application-data folder. Clear any of it from Settings.</p>
+        </div>
+        <div>
+          <h3>One server, with permission</h3>
+          <p>AniRec talks to the official MyAnimeList API and nothing else. You approve the connection in your own browser, and your password never reaches the app.</p>
+        </div>
+        <div>
+          <h3>No telemetry</h3>
+          <p>No analytics and no account on our side, because there is no our side. Logs are written locally and redacted before anything is stored.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="close-band">
+    <div class="shell">
+      <span class="legend">ANIREC 1.3.0 &middot; WINDOWS &middot; FREE</span>
+      <h2>Stop guessing what to watch.</h2>
+      <p>Download it, open the sample library, and see whether the numbers convince you. That takes about a minute.</p>
+      <div class="cta-row">
+        <a class="btn" href="https://github.com/YusBera/AniRec/releases">Download for Windows</a>
+        <a class="btn ghost" href="https://github.com/YusBera/AniRec">Read the source</a>
+      </div>
+      <p class="fine">The build is unsigned, so Windows SmartScreen may ask you to confirm. Every line of it is on GitHub.</p>
+    </div>
+  </section>
+</main>
+
+<div class="rule-ticks"></div>
+<footer>
+  <div class="shell foot">
+    <p>AniRec is an unofficial application and is not affiliated with or endorsed by MyAnimeList. Released under GPL-3.0.</p>
+    <p class="legend">アニレク &middot; MODEL 1.3.0</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function run(el) {
+    var to = parseFloat(el.getAttribute('data-to'));
+    if (!isFinite(to)) return;
+    if (reduce) { el.textContent = to.toFixed(1); return; }
+    var start = null;
+    var dur = 900;
+    function step(ts) {
+      if (start === null) start = ts;
+      var p = Math.min((ts - start) / dur, 1);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = (to * eased).toFixed(1);
+      if (p < 1) requestAnimationFrame(step);
+    }
+    el.textContent = '0.0';
+    requestAnimationFrame(step);
+  }
+
+  function activeCounter() {
+    var checked = document.querySelector('.pick:checked');
+    if (!checked) return null;
+    var unit = document.querySelector('.stack .u' + checked.id.slice(1));
+    return unit ? unit.querySelector('.count') : null;
+  }
+
+  var first = activeCounter();
+  if (first) window.setTimeout(function () { run(first); }, 420);
+
+  Array.prototype.forEach.call(document.querySelectorAll('.pick'), function (input) {
+    input.addEventListener('change', function () {
+      var el = activeCounter();
+      if (el) run(el);
+    });
+  });
+})();
+</script>

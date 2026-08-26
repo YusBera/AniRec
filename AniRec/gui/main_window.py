@@ -133,8 +133,8 @@ class ConnectionStatusBar(QFrame):
         self.setAccessibleName("Profile and MyAnimeList connection status")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 4, 16, 4)
-        layout.setSpacing(16)
+        layout.setContentsMargins(2, 0, 2, 0)
+        layout.setSpacing(14)
 
         self.profile_label = QLabel()
         self.profile_label.setObjectName("activeProfileLabel")
@@ -142,9 +142,20 @@ class ConnectionStatusBar(QFrame):
         self.mal_status_label.setObjectName("malConnectionLabel")
 
         layout.addWidget(self.profile_label)
-        layout.addStretch()
         layout.addWidget(self.mal_status_label)
+        layout.addStretch()
+        self._layout = layout
         self.set_status()
+
+    def attach_notice(self, widget: QWidget) -> None:
+        """Park a transient notice on the right of the strip.
+
+        Sample mode used to add a second full-width banner underneath this
+        one. Two stacked bars pushed the first recommendation more than
+        halfway down the window, on every page, which is an expensive way to
+        say something a single line can say.
+        """
+        self._layout.addWidget(widget)
 
     def set_status(self, profile_name: str | None = None, *, mal_connected: bool = False) -> None:
         safe_name = profile_name.strip() if profile_name and profile_name.strip() else None
@@ -421,29 +432,29 @@ class MainWindow(QMainWindow):
         content = QWidget()
         content.setObjectName("contentArea")
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(24, 12, 24, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(26, 14, 26, 14)
+        layout.setSpacing(14)
 
         self.connection_status = ConnectionStatusBar()
         layout.addWidget(self.connection_status)
 
         # Stays visible for as long as sample data is on screen, so the state
-        # can never be mistaken for the user's own library.
+        # can never be mistaken for the user's own library. It rides on the
+        # status strip rather than claiming a row of its own.
         self.demo_banner = QFrame()
         self.demo_banner.setObjectName("demoBanner")
         banner_layout = QHBoxLayout(self.demo_banner)
-        banner_layout.setContentsMargins(16, 8, 16, 8)
-        banner_layout.setSpacing(12)
+        banner_layout.setContentsMargins(0, 0, 0, 0)
+        banner_layout.setSpacing(10)
         banner_label = QLabel(WIZARD_TEXT.demo_banner)
-        banner_label.setObjectName("dashboardActivity")
-        banner_label.setWordWrap(True)
+        banner_label.setObjectName("demoBannerText")
         banner_button = QPushButton(WIZARD_TEXT.demo_banner_action)
         banner_button.setProperty("buttonRole", "primary")
         banner_button.clicked.connect(self._leave_demo_mode)
-        banner_layout.addWidget(banner_label, 1)
+        banner_layout.addWidget(banner_label)
         banner_layout.addWidget(banner_button)
         self.demo_banner.setVisible(False)
-        layout.addWidget(self.demo_banner)
+        self.connection_status.attach_notice(self.demo_banner)
 
         self.page_stack = QStackedWidget()
         self.page_stack.setObjectName("pageStack")
