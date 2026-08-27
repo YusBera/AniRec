@@ -26,7 +26,6 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (
-    QSlider,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -46,6 +45,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..errors import AniRecError, ConfigError, UserFacingError
+from ..infrastructure.logging_config import close_all_anirec_loggers
 from ..models import AppSettings, PipelineSettings, UserProfile
 from ..services import (
     ApiConnectionService,
@@ -57,9 +57,10 @@ from ..services import (
     SettingsService,
     TokenStore,
 )
-from ..infrastructure.logging_config import close_all_anirec_loggers
-from .recommendation_card import MEMORY_COVER_CACHE
 from .gradient_picker import GradientPicker
+from .design_tokens import SPACE
+from .instrument_widgets import SteppedSlider
+from .recommendation_card import MEMORY_COVER_CACHE
 from .scaling import GUI_SCALE_CHOICES, clamp_gui_scale, set_gui_scale
 from .texts import SETTINGS_TEXT
 
@@ -77,6 +78,7 @@ class SettingsPage(QWidget):
     settings_saved = Signal(object)
     profile_changed = Signal(object)
     show_hidden_changed = Signal(bool)
+    show_covers_changed = Signal(bool)
     local_data_reset = Signal()
 
     API_TEST_KEY = "settings-api-test:global"
@@ -119,7 +121,15 @@ class SettingsPage(QWidget):
         self._preview_timer.setSingleShot(True)
         self._preview_timer.timeout.connect(self._apply_preview_now)
         # CHANGE [BUG-PREVIEW]: true while controls are being populated.
-        self._loading = False
+        #
+        # CHANGE [SAVE-MODEL]: and true through construction, not just through
+        # reload. Building the Appearance panel fires currentIndexChanged on
+        # every combo as its items are added, which now persists appearance -
+        # so the theme combo firing while the GUI scale combo was still empty
+        # wrote that combo's first entry, 0.75, over whatever scale the user
+        # had. Constructing the page silently reset it. The first reload()
+        # clears this in its finally block.
+        self._loading = True
         self._saved_secret: str | None = None
         self._refresh_key: str | None = None
         self._build_ui()
@@ -130,8 +140,11 @@ class SettingsPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(8)
+        # CHANGE [PAGE]: the shared page inset and rhythm.
+        root.setContentsMargins(
+            SPACE["sm"], SPACE["sm"], SPACE["sm"], SPACE["sm"]
+        )
+        root.setSpacing(SPACE["md"])
         title = QLabel("Settings")
         title.setObjectName("pageTitle")
         description = QLabel(
@@ -159,10 +172,15 @@ class SettingsPage(QWidget):
         layout.setSpacing(18)
         cards = QGridLayout()
         cards.setSpacing(16)
-        cards.addWidget(self._build_recommendation_group(), 0, 0)
-        cards.addWidget(self._build_appearance_group(), 0, 1)
-        cards.addWidget(self._build_profile_group(), 1, 0)
-        cards.addWidget(self._build_api_group(), 1, 1)
+        # CHANGE [VOID]: a grid stretches every cell to the tallest in its
+        # row, so APPEARANCE beside the much taller RECOMMENDATION was drawn
+        # as a panel two thirds full of nothing. Panels size to their contents
+        # and sit at the top of their cell instead.
+        top = Qt.AlignmentFlag.AlignTop
+        cards.addWidget(self._build_recommendation_group(), 0, 0, top)
+        cards.addWidget(self._build_appearance_group(), 0, 1, top)
+        cards.addWidget(self._build_profile_group(), 1, 0, top)
+        cards.addWidget(self._build_api_group(), 1, 1, top)
         cards.addWidget(self._build_data_group(), 2, 0, 1, 2)
         cards.setColumnStretch(0, 1)
         cards.setColumnStretch(1, 1)
@@ -191,6 +209,27 @@ class SettingsPage(QWidget):
         scroll.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         root.addWidget(scroll, 1)
 
+    @staticmethod
+    def _configure_form(form: QFormLayout) -> None:
+        """Give every panel the same key column and field behaviour.
+
+        The forms were left at Qt's defaults, so each panel's label column
+        found its own width and its own alignment and the fields grew or did
+        not depending on what happened to be in them. Right-aligning the keys
+        against a consistent gutter is what turns three unrelated forms into
+        one spec sheet.
+        """
+        form.setLabelAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        form.setFormAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+        )
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+        form.setHorizontalSpacing(SPACE["lg"])
+        form.setVerticalSpacing(SPACE["sm"])
+
     def _build_developer_group(self) -> QGroupBox:
         """The individual pipeline steps, off by default.
 
@@ -218,9 +257,10 @@ class SettingsPage(QWidget):
         return group
 
     def _build_recommendation_group(self) -> QGroupBox:
-        group = QGroupBox("Recommendation")
+        group = QGroupBox("RECOMMENDATION")
         group.setProperty("settingsCard", True)
         form = QFormLayout(group)
+        self._configure_form(form)
         self.top_limit_input = self._spinbox(1, 100_000)
         self.recommendation_count_input = self._spinbox(1, 1_000)
         self.candidate_pool_input = self._spinbox(1, 100_000)
@@ -245,7 +285,7 @@ class SettingsPage(QWidget):
         # decisions a person can reason about, so they are derived from this
         # instead. The originals stay as hidden widgets so stored settings
         # round trip unchanged.
-        self.adventurousness_input = QSlider(Qt.Orientation.Horizontal)
+        self.adventurousness_input = SteppedSlider(Qt.Orientation.Horizontal)
         self.adventurousness_input.setObjectName("settingsAdventurousness")
         self.adventurousness_input.setRange(1, 10)
         self.adventurousness_input.setPageStep(1)
@@ -269,11 +309,11 @@ class SettingsPage(QWidget):
 
         form.addRow(SETTINGS_TEXT.adventurousness, adventurousness_row)
         form.addRow("", adventurousness_hint)
-        form.addRow("How many at a time", self.recommendation_count_input)
-        form.addRow("Minimum MAL score", self.minimum_score_input)
-        form.addRow("Default sort", self.default_sort_input)
-        form.addRow("Hidden items", self.include_hidden_input)
-        form.addRow("MAL content", self.include_nsfw_input)
+        form.addRow("BATCH SIZE", self.recommendation_count_input)
+        form.addRow("MIN MAL SCORE", self.minimum_score_input)
+        form.addRow("DEFAULT SORT", self.default_sort_input)
+        form.addRow("HIDDEN ITEMS", self.include_hidden_input)
+        form.addRow("MAL CONTENT", self.include_nsfw_input)
 
         # Kept for round tripping and for the developer tools view; they are no
         # longer surfaced as separate questions to answer.
@@ -295,7 +335,7 @@ class SettingsPage(QWidget):
         return max(1, min(10, int(getattr(pipeline, "randomness_factor", 5) or 5)))
 
     def _build_profile_group(self) -> QGroupBox:
-        group = QGroupBox("Profiles")
+        group = QGroupBox("PROFILES")
         group.setProperty("settingsCard", True)
         layout = QVBoxLayout(group)
         self.profile_combo = QComboBox()
@@ -321,10 +361,11 @@ class SettingsPage(QWidget):
         return group
 
     def _build_api_group(self) -> QGroupBox:
-        group = QGroupBox("MyAnimeList Public API")
+        group = QGroupBox("MYANIMELIST API")
         group.setProperty("settingsCard", True)
         layout = QVBoxLayout(group)
         form = QFormLayout()
+        self._configure_form(form)
         self.client_id_input = QLineEdit()
         self.client_id_input.setObjectName("settingsClientId")
         self.client_secret_input = QLineEdit()
@@ -332,7 +373,7 @@ class SettingsPage(QWidget):
         self.client_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.redirect_uri_input = QLineEdit()
         self.redirect_uri_input.setObjectName("settingsRedirectUri")
-        form.addRow("Client ID", self.client_id_input)
+        form.addRow("CLIENT ID", self.client_id_input)
         layout.addLayout(form)
         buttons = QHBoxLayout()
         self.test_api_button = QPushButton("Test connection")
@@ -352,9 +393,10 @@ class SettingsPage(QWidget):
         return group
 
     def _build_appearance_group(self) -> QGroupBox:
-        group = QGroupBox("Appearance")
+        group = QGroupBox("APPEARANCE")
         group.setProperty("settingsCard", True)
         form = QFormLayout(group)
+        self._configure_form(form)
         self.theme_input = QComboBox()
         self.theme_input.addItem("System", "system")
         self.theme_input.addItem("Dark", "dark")
@@ -392,20 +434,28 @@ class SettingsPage(QWidget):
         self.oled_hint.setWordWrap(True)
 
         self.gradient_picker = GradientPicker()
+        # CHANGE [SAVE-MODEL]: these two had no change signal at all, so a
+        # font scale or an artwork preference did nothing whatsoever until the
+        # Save button was found - in a panel where the control directly above
+        # them applied itself instantly. The font scale goes through the same
+        # coalesced preview as the theme, because applying a stylesheet
+        # re-polishes the whole tree and a spin box emits on every click.
+        self.font_scale_input.valueChanged.connect(self._on_font_scale_changed)
+        self.show_covers_input.toggled.connect(self._on_show_covers_changed)
         self.gradient_picker.changed.connect(lambda *_args: self._preview_theme())
         # CHANGE [FEAT1]: only a committed colour is written to the config.
         self.gradient_picker.committed.connect(
             lambda *_args: self._persist_appearance()
         )
 
-        form.addRow("Theme", self.theme_input)
+        form.addRow("THEME", self.theme_input)
         form.addRow("", self.oled_hint)
         self.gradient_row_label = QLabel("Gradient colours")
         form.addRow(self.gradient_row_label, self.gradient_picker)
-        form.addRow("GUI scale", self.gui_scale_input)
+        form.addRow("GUI SCALE", self.gui_scale_input)
         form.addRow("", self.gui_scale_hint)
-        form.addRow("Font scale", self.font_scale_input)
-        form.addRow("Recommendation artwork", self.show_covers_input)
+        form.addRow("FONT SCALE", self.font_scale_input)
+        form.addRow("ARTWORK", self.show_covers_input)
         self._on_theme_changed()
         return group
 
@@ -423,8 +473,47 @@ class SettingsPage(QWidget):
         self._persist_appearance()
         self.gui_scale_changed.emit(float(factor))
 
+    def _on_font_scale_changed(self, *_args) -> None:
+        """Apply the new size and keep it, the way the scale beside it does."""
+        if self._loading:
+            return
+        self._preview_theme()
+        self._persist_appearance()
+
+    def _on_show_covers_changed(self, checked: bool) -> None:
+        """Keep the preference and tell the feeds, without a full re-apply.
+
+        A narrow signal rather than reusing the settings-saved path: that one
+        re-applies the stylesheet, which re-polishes every widget in the tree
+        and costs about a second. Turning artwork off should not.
+        """
+        if self._loading:
+            return
+        self._persist_appearance()
+        self.show_covers_changed.emit(bool(checked))
+
     def _persist_appearance(self) -> None:
-        """Store appearance choices without demanding an API configuration."""
+        """Store appearance choices without demanding an API configuration.
+
+        CHANGE [SAVE-MODEL]: this now covers every control in the Appearance
+        panel, and every one of them calls it.
+
+        Three of the five used to be missing. Gradient colours and GUI scale
+        kept themselves the moment they changed; theme, font scale and Show
+        anime covers did not, and waited for the Save button - which validates
+        an API configuration and refuses without a Client ID. So a visitor
+        looking around with sample data could pick a theme, watch it take
+        effect, and lose it on the next launch, while the GUI scale they set
+        in the same panel survived. Worse for the theme than for the others:
+        it previews live, so the interface positively asserted that the choice
+        had been taken.
+
+        The line the page draws now is a real one - preferences apply and are
+        kept the moment you touch them; the API configuration and the pipeline
+        are configuration, and those are what Save owns.
+        """
+        if self._loading:
+            return
         try:
             current = self.settings_service.load()
             self.settings_service.save_preferences(
@@ -434,6 +523,8 @@ class SettingsPage(QWidget):
                     gradient_start=self.gradient_picker.start,
                     gradient_end=self.gradient_picker.end,
                     gui_scale=float(self.gui_scale_input.currentData() or 1.0),
+                    font_scale=float(self.font_scale_input.value()),
+                    show_covers=self.show_covers_input.isChecked(),
                 )
             )
         except (AniRecError, OSError, TypeError, ValueError):
@@ -447,6 +538,7 @@ class SettingsPage(QWidget):
             widget.setVisible(theme == "gradient")
         self.oled_hint.setVisible(theme == "oled")
         self._preview_theme()
+        self._persist_appearance()
 
     def _preview_theme(self) -> None:
         """Apply the selection immediately, so the choice can be seen.
@@ -483,7 +575,9 @@ class SettingsPage(QWidget):
         )
 
     def _build_data_group(self) -> QGroupBox:
-        group = QGroupBox("Local data")
+        # Qt has no text-transform, so the case lives in the string - and every
+        # other section legend on this page is set in caps.
+        group = QGroupBox("LOCAL DATA")
         group.setProperty("settingsCard", True)
         layout = QVBoxLayout(group)
         buttons = QHBoxLayout()
@@ -609,10 +703,51 @@ class SettingsPage(QWidget):
             show_covers=self.show_covers_input.isChecked(),
         )
 
+    def _is_configuring_api(self, settings: AppSettings) -> bool:
+        """Whether this save is an attempt to set up MyAnimeList access.
+
+        The distinction decides which validation applies, so it has to be
+        wider than "is the Client ID box empty". Someone who typed a secret
+        and forgot the ID, or who already had a working configuration and has
+        just cleared a field, is configuring the API and must be told which
+        field is missing. Someone who has never entered any of it is not, and
+        should not be blocked from changing a content filter.
+        """
+        if (settings.client_id or "").strip():
+            return True
+        if self.client_secret_input.text().strip() or self._saved_secret:
+            return True
+        try:
+            return bool((self.settings_service.load().client_id or "").strip())
+        except (AniRecError, OSError, TypeError, ValueError):
+            return False
+
     def save(self) -> bool:
+        """Persist the form.
+
+        CHANGE [DEMO-SAVE]: a blank Client ID means the API is not being
+        configured, not that the rest of the page is unsavable.
+
+        ``settings_service.save`` validates an API configuration and refuses
+        one with no Client ID. Every field on this page went through it, so
+        somebody looking around with sample data who ticked "Include NSFW
+        anime" and pressed Save was told *"MAL client ID is required"* - a
+        message about credentials, in answer to a content filter - and nothing
+        was written. The whole recommendation panel was unreachable on the one
+        path the product most wants people to take.
+
+        With no Client ID there is no API configuration to check, so the form
+        is written through the preference path, which validates everything
+        that is not a credential. The moment a Client ID is present the strict
+        validation applies again, so a malformed redirect URI is still caught.
+        """
         try:
             settings = self.settings_value()
-            self.settings_service.save(settings)
+            configuring_api = self._is_configuring_api(settings)
+            if configuring_api:
+                self.settings_service.save(settings)
+            else:
+                self.settings_service.save_preferences(settings)
         except (AniRecError, TypeError, ValueError) as error:
             message = (
                 str(error)
@@ -628,7 +763,12 @@ class SettingsPage(QWidget):
         self.client_secret_input.setPlaceholderText(
             "Saved securely — leave blank to keep" if self._saved_secret else ""
         )
-        self._set_status("Settings saved and applied.", error=False)
+        self._set_status(
+            "Settings saved and applied."
+            if configuring_api
+            else "Settings saved. MyAnimeList is not connected yet.",
+            error=False,
+        )
         self.settings_saved.emit(settings)
         self.show_hidden_changed.emit(settings.include_hidden_recommendations)
         return True

@@ -8,11 +8,19 @@ The direction is an instrument panel. Chrome recedes into a lacquer green-black
 that is barely a colour at all, so cover artwork carries the visual weight.
 Depth comes from tone rather than from drawing a line around everything.
 
-Two accents, and they mean different things. Brass is *you*: your match score,
-your taste, the one action a screen wants you to take. Aqua is *everyone else*
+Two accents, and they mean different things. Amber is *you*: your match score,
+your taste, the one action a screen wants you to take. Cyan is *everyone else*
 and *the system*: focus rings, saved items, community ratings. Keeping them
 apart is what stops the interface shouting in one colour from eight places at
 once, which is what the single terracotta accent used to do.
+
+CHANGE [CRT]: the dark palette is the workstation artifact's, imported value
+for value - a phosphor readout on a lab bench, not gold leaf on lacquer. Text
+is a green-grey rather than bone, because a CRT's white was never white. Two
+roles could not be imported as they stand: the artifact sets its faintest
+label for 9px type on a single ground, and at body size on this app's darkest
+panel it measures 3.21:1. It and the negative colour are walked toward the
+text colour until they pass AA, and nothing else moved.
 
 The same two accents carry the AniRec landing page, so the app a visitor
 downloads looks like the page that sold it to them.
@@ -43,18 +51,17 @@ SPACE = MappingProxyType(
     }
 )
 
-# Tightened from 6/10/14/20. Everything being generously rounded made every
-# element read as the same kind of object: a nav item, a warning banner and a
-# recommendation card were all equally soft, so nothing looked more important
-# than anything else. Small radii on controls, larger only on the things that
-# genuinely are cards.
+# The landing artifact is built like a rack-mounted instrument: square chassis,
+# hairline divisions, and only the tiniest easing on large physical panels.
+# Standard radio buttons remain circular because their shape communicates the
+# control; everything else uses this near-square scale.
 RADIUS = MappingProxyType(
     {
-        "sm": 4,
-        "md": 6,
-        "lg": 9,
-        "xl": 13,
-        "pill": 999,
+        "sm": 0,
+        "md": 1,
+        "lg": 2,
+        "xl": 3,
+        "pill": 2,
     }
 )
 
@@ -84,18 +91,32 @@ WEIGHT = MappingProxyType({"normal": 400, "medium": 600, "bold": 700, "heavy": 8
 #
 # Every family named here ships with Windows 10 and 11, so there is nothing to
 # bundle and nothing to fall back from on the platform the app targets.
-FONT_STACK = '"Segoe UI Variable Text", "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif'
+FONT_STACK = (
+    '"Yu Gothic UI", "Meiryo UI", "Segoe UI Variable Text", "Segoe UI", '
+    '"Noto Sans CJK JP", "DejaVu Sans", sans-serif'
+)
 
-# Bahnschrift is Microsoft's DIN: technical, slightly condensed, and nothing
-# like the default UI face, which is what makes a heading read as a heading.
+# CHANGE [CRT]: Martian Mono, the face the workstation artifact sets its
+# headings in. A wide monospace rather than a condensed grotesque, which is
+# what makes a legend read as something stencilled onto a panel instead of
+# as bold body copy. Bahnschrift stays behind it: the app must still look
+# right before the bundled file loads, and on a machine where it cannot.
+#
+# Both bundled faces are SIL OFL 1.1, which is compatible with this project's
+# GPL-3 licence. The licence texts ship beside them in resources/fonts.
 FONT_STACK_DISPLAY = (
-    '"Bahnschrift", "Segoe UI Variable Display", "Segoe UI Semibold", '
-    '"DejaVu Sans", sans-serif'
+    '"Martian Mono", "Bahnschrift Condensed", "Bahnschrift", '
+    '"Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif'
 )
 
 # Numbers that belong in a column - match scores, MAL ratings, counters - get a
 # monospaced face so digits line up instead of jittering between rows.
-FONT_STACK_MONO = '"Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace'
+#
+# CHANGE [CRT]: IBM Plex Mono, again from the artifact. Cascadia stays as the
+# fallback; it is the closest face Windows ships.
+FONT_STACK_MONO = (
+    '"IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace'
+)
 
 
 DARK = MappingProxyType(
@@ -104,65 +125,65 @@ DARK = MappingProxyType(
         # neutral black: a hue bias this slight is not read as "green", it is
         # read as considered, and it keeps warm cover artwork from looking
         # tinted the way a pure grey chrome does.
-        "bg": "#0A120E",
-        "bg_alt": "#0C1611",
-        "sidebar": "#070E0B",
-        "surface": "#12201A",
-        "surface_raised": "#182A21",
-        "surface_sunken": "#0C1712",
-        "well": "#06100C",
+        "bg": "#070C09",
+        "bg_alt": "#0A100C",
+        "sidebar": "#050907",
+        "surface": "#0C1410",
+        "surface_raised": "#101A14",
+        "surface_sunken": "#0A120E",
+        "well": "#040806",
         # Text. Bone rather than white; pure white on a near-black panel is
         # harsher than anything a long session wants.
-        "text": "#E9E5D6",
-        "text_strong": "#F7F4EA",
-        "text_muted": "#9BA99E",
-        "text_subtle": "#7C8C80",
-        "text_disabled": "#5A6960",
+        "text": "#C6D4C2",
+        "text_strong": "#DCE8D8",
+        "text_muted": "#849686",
+        "text_subtle": "#748676",
+        "text_disabled": "#47564A",
         # Lines. Deliberately quiet: depth is carried by tone.
-        "border": "#23372C",
-        "border_strong": "#35513F",
-        "border_subtle": "#182A21",
+        "border": "#1E2E24",
+        "border_strong": "#2E4636",
+        "border_subtle": "#16221B",
         # Brass. This means "yours": your match, your taste, the one action
         # the screen is asking for.
-        "accent": "#C6A15B",
-        "accent_hover": "#D8B570",
-        "accent_soft": "#E2C489",
-        "accent_muted": "#2A2417",
+        "accent": "#D9A441",
+        "accent_hover": "#E8B85C",
+        "accent_soft": "#E9C275",
+        "accent_muted": "#241B0C",
         # Brass is a light colour, so anything sitting on it must be dark.
-        "accent_contrast": "#0A120E",
+        "accent_contrast": "#0A0F0B",
         # Aqua. This means "the system": focus, selection, saved. Focus rings
         # in a second colour are unmistakable against brass controls.
-        "focus": "#6FC6C0",
-        "selection": "#22403C",
+        "focus": "#5FBFB5",
+        "selection": "#17332F",
         # Status. Vivid enough to signal against a ground that is itself
         # faintly green.
-        "success_bg": "#102A1E",
-        "success_border": "#2E6B4A",
-        "success_text": "#74D6A0",
-        "danger_bg": "#2C1417",
-        "danger_border": "#6B2F34",
-        "danger_text": "#F0989A",
-        "warning_bg": "#2A2213",
-        "warning_border": "#5E4C26",
-        "warning_text": "#E5C27E",
-        "busy_bg": "#16262B",
-        "busy_border": "#35606B",
-        "busy_text": "#9FCBD4",
-        "saved_bg": "#142A28",
-        "saved_border": "#2F6460",
-        "saved_text": "#8FD3CD",
+        "success_bg": "#0C2016",
+        "success_border": "#2A6244",
+        "success_text": "#6FCF99",
+        "danger_bg": "#241110",
+        "danger_border": "#7A3E28",
+        "danger_text": "#D98363",
+        "warning_bg": "#241B0C",
+        "warning_border": "#6E5421",
+        "warning_text": "#D9A441",
+        "busy_bg": "#0E1F21",
+        "busy_border": "#2F6B66",
+        "busy_text": "#8FCFC7",
+        "saved_bg": "#0F2523",
+        "saved_border": "#2F6B66",
+        "saved_text": "#5FBFB5",
         # Depth, used sparingly in place of borders.
         "gradient_card": (
             "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
-            "stop:0 #16261E, stop:1 #101B15)"
+            "stop:0 #101A14, stop:1 #0A120E)"
         ),
         "gradient_page": (
             "qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            "stop:0 #0A120E, stop:1 #0D1813)"
+            "stop:0 #070C09, stop:1 #0A120E)"
         ),
         "gradient_hero": (
             "qlineargradient(x1:0, y1:0, x2:1, y2:1, "
-            "stop:0 #14231B, stop:0.55 #1A2A20, stop:1 #24291B)"
+            "stop:0 #0C1410, stop:0.55 #101A14, stop:1 #16221B)"
         ),
     }
 )
@@ -317,39 +338,109 @@ def _accent_for(start: str, end: str, base) -> str:
     return candidate
 
 
+def _readable(colour: str, background: str, minimum: float = 0.34) -> str:
+    """Push a colour away from a background until it is comfortably legible."""
+    target = "#FFFFFF" if _luminance(background) < 0.5 else "#000000"
+    candidate = colour
+    for _attempt in range(8):
+        if abs(_luminance(candidate) - _luminance(background)) >= minimum:
+            return candidate
+        candidate = _mix(candidate, target, 0.16)
+    return candidate
+
+
 def gradient_palette(start: str, end: str):
     """Build a full palette around two colours the user chose.
 
-    Only the page background is actually theirs. Everything else is derived so
-    the result stays legible whatever they pick: the base palette is chosen by
-    the brightness of their colours, surfaces are mixed toward it so cards
-    still read as raised, and text keeps the contrast of that base rather than
-    being tinted into illegibility.
+    Every surface and line role is derived, not inherited. The previous
+    version tinted fifteen roles and left the rest at the dark theme's values,
+    so in a red gradient the navigation rail, the wells, every border and all
+    five status colours stayed green: whole regions of the interface simply
+    refused to follow the theme.
+
+    Semantic hues survive because they carry meaning - success must still read
+    as success - but they are blended into the chosen world so they belong to
+    it, and each one is then checked for contrast against the surface it
+    actually sits on.
     """
     base = LIGHT if (_luminance(start) + _luminance(end)) / 2 > 0.5 else DARK
     midpoint = _mix(start, end)
-    # CHANGE [BUG-ACCENT]: derive the accent from the chosen colours. It used to
-    # stay the default terracotta whatever the user picked, so buttons, the
-    # match bar and every highlight ignored their gradient entirely. The more
-    # colourful of the two ends is taken and pushed away from the background
-    # until it is clearly readable against it.
     accent = _accent_for(start, end, base)
+
+    surface = _mix(midpoint, base["surface"], 0.72)
+    surface_raised = _mix(midpoint, base["surface_raised"], 0.80)
+    surface_sunken = _mix(midpoint, base["surface_sunken"], 0.60)
+    well = _mix(midpoint, base["well"], 0.45)
+    page_bg = midpoint
+
+    # Lines take the chosen hue so they read as part of the same object.
+    border = _mix(surface, base["border"], 0.55)
+    border_strong = _mix(surface, base["border_strong"], 0.50)
+    border_subtle = _mix(surface, base["border_subtle"], 0.70)
+
+    # Text keeps the base's contrast and only a trace of the hue: bias it any
+    # further and long passages start to lose legibility.
+    def _tinted_text(role: str, amount: float = 0.08) -> str:
+        return _readable(_mix(base[role], midpoint, amount), page_bg, 0.30)
+
+    def _status(role_bg: str, role_border: str, role_text: str):
+        """Keep the hue, join the world, stay readable on its own chip."""
+        chip = _mix(base[role_bg], midpoint, 0.45)
+        return (
+            chip,
+            _mix(base[role_border], midpoint, 0.30),
+            _readable(_mix(base[role_text], midpoint, 0.12), chip, 0.32),
+        )
+
+    success = _status("success_bg", "success_border", "success_text")
+    danger = _status("danger_bg", "danger_border", "danger_text")
+    warning = _status("warning_bg", "warning_border", "warning_text")
+    busy = _status("busy_bg", "busy_border", "busy_text")
+    saved = _status("saved_bg", "saved_border", "saved_text")
+
+    # The second accent stays a second accent. Collapsing focus onto the
+    # user's colour cost the interface its "yours" / "the system" split, so
+    # the base signal hue is kept and only lifted until it reads.
+    focus = _readable(_mix(base["focus"], midpoint, 0.18), surface, 0.30)
+
     return MappingProxyType(
         {
             **base,
             "accent": accent,
             "accent_hover": _shift(accent, 0.14, base),
-            "accent_soft": _shift(accent, 0.28, base),
+            "accent_soft": _readable(_shift(accent, 0.28, base), surface, 0.30),
             "accent_muted": _mix(accent, midpoint, 0.78),
             "accent_contrast": "#FFFFFF" if _luminance(accent) < 0.55 else "#101014",
-            "focus": accent,
+            "focus": focus,
             "selection": _mix(accent, midpoint, 0.62),
-            "bg": midpoint,
+            "bg": page_bg,
             "bg_alt": _mix(midpoint, base["surface"], 0.35),
-            "sidebar": _mix(start, base["sidebar"], 0.55),
-            "surface": _mix(midpoint, base["surface"], 0.72),
-            "surface_raised": _mix(midpoint, base["surface_raised"], 0.80),
-            "surface_sunken": _mix(midpoint, base["surface_sunken"], 0.60),
+            "sidebar": _mix(start, base["sidebar"], 0.30),
+            "surface": surface,
+            "surface_raised": surface_raised,
+            "surface_sunken": surface_sunken,
+            "well": well,
+            "border": border,
+            "border_strong": border_strong,
+            "border_subtle": border_subtle,
+            # Primary copy is NOT tinted. It is the one thing on screen that
+            # must stay maximally legible whatever two colours are chosen, and
+            # the hue bias that helps chrome belong to the theme buys nothing
+            # on a paragraph. Only the recessive text roles take the tint.
+            "text": base["text"],
+            "text_strong": base["text_strong"],
+            "text_muted": _tinted_text("text_muted", 0.10),
+            "text_subtle": _tinted_text("text_subtle", 0.12),
+            "text_disabled": _mix(base["text_disabled"], midpoint, 0.16),
+            "success_bg": success[0], "success_border": success[1], "success_text": success[2],
+            "danger_bg": danger[0], "danger_border": danger[1], "danger_text": danger[2],
+            "warning_bg": warning[0], "warning_border": warning[1], "warning_text": warning[2],
+            "busy_bg": busy[0], "busy_border": busy[1], "busy_text": busy[2],
+            "saved_bg": saved[0], "saved_border": saved[1], "saved_text": saved[2],
+            "gradient_card": (
+                f"qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+                f"stop:0 {surface_raised}, stop:1 {surface})"
+            ),
             "gradient_page": (
                 f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
                 f"stop:0 {start}, stop:1 {end})"

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtGui import QIcon, QPainter, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 
 from ..infrastructure.paths import resource_path
 from ..metadata import APP_ICON_RESOURCE
@@ -27,3 +29,195 @@ def placeholder_pixmap(*, base_override: str | Path | None = None) -> QPixmap:
 def cover_placeholder_pixmap(*, base_override: str | Path | None = None) -> QPixmap:
     path = resource_path(COVER_PLACEHOLDER_RESOURCE, base_override=base_override)
     return QPixmap(str(path)) if path.is_file() else QPixmap()
+
+
+FONT_RESOURCE_DIR = "gui/resources/fonts"
+
+# The two faces the workstation design is drawn in. Both are SIL OFL 1.1,
+# which is compatible with this project's GPL-3 licence; the licence texts
+# ship beside the files and must stay there.
+BUNDLED_FONTS = (
+    "IBMPlexMono-Regular.ttf",
+    "IBMPlexMono-Medium.ttf",
+    "IBMPlexMono-SemiBold.ttf",
+    "IBMPlexMono-Bold.ttf",
+    "MartianMono.ttf",
+)
+
+_FONTS_LOADED = False
+
+
+def load_bundled_fonts(*, base_override: str | Path | None = None) -> tuple[str, ...]:
+    """Register the packaged faces with Qt, once per process.
+
+    Every font stack in ``design_tokens`` still names a Windows face behind
+    the bundled one, so a file that fails to load costs the design its exact
+    typography and nothing else - which is why this reports what it loaded
+    rather than raising.
+    """
+    global _FONTS_LOADED
+    from PySide6.QtGui import QFontDatabase
+
+    if _FONTS_LOADED:
+        return ()
+    loaded: list[str] = []
+    for name in BUNDLED_FONTS:
+        path = resource_path(f"{FONT_RESOURCE_DIR}/{name}", base_override=base_override)
+        if not path.is_file():
+            continue
+        identifier = QFontDatabase.addApplicationFont(str(path))
+        if identifier != -1:
+            loaded.extend(QFontDatabase.applicationFontFamilies(identifier))
+    _FONTS_LOADED = True
+    return tuple(dict.fromkeys(loaded))
+
+
+UI_ICON_RESOURCE_DIR = "gui/resources/icons/ui"
+
+# Rendered from SVG at a few multiples so the strokes stay crisp on 125% and
+# 150% displays rather than being scaled up from a 16px raster.
+_ICON_RENDER_SIZES = (16, 20, 24, 32, 40, 48)
+
+_UI_ICON_CACHE: dict[tuple[str, str, int], QPixmap] = {}
+
+
+def _ui_icon_source(name: str, *, base_override: str | Path | None = None) -> str | None:
+    """Read one interface icon, or None when the asset is absent."""
+    path = resource_path(f"{UI_ICON_RESOURCE_DIR}/{name}.svg", base_override=base_override)
+    if not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def ui_icon_pixmap(
+    name: str,
+    colour: str,
+    size: int = 16,
+    *,
+    base_override: str | Path | None = None,
+) -> QPixmap:
+    """Render an interface icon tinted to one colour.
+
+    The assets are authored with ``stroke="currentColor"`` so a single file
+    serves every theme and every state. Qt's SVG renderer has no CSS cascade
+    and paints ``currentColor`` as black, so the colour is substituted in the
+    source text before rendering.
+    """
+    key = (str(name), str(colour), int(size))
+    cached = _UI_ICON_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    source = _ui_icon_source(name, base_override=base_override)
+    if source is None:
+        return QPixmap()
+    tinted = source.replace("currentColor", str(colour))
+
+    renderer = QSvgRenderer(QByteArray(tinted.encode("utf-8")))
+    pixmap = QPixmap(int(size), int(size))
+    pixmap.fill(Qt.GlobalColor.transparent)
+    if renderer.isValid():
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        renderer.render(painter)
+        painter.end()
+    _UI_ICON_CACHE[key] = pixmap
+    return pixmap
+
+
+def ui_icon(
+    name: str,
+    colour: str,
+    *,
+    active_colour: str | None = None,
+    base_override: str | Path | None = None,
+) -> QIcon:
+    """Build a multi-resolution QIcon for an interface glyph.
+
+    When an ``-active`` companion exists it is used for the On state, so a
+    checked control shows the knocked-out solid rather than the same outline
+    in a different tint.
+    """
+    icon = QIcon()
+    for size in _ICON_RENDER_SIZES:
+        pixmap = ui_icon_pixmap(name, colour, size, base_override=base_override)
+        if not pixmap.isNull():
+            icon.addPixmap(pixmap, QIcon.Mode.Normal, QIcon.State.Off)
+
+    on_name = f"{name}-active"
+    on_colour = active_colour or colour
+    for size in _ICON_RENDER_SIZES:
+        pixmap = ui_icon_pixmap(on_name, on_colour, size, base_override=base_override)
+        if not pixmap.isNull():
+            icon.addPixmap(pixmap, QIcon.Mode.Normal, QIcon.State.On)
+    if icon.availableSizes(QIcon.Mode.Normal, QIcon.State.On):
+        return icon
+    # No active variant on disk: reuse the outline so the On state is not blank.
+    for size in _ICON_RENDER_SIZES:
+        pixmap = ui_icon_pixmap(name, on_colour, size, base_override=base_override)
+        if not pixmap.isNull():
+            icon.addPixmap(pixmap, QIcon.Mode.Normal, QIcon.State.On)
+    return icon
+
+
+def ui_icon_file(
+    name: str,
+    colour: str,
+    size: int = 12,
+    *,
+    base_override: str | Path | None = None,
+) -> Path | None:
+    """Write one tinted glyph to the cache and return its path.
+
+    Qt stylesheets can only reach an image through ``url()``, and a path is
+    not something the packaged stylesheet may contain - it would be baked to
+    whichever machine generated it. So the sheet stays path-free and the one
+    rule that needs a file is appended at runtime, pointing here.
+
+    The file is rewritten whenever the colour changes, which is what makes it
+    follow the theme; a QIcon's cached pixmaps would not.
+    """
+    from ..infrastructure.paths import cache_dir
+
+    pixmap = ui_icon_pixmap(name, colour, size, base_override=base_override)
+    if pixmap.isNull():
+        return None
+    directory = cache_dir() / "glyphs"
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / f"{name}-{str(colour).lstrip('#')}-{int(size)}.png"
+        if not target.is_file() and not pixmap.save(str(target), "PNG"):
+            return None
+    except OSError:
+        return None
+    return target
+
+
+def clear_ui_icon_cache() -> None:
+    """Drop rendered glyphs so a theme change re-tints them."""
+    _UI_ICON_CACHE.clear()
+
+
+def themed_ui_icon(name: str, role: str = "resolvedTextSubtle") -> QIcon:
+    """Build an icon tinted from a colour the active theme has published.
+
+    Falls back to the workstation defaults when no application is running,
+    which keeps the loader usable from tests and from offscreen renders.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    defaults = {
+        "resolvedAccent": "#C6A15B",
+        "resolvedText": "#E9E5D6",
+        "resolvedTextSubtle": "#7C8C80",
+        "resolvedSignal": "#6FC6C0",
+        "resolvedAccentContrast": "#0A120E",
+    }
+    application = QApplication.instance()
+    value = application.property(role) if application is not None else None
+    colour = str(value or defaults.get(role, "#7C8C80"))
+    active = application.property("resolvedAccent") if application is not None else None
+    return ui_icon(name, colour, active_colour=str(active or defaults["resolvedAccent"]))

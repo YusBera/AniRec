@@ -10,7 +10,12 @@ from AniRec.errors import UserFacingError
 from AniRec.gui.gradient_picker import GradientPicker
 from AniRec.gui.main_window import MainWindow
 from AniRec.gui.match_badge import BAR_HEIGHT, MatchBadge, should_show_badge
-from AniRec.gui.recommendation_card import CARD_WIDTH, COVER_WIDTH, RecommendationCard
+from AniRec.gui.recommendation_card import (
+    CARD_MAX_WIDTH,
+    CARD_WIDTH,
+    COVER_WIDTH,
+    RecommendationCard,
+)
 from AniRec.gui.scaling import GUI_SCALE_CHOICES, scaled, set_gui_scale
 from AniRec.gui.theme import ThemeManager
 from AniRec.gui_main import create_application
@@ -136,7 +141,11 @@ def test_the_card_and_its_portrait_resize_together(factor):
     model = recommendation_view_models(SampleDataService().load().recommendations)[0]
     card = RecommendationCard(model)
 
-    assert card.width() == scaled(CARD_WIDTH)
+    # Cards flex to fill their grid column, so a single pinned width is no
+    # longer the thing that scales - the bounds are. Both ends move with the
+    # GUI scale, and the portrait moves with them.
+    assert card.minimumWidth() == scaled(CARD_WIDTH)
+    assert card.maximumWidth() == scaled(CARD_MAX_WIDTH)
     assert card.cover_label.width() == scaled(COVER_WIDTH)
 
 
@@ -295,9 +304,14 @@ def test_the_match_bar_spans_the_bottom_of_the_portrait(window):
 
     assert badge is not None
     assert badge.parent() is cover
-    # Spans the portrait, inset from its rounded corners.
-    assert badge.width() > cover.width() * 0.8
-    assert badge.y() + badge.height() <= cover.height()
+    # CHANGE [SCRIM]: the plate used to be inset six pixels from the bottom
+    # and each side, so a margin of artwork showed around it and the readout
+    # floated on a rectangle instead of sitting on the picture. It is flush
+    # to the portrait's lower edge now, which is a stricter claim than the
+    # ">80% of the width, somewhere in the lower half" this used to make.
+    assert badge.x() == 0
+    assert badge.width() == cover.width()
+    assert badge.y() + badge.height() == cover.height()
     assert badge.y() > cover.height() // 2
 
 

@@ -68,6 +68,12 @@ def test_detail_dialog_renders_all_metadata_reason_and_scored_contributions():
     assert dialog.synopsis_label.text().startswith("An elf mage")
     assert dialog.reason_label.text().startswith("Matches your interest")
     assert dialog.contributions_label.text() == "Fantasy: +52.25\nDrama: +21.50"
+    assert dialog.score_track.contributions == (
+        ("Fantasy", 52.25),
+        ("Drama", 21.5),
+    )
+    assert dialog.sum_total_label.text() == "73.75  →  94.2%"
+    assert dialog.synopsis_label.isHidden()
     assert dialog.scroll.widgetResizable()
     dialog.close()
 
@@ -143,4 +149,8 @@ def test_explorer_reuses_one_owned_dialog_across_repeated_open_close_cycles():
     assert page.detail_dialog is first_dialog
     assert page.detail_dialog.model is second_model
     assert page.detail_dialog.title_label.text() == "Second"
+    assert page.detail_dialog.navigation_label.text() == "02 / 02"
+    page.detail_dialog.next_requested.emit()
+    assert page.detail_dialog.model is first_model
+    assert page.detail_dialog.navigation_label.text() == "01 / 02"
     page.close()

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from .design_tokens import RADIUS, SPACE
 from .cover_art import rounded_cover
+from .instrument_widgets import keep_crisp
 from .scaling import scaled
 from .recommendation_card import MEMORY_COVER_CACHE, open_mal_url
 from .recommendation_view_model import RecommendationViewModel
@@ -79,6 +80,8 @@ class RecommendationRow(QFrame):
 
         self.cover_label = QLabel()
         self.cover_label.setObjectName("recommendationRowCover")
+        # Artwork is never rastered; see keep_crisp.
+        keep_crisp(self.cover_label)
         # CHANGE [BUG2]: the thumbnail scales with the GUI Scale setting.
         self.cover_label.setFixedSize(scaled(THUMBNAIL_SIZE), scaled(COVER_ROW_HEIGHT))
         self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

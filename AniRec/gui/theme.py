@@ -86,7 +86,6 @@ class ThemeManager:
         self.gui_scale = max(0.5, min(2.0, float(gui_scale)))
 
         self._apply_font_scale()
-        self.application.setStyleSheet(self._load_stylesheet(self.active_theme))
         self.application.setProperty("themePreference", self.requested_theme.value)
         self.application.setProperty("activeTheme", self.active_theme.value)
         self.application.setProperty("fontScale", self.font_scale)
@@ -102,7 +101,83 @@ class ThemeManager:
         self.application.setProperty("resolvedAccent", colours["accent"])
         self.application.setProperty("resolvedAccentContrast", colours["accent_contrast"])
         self.application.setProperty("resolvedBackground", colours["bg"])
+        self.application.setProperty("resolvedSurface", colours["surface"])
+        self.application.setProperty("resolvedWell", colours["well"])
+        self.application.setProperty("resolvedBorder", colours["border"])
+        self.application.setProperty("resolvedText", colours["text"])
+        self.application.setProperty("resolvedTextSubtle", colours["text_subtle"])
+        self.application.setProperty("resolvedSignal", colours["focus"])
+        # Publish painted-widget colours before the style change event.  The
+        # score rail and scanline panels then repaint in the incoming palette,
+        # rather than briefly retaining the previous theme.
+        self.application.setStyleSheet(
+            self._load_stylesheet(self.active_theme) + self._glyph_rules(colours)
+        )
         return self.active_theme
+
+    @staticmethod
+    def _glyph_rules(colours: dict) -> str:
+        """Stylesheet rules that need a file on disk, built for this theme.
+
+        CHANGE [AFFORDANCE]: the combo boxes had no drop-down indicator at
+        all. ``QComboBox::drop-down`` was styled with a width and no image,
+        and styling a sub-control makes Qt stop drawing its native part -
+        measured as two distinct colours in the whole 28px arrow zone, both
+        of them background. A select that looks exactly like a read-only text
+        field is a control nobody knows they can open.
+
+        Qt will not collapse a zero-sized bordered box into a triangle the way
+        CSS does - that renders as a small rectangle - so this needs a real
+        image, and an image needs a path that cannot live in the packaged
+        sheet. Hence a runtime append.
+        """
+        from .resources import ui_icon_file
+
+        path = ui_icon_file("chevron-down", colours.get("text_muted", "#849686"), 14)
+        if path is None:
+            return ""
+        up = ui_icon_file("chevron-up", colours.get("text_muted", "#849686"), 14)
+        url = str(path).replace("\\", "/")
+        rules = [
+            "\nQComboBox::drop-down { border: none; width: 26px; }",
+            "QComboBox::down-arrow { image: url(%s); width: 12px; height: 12px; }" % url,
+            "QComboBox::down-arrow:disabled { image: none; }",
+        ]
+        if up is not None:
+            # CHANGE [AFFORDANCE]: the spin buttons were Qt's own, drawn in the
+            # platform's light grey - the only controls in the app belonging to
+            # no theme - and they forced the widget to 40px while every other
+            # control measured 36. A size and a glyph settle both.
+            up_url = str(up).replace("\\", "/")
+            for kind in ("QSpinBox", "QDoubleSpinBox"):
+                rules.extend(
+                    [
+                        "%s::up-button, %s::down-button {"
+                        " subcontrol-origin: border; width: 20px; height: 17px;"
+                        " border: none; background: transparent; }" % (kind, kind),
+                        "%s::up-button { subcontrol-position: top right; }" % kind,
+                        "%s::down-button { subcontrol-position: bottom right; }" % kind,
+                        "%s::up-arrow { image: url(%s); width: 10px; height: 10px; }"
+                        % (kind, up_url),
+                        "%s::down-arrow { image: url(%s); width: 10px; height: 10px; }"
+                        % (kind, url),
+                    ]
+                )
+        tick = ui_icon_file(
+            "check", colours.get("accent_contrast", "#0A0F0B"), 14
+        )
+        if tick is not None:
+            # CHANGE [STATE]: a checked box was a filled accent square with
+            # nothing in it - the shape a colour swatch has - so the only
+            # thing separating on from off was fill. Qt stops drawing its own
+            # indicator once the sub-control is restyled, which is why the
+            # tick went missing in the first place. This puts one back, in the
+            # contrast colour, because it sits on the accent.
+            rules.append(
+                "QCheckBox::indicator:checked {"
+                " image: url(%s); }" % str(tick).replace("\\", "/")
+            )
+        return "\n".join(rules) + "\n"
 
     def _resolve_theme(self, preference: ThemePreference) -> ThemePreference:
         if preference is not ThemePreference.SYSTEM:

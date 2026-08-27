@@ -457,7 +457,7 @@ def _fit_home_cover(source: QPixmap) -> QPixmap:
     scaled = source.scaled(
         HOME_COVER_WIDTH,
         HOME_COVER_HEIGHT,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.AspectRatioMode.KeepAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )
     canvas = QPixmap(HOME_COVER_WIDTH, HOME_COVER_HEIGHT)

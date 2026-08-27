@@ -41,6 +41,7 @@ from ..services import (
     SettingsService,
 )
 from .external_links import MAL_API_CONFIG_URL, open_external_url
+from .instrument_widgets import Scanlines
 from .texts import OAUTH_STATUS_TEXT, PROGRESS_STEP_TEXT, UI_TEXT, WIZARD_TEXT
 from .workers import (
     OAuthWorker,
@@ -136,7 +137,9 @@ class WelcomePage(WizardPage):
         # footer's Next marched people at a Client ID field before they had
         # seen a single recommendation. The free path leads now.
         self.demo_button.setProperty("buttonRole", "primary")
-        self.demo_button.setMinimumHeight(40)
+        # CHANGE [ROW]: no height here. This asked for 40 and measured 36,
+        # because the stylesheet's min-height wins - so the line claimed a
+        # size the button never had, and 36 is the app's standard anyway.
         self.demo_button.setAccessibleName(WIZARD_TEXT.welcome_demo_accessible)
         self.demo_hint = QLabel(WIZARD_TEXT.welcome_demo_hint)
         self.demo_hint.setObjectName("wizardFieldHint")
@@ -506,6 +509,9 @@ class SetupWizard(QDialog):
         self.oauth_operation_key = operation_key(OperationKind.OAUTH, "setup")
         self.analysis_operation_key: str | None = None
         self.setObjectName("setupWizard")
+        # CHANGE [CRT]: the raster, so onboarding is the same machine as
+        # the application behind it. A dialog is its own top-level window
+        # and gets none of the shell's treatment unless it asks.
         self.setWindowTitle(WIZARD_TEXT.title)
         self.setModal(True)
         self.resize(760, 520)
@@ -560,6 +566,8 @@ class SetupWizard(QDialog):
         self.next_button.clicked.connect(self.go_next)
         self.finish_button.clicked.connect(self.finish_setup)
         self.stack.currentChanged.connect(lambda _index: self._update_navigation())
+        self.scanlines = Scanlines(self)
+        self.scanlines.raise_()
         self.worker_controller.result_ready.connect(self._worker_result)
         self.worker_controller.error_occurred.connect(self._worker_error)
         self.worker_controller.progress_changed.connect(self._worker_progress)
@@ -842,18 +850,53 @@ class SetupWizard(QDialog):
         elif operation_key_value == self.analysis_operation_key:
             self.analysis_page.finish_analysis()
 
+    @staticmethod
+    def _set_primary(button, primary: bool) -> None:
+        """Give or take the accent, repolishing so the change is visible.
+
+        Qt reads a dynamic property when it polishes a widget, so setting one
+        afterwards changes nothing on screen until the style is re-evaluated.
+        """
+        if bool(button.property("buttonRole") == "primary") == primary:
+            return
+        button.setProperty("buttonRole", "primary" if primary else None)
+        button.style().unpolish(button)
+        button.style().polish(button)
+
     def _update_navigation(self) -> None:
         step = self.current_step
         self.step_indicator.setText(
             f"Step {int(step) + 1} of {len(WizardStep)} — {STEP_LABELS[step]}"
         )
         self.back_button.setEnabled(step > WizardStep.WELCOME)
+        # CHANGE [HIERARCHY]: the forward action carries the accent from the
+        # second step onward, and never on the first.
+        #
+        # The welcome page deliberately gives its accent to "Look around with
+        # sample data" and leaves Next quiet, so nobody is marched at a Client
+        # ID field before seeing the product. That inversion is right, but it
+        # was left in place for the whole wizard: on Connection, OAuth and
+        # Analysis nothing at all was accented, so three consecutive screens
+        # had no ranked action. Once someone has chosen to connect, Next is
+        # the thing the screen wants.
+        self._set_primary(self.next_button, step > WizardStep.WELCOME)
         self.next_button.setVisible(step < WizardStep.ANALYSIS)
         self.next_button.setEnabled(
             step < WizardStep.ANALYSIS and self.pages[step].is_complete
         )
         self.finish_button.setVisible(step is WizardStep.ANALYSIS)
-        self.finish_button.setEnabled(
-            step is WizardStep.ANALYSIS
-            and all(page.is_complete for page in self.pages.values())
+        ready_to_finish = step is WizardStep.ANALYSIS and all(
+            page.is_complete for page in self.pages.values()
+        )
+        self.finish_button.setEnabled(ready_to_finish)
+        # CHANGE [HIERARCHY]: the last step has two forward controls - Start
+        # analysis on the page and Finish in the footer - and carried the
+        # accent on neither, so the one screen with a job to do looked like it
+        # was waiting for nothing in particular. Which of the two is primary
+        # depends on whether the run has happened, so it moves: Start until
+        # the pipeline has completed, Finish afterwards. Never both.
+        analysis = self.pages[WizardStep.ANALYSIS]
+        self._set_primary(self.finish_button, ready_to_finish)
+        self._set_primary(
+            analysis.start_button, step is WizardStep.ANALYSIS and not ready_to_finish
         )

@@ -53,14 +53,37 @@ def test_connection_status_bar_handles_signed_out_and_connected_states():
     create_application([])
     window = MainWindow()
 
+    # The strip no longer carries its own lamp: the navigation rail's system
+    # readout reports PROFILE and MAL permanently, and repeating them here put
+    # the same two facts on screen twice. The strip still tracks the state, so
+    # that is what is asserted; the rail's own lamps are covered below.
     assert window.connection_status.profile_label.text() == "No active profile"
     assert window.connection_status.mal_status_label.text() == "MAL: Disconnected"
+    assert window.connection_status.mal_status_label.property("connected") is False
 
     window.connection_status.set_status("  yusuf  ", mal_connected=True)
 
     assert window.connection_status.profile_label.text() == "Active profile: yusuf"
     assert window.connection_status.mal_status_label.text() == "MAL: Connected"
     assert window.connection_status.mal_status_label.property("connected") is True
+    window.close()
+
+
+def test_the_rail_reports_connection_state_with_a_lamp():
+    """The state the strip used to duplicate is still reported, on the rail."""
+    create_application([])
+    window = MainWindow()
+
+    assert window.system_readout._values["MAL"].text() == "OFFLINE"
+    assert window.system_readout._lamps["MAL"].state == "off"
+
+    window._profile_name = "yusuf"
+    window._mal_connected = True
+    window._refresh_system_readout()
+
+    assert window.system_readout._values["MAL"].text() == "ONLINE"
+    assert window.system_readout._lamps["MAL"].state == "ok"
+    assert window.system_readout._values["PROFILE"].text() == "yusuf"
     window.close()
 
 

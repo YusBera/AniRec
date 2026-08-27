@@ -15,19 +15,16 @@ measured data — there is no analytics anywhere in the funnel, which is leak ze
 
 ## The five leaks
 
-### 1. There is no download link. Anywhere.
+### 1. The download sells a version visitors cannot get
 
-No `.github/` directory, no release workflow, no tagged release, no attached binary. The
-README references `dist\AniRec\AniRec.exe` (line 93) — a path that only exists *after the
-visitor has cloned the repo, made a venv, installed PyInstaller, and run the build script*.
-The only GitHub URL in the entire README is an attribution link to the owner's profile
-(line 233).
+The current landing artifact identifies the product as 1.3.0, but the public GitHub "Latest"
+release is v1.2.2. The CTA points to the generic releases index rather than to a stable asset.
+That makes the strongest marketing claim impossible to verify before download and delivers an
+older experience after it. A version mismatch at the conversion boundary looks indistinguishable
+from neglect or a bait-and-switch, even when the repository is legitimate.
 
-A Windows desktop app shipped as a build script converts approximately nobody who is not
-already a Python developer. This is not a UX problem, it is the whole funnel.
-
-**Fix:** tag `v1.3.0`, attach the `onedir` zip, put a download button in the first five lines
-of the README.
+**Fix:** tag and package the exact reviewed 1.3.0 build, link the Windows asset directly (or use
+`/releases/latest`), publish its SHA-256, and keep the unsigned-build warning beside the CTA.
 
 ### 2. The free trial already exists, and it is buried
 
@@ -60,42 +57,43 @@ good*.
 **Fix:** the wall stays, but it moves. Nobody should reach it before they have seen the
 product work.
 
-### 4. The differentiator is broken in the marketing screenshot
+### 4. The artifact and the downloaded app spoke different design languages
 
-The pitch is "recommendations you can actually interrogate — every score comes with a
-breakdown that adds up to it." In `docs/images/anirec-s15-modern-for-you.png`, five cards in a
-row read:
+The old documentation screenshots are not evidence of the current product, so they were not
+used for this comparison. The current landing source and the running desktop app were inspected
+directly. The landing made score explainability tactile: rack legends, scanlines, a large master
+readout, a segmented contribution rail, calibration ticks, and parts that visibly add to a sum.
+The old app detail view reduced the same differentiator to a small percentage and a newline list
+below generic metadata and five equal-width action rectangles.
 
-> No recommendation explanation is available.
+That is worse than visual inconsistency. It makes the landing look like a concept render for a
+different product. Excitement becomes suspicion at exactly the moment trust should compound.
 
-That is the entire wedge, absent, in the image chosen to represent the product. Alongside it,
-five identical grey "A" placeholders where cover art should be. Anime is a visual medium; the
-grid has had the one thing removed that makes it want to be looked at.
-
-**Fix:** never ship a card that announces the product's promise is unavailable — fall back to
-the genre contributions, which are always available. Re-shoot the screenshots with covers
-resolved.
+**Fix implemented:** the desktop detail view is now the Score Inspector described below. Current
+screenshots still need to be recaptured with resolved cover art before the release is promoted.
 
 ### 5. Thirty tap targets on one screen
 
-Every card carries Like / Not for me / View Details / Watch Later / Open on MyAnimeList /
-Hide. Six actions, five cards, thirty targets, no visual hierarchy between them. Plus
-`Personal match: 89.4%` — one decimal of false precision on a taste model built from a
-double-digit number of ratings.
+Before the hierarchy pass, every card carried Like / Not for me / View Details / Watch Later /
+Open on MyAnimeList / Hide as button-shaped controls. Six actions, five cards, thirty rectangles.
+It also showed `Personal match: 89.4%` — one decimal of false precision on a taste model built
+from a double-digit number of ratings.
 
-**Fix:** two actions per card (Like / Not for me), everything else behind hover or the detail
-view. Round the match to whole numbers.
+**Fix implemented:** Like and Not for me are the only full button pair. Details, MyAnimeList,
+and Hide are quiet text actions; Later is the compact saved-state control; the card rounds the
+match to a whole number. The Score Inspector retains the decimal because that surface exposes
+the underlying arithmetic and is the one place the precision has meaning.
 
 ## Ranked plan
 
 | # | Fix | Effort | Why it ranks here |
 |---|-----|--------|-------------------|
-| 1 | Tag a release, attach the build, download button in the README's first screen | hours | Without it nothing else matters |
+| 1 | Ship the reviewed 1.3.0 asset and make every CTA resolve to that exact build | hours | The current landing promises a version the visitor cannot download |
 | 2 | Ship the landing page (`docs/landing/index.html`) and point the repo at it | done — needs a release URL | Gives the download somewhere to land |
 | 3 | Invert the wizard welcome: sample data primary, OAuth secondary | ~1 hour | Un-buries the trial |
 | 4 | Rewrite the README top-fold: screenshot, one sentence, download. Spec sheet moves below | ~1 hour | Currently opens with a version number and thirteen bullets |
-| 5 | Explanation fallback on cards; never render "no explanation available" | half day | Protects the wedge |
-| 6 | Two actions per card; whole-number match | half day | Decision paralysis, false precision |
+| 5 | Explanation fallback on cards; never render "no explanation available" | done | Protects the wedge |
+| 6 | Give only the decision pair button weight; whole-number card match | done | Removes decision noise without burying the inspector |
 
 Items 1-4 are most of the available upside and are about a day of work combined.
 
@@ -142,10 +140,10 @@ for every number (chunky, tabular).
 
 ### Before this ships
 
-The download CTA points at `https://github.com/YusBera/AniRec/releases`, **which 404s until a
-release is tagged.** Fix #1 in the table above is a prerequisite, not a nice-to-have. The
-secondary CTA — "look around with sample data" — is honest today and is the one doing the
-conversion work.
+The download CTA points at `https://github.com/YusBera/AniRec/releases`, while the public latest
+release is older than the 1.3.0 experience the page demonstrates. Fix #1 in the table above is a
+prerequisite, not a nice-to-have. The secondary CTA — "look around with sample data" — is honest
+today and is the one doing the conversion work.
 
 ### Where it lives
 
@@ -230,12 +228,39 @@ nothing to bundle:
   It is a 3px rail and a text colour. The rail exists but is transparent on
   every item, so nothing shifts when the selection moves.
 - **One primary action per screen.** "Recommend 5 more" dropped to secondary;
-  it is a top-up beside a summary line, not the reason you opened the page.
+  it is a top-up beside a summary line, not the reason you opened the page. If
+  no candidate pool exists, the dead action is absent instead of becoming a
+  large disabled rectangle.
 - **Three frames deep became one.** The feed header was a bordered, rounded
   card containing a bordered summary box and a bordered control box. Tone
   separates them now; only actual cards keep an outline.
 - **Radii tightened** from 6/10/14/20 to 4/6/9/13, so a control and a card are
   no longer the same kind of object.
+- **Library tabs stopped being buttons in a box.** The outer rounded rectangle
+  and filled selection rectangles became a single baseline with an active
+  brass underline, closer to an IDE tool surface than a generic settings card.
+- **Empty means empty.** An empty collection keeps the Cards/List/Table choice
+  for consistency and keyboard users, but dead Filters and Show hidden controls
+  disappear until that collection actually contains something.
+
+## Artifact parity: the Score Inspector
+
+Anime details now carry the same scoring-bench language as the landing artifact:
+
+- a rack legend and restrained 4px scanlines painted from resolved theme tokens;
+- a large animated match readout and calibrated 0–100 rail;
+- real contribution segments, colour-keyed rows, ticks, and an explicit raw
+  sum-to-display relationship rather than a debug-text dump;
+- a final-score marker that exposes a service-side calibration mismatch instead
+  of stretching a contributor to make the graphic look correct;
+- previous/next recommendation controls plus Left/Right keyboard navigation, so
+  the inspector supports comparison rather than behaving like a dead-end modal;
+- a collapsed synopsis and compact utility links, keeping the scoring proof in
+  the first viewport.
+
+The same `InstrumentPanel` texture is used on the Discover action strip and the
+recommendation feedback band. The effect is intentionally restrained: enough
+to make the product feel like one system, not enough to compromise body copy.
 
 ## The activation fix
 
@@ -253,7 +278,8 @@ through Next.
    where `:disabled` and `[buttonRole="primary"]` score identically, so the one
    written last won. `:disabled` was written first. A disabled primary button
    rendered as a fully enabled accent block — "Recommend 5 more" has been
-   showing as pressable while disabled. The disabled rules now come last.
+   showing as pressable while disabled. The disabled rules now come last, text
+   actions stay transparent, and the unavailable top-up action is hidden.
 2. **The card grid miscounted columns at any GUI scale above 100%.** Cards lay
    out at `scaled(CARD_WIDTH)` but the stride was measured with the unscaled
    constant. At 125% that asked for 1168px of cards in a 1006px viewport; at
@@ -281,8 +307,10 @@ through Next.
   card is visible; only at the 1280x720 minimum is it clipped, at 70%. Cutting
   the cover art to fix the smallest window would cost the majority case the
   thing that makes an anime grid worth looking at. Left alone deliberately.
-- **Collapsing the six per-card actions into two plus an overflow.** Still the
-  right call for decision load, but the tests drive `details_button`,
-  `watch_later_button`, `mal_button` and `hide_button` directly and
-  `test_card_grid_geometry` asserts on their positions. It needs the tests
-  reworked with it, which is a larger change than a repaint.
+- **Hiding secondary card actions in an overflow.** The card still exposes six
+  semantic actions, but only Like and Not for me retain button weight. Details,
+  MyAnimeList, and Hide are text actions; Later is the sole compact saved-state
+  control. Details also opens on double-click or Enter. An overflow would reduce
+  visible targets further, but it would also bury the Score Inspector—the exact
+  behavior this release needs users to discover—so the hierarchy was fixed
+  without hiding the differentiator.

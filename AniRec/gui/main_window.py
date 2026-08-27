@@ -55,6 +55,7 @@ from ..application.pipeline import PipelineOrchestrator
 from ..errors import AniRecError, UserFacingError
 from ..metadata import (
     APP_NAME,
+    APP_VERSION,
     DEFAULT_WINDOW_HEIGHT,
     DEFAULT_WINDOW_WIDTH,
     MINIMUM_WINDOW_HEIGHT,
@@ -78,12 +79,20 @@ from .about_page import AboutPage
 from .discover_page import DiscoverPage
 from .home_page import ACTION_GENERATE, ACTION_SYNC, HomePage
 from .genre_analysis_page import GenreAnalysisPage
+from .instrument_widgets import InstrumentPanel, Scanlines, StatusLight
 from .error_dialog import ErrorDialog
 from .progress_dialog import OperationProgressDialog
 from .recommendation_page import RecommendationExplorerPage
-from .resources import app_icon, placeholder_pixmap
+from .resources import (
+    app_icon,
+    clear_ui_icon_cache,
+    placeholder_pixmap,
+    themed_ui_icon,
+)
+from .design_tokens import SPACE
 from .scaling import set_gui_scale
 from .settings_page import SettingsPage
+from .system_log import SystemLog
 from .setup_wizard import SetupWizard
 from .texts import UI_TEXT, WIZARD_TEXT
 from .theme import ThemeManager
@@ -124,7 +133,83 @@ DISCOVER_STATES = ("all",)
 LIBRARY_STATES = ("liked", "watch-later", "disliked")
 
 
-class ConnectionStatusBar(QFrame):
+class SystemReadout(QFrame):
+    """A fixed set of key/value rows reporting live application state.
+
+    Deliberately fixed: the rows are declared once and only their values
+    change, so the rail never reflows and the eye can learn where each fact
+    lives. Values are short enough to be read without being read.
+    """
+
+    ROWS = ("ENGINE", "SOURCE", "PROFILE", "MAL")
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("systemReadout")
+        self.setAccessibleName("System state")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 11, 14, 12)
+        layout.setSpacing(3)
+
+        caption = QLabel("SYSTEM")
+        caption.setObjectName("railCaption")
+        layout.addWidget(caption)
+        layout.addSpacing(3)
+
+        self._values: dict[str, QLabel] = {}
+        self._lamps: dict[str, StatusLight] = {}
+        for key in self.ROWS:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(SPACE["xs"])
+            lamp = StatusLight("off")
+            name = QLabel(key)
+            name.setObjectName("readoutKey")
+            value = QLabel("--")
+            value.setObjectName("readoutValue")
+            value.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            row.addWidget(lamp)
+            row.addWidget(name)
+            row.addStretch()
+            row.addWidget(value)
+            layout.addLayout(row)
+            self._values[key] = value
+            self._lamps[key] = lamp
+
+    # How each readout tone maps onto a lamp.
+    _LAMP_FOR_TONE = {
+        "ok": "ok",
+        "warn": "warn",
+        "busy": "busy",
+        "idle": "off",
+        "error": "error",
+    }
+
+    def set_value(self, key: str, text: str, *, tone: str = "idle") -> None:
+        label = self._values.get(key)
+        if label is None:
+            return
+        changed = label.text() != str(text)
+        label.setText(str(text))
+        label.setProperty("tone", tone)
+        label.setAccessibleName(f"{key} {text}")
+        label.style().unpolish(label)
+        label.style().polish(label)
+
+        lamp = self._lamps.get(key)
+        if lamp is not None:
+            lamp.set_state(self._LAMP_FOR_TONE.get(tone, "off"))
+            if changed:
+                # A changed reading swells its lamp and settles. This used to
+                # invert the text's background for three hard frames, which
+                # strobed rather than drew the eye.
+                lamp.flash()
+
+
+class ConnectionStatusBar(InstrumentPanel):
     """Reusable display for the active profile and MAL connection state."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -141,8 +226,13 @@ class ConnectionStatusBar(QFrame):
         self.mal_status_label = QLabel()
         self.mal_status_label.setObjectName("malConnectionLabel")
 
-        layout.addWidget(self.profile_label)
-        layout.addWidget(self.mal_status_label)
+        # CHANGE [DUPLICATE]: these two are NOT added to the strip. The rail's
+        # system readout reports PROFILE and MAL permanently, so repeating them
+        # here put the same two facts on screen twice at all times. They stay
+        # as live widgets - the text is still set and still queried - they just
+        # no longer occupy a second place on the glass.
+        self.profile_label.setVisible(False)
+        self.mal_status_label.setVisible(False)
         layout.addStretch()
         self._layout = layout
         self.set_status()
@@ -210,6 +300,12 @@ class MainWindow(QMainWindow):
         self.setup_wizard: SetupWizard | None = None
         self.sample_data_service = SampleDataService()
         self.demo_mode = False
+        # Mirrored state for the rail's system readout. Kept here rather
+        # than interrogated from widgets so the panel cannot disagree
+        # with what the window believes.
+        self._engine_busy = False
+        self._mal_connected = False
+        self._profile_name: str | None = None
         self.theme_manager = theme_manager
         self.setObjectName("mainWindow")
         self.setWindowTitle(APP_NAME)
@@ -299,6 +395,11 @@ class MainWindow(QMainWindow):
         self.genre_analysis_page.set_genre_stats(result.genre_stats)
         self.home_page.set_state(None, result)
         self.demo_banner.setVisible(True)
+        self._refresh_system_readout()
+        self._log(
+            "source",
+            f"sample vault mounted · {len(result.recommendations)} records",
+        )
         self.navigate_to(PageId.DISCOVER)
 
     def _leave_demo_mode(self) -> None:
@@ -306,6 +407,8 @@ class MainWindow(QMainWindow):
         for view in self._recommendation_views():
             view.set_ephemeral(False)
         self.demo_banner.setVisible(False)
+        self._refresh_system_readout()
+        self._log("source", "sample vault released · awaiting uplink")
         self.open_setup_wizard()
 
     def _on_setup_finished(self, result: int) -> None:
@@ -361,10 +464,13 @@ class MainWindow(QMainWindow):
         self.settings_page.set_context(profile)
         settings = self.settings_service.load()
         mal_connected = bool(profile and settings.client_id)
+        self._profile_name = profile.username if profile else None
+        self._mal_connected = mal_connected
         self.connection_status.set_status(
-            profile.username if profile else None,
+            self._profile_name,
             mal_connected=mal_connected,
         )
+        self._refresh_system_readout()
         more_available = bool(
             profile
             and result
@@ -389,44 +495,121 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
         layout.addWidget(self._build_sidebar())
         layout.addWidget(self._build_content_area(), 1)
+        # CHANGE [CRT]: the raster goes on last and stays on top. Built after
+        # the layout so it is the final child, and it re-raises itself when
+        # anything else is added.
+        self.scanlines = Scanlines(shell)
+        self.scanlines.raise_()
         return shell
 
     def _build_sidebar(self) -> QFrame:
+        """The navigation rail, built as a workstation front panel.
+
+        Three destinations do not need three large pill buttons. They need an
+        index, a selection mark, and the space that buys back for telling you
+        what the machine is currently doing.
+        """
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setMinimumWidth(208)
-        sidebar.setMaximumWidth(248)
+        sidebar.setMinimumWidth(214)
+        sidebar.setMaximumWidth(238)
         sidebar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(16, 24, 16, 20)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        title = QLabel(APP_NAME)
+        plate = QWidget()
+        plate.setObjectName("sidebarPlate")
+        plate_layout = QVBoxLayout(plate)
+        plate_layout.setContentsMargins(14, 14, 14, 12)
+        plate_layout.setSpacing(1)
+        title = QLabel(APP_NAME.upper())
         title.setObjectName("sidebarTitle")
         title.setAccessibleName("AniRec application title")
-        layout.addWidget(title)
-        layout.addSpacing(24)
+        subtitle = QLabel("アニレク")
+        subtitle.setObjectName("sidebarKana")
+        plate_layout.addWidget(title)
+        plate_layout.addWidget(subtitle)
+        layout.addWidget(plate)
+        layout.addWidget(self._hairline())
 
-        for definition in PAGE_DEFINITIONS:
-            button = QPushButton(definition.label)
+        for index, definition in enumerate(PAGE_DEFINITIONS, start=1):
+            # The index is part of the label rather than a separate widget so
+            # the whole row stays one focusable, clickable control.
+            button = QPushButton(f"{index:02d}   {definition.label.upper()}")
             button.setObjectName(f"navigationButton-{definition.page_id.value}")
+            button.setProperty("navItem", True)
             button.setCheckable(True)
             button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            button.setMinimumHeight(42)
+            button.setMinimumHeight(34)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setAccessibleName(f"Open {definition.label} page")
+            button.setToolTip(definition.description)
+            button.setIcon(themed_ui_icon(f"nav-{definition.page_id.value}"))
             button.clicked.connect(
                 lambda checked=False, page_id=definition.page_id: self.navigate_to(page_id)
             )
             self.navigation_buttons[definition.page_id] = button
             layout.addWidget(button)
 
-        layout.addStretch()
-        version_note = QLabel(UI_TEXT.sidebar_footer)
+        layout.addWidget(self._hairline())
+        self.system_readout = SystemReadout()
+        layout.addWidget(self.system_readout)
+        layout.addWidget(self._hairline())
+        # The console sits at the foot of the rail, under the spare height:
+        # it is ambient, and pinning it below the readout put a scrolling
+        # panel in the middle of the navigation.
+        layout.addStretch(1)
+        layout.addWidget(self._hairline())
+        self.system_log = SystemLog()
+        layout.addWidget(self.system_log)
+        layout.addWidget(self._hairline())
+
+        version_note = QLabel(f"BUILD {APP_VERSION}")
         version_note.setObjectName("sidebarFooter")
+        version_note.setContentsMargins(14, 8, 14, 12)
         layout.addWidget(version_note)
+        self._refresh_system_readout()
+        self.system_log.boot(
+            (
+                ("boot", f"core {APP_VERSION} online"),
+                ("boot", "local vault mounted"),
+                ("engine", "taste vector restored"),
+                ("engine", "scoring engine armed"),
+            )
+        )
         return sidebar
+
+    @staticmethod
+    def _hairline() -> QFrame:
+        line = QFrame()
+        line.setObjectName("railRule")
+        line.setFixedHeight(1)
+        return line
+
+    def _refresh_system_readout(self) -> None:
+        """Publish real machine state onto the rail.
+
+        Every row here corresponds to something the application actually
+        knows. Nothing is invented to fill the panel out.
+        """
+        readout = getattr(self, "system_readout", None)
+        if readout is None:
+            return
+        busy = self._engine_busy
+        readout.set_value("ENGINE", "BUSY" if busy else "READY", tone="busy" if busy else "ok")
+        readout.set_value(
+            "SOURCE", "SAMPLE" if self.demo_mode else "LIVE",
+            tone="warn" if self.demo_mode else "ok",
+        )
+        profile_name = self._profile_name
+        readout.set_value("PROFILE", profile_name or "--", tone="ok" if profile_name else "idle")
+        connected = self._mal_connected
+        readout.set_value(
+            "MAL", "ONLINE" if connected else "OFFLINE",
+            tone="ok" if connected else "idle",
+        )
 
     def _build_content_area(self) -> QWidget:
         content = QWidget()
@@ -582,6 +765,11 @@ class MainWindow(QMainWindow):
             view.view_mode_changed.connect(self._persist_view_mode)
         # CHANGE [BUG2]: rebuild the sized widgets when the GUI scale changes.
         self.settings_page.gui_scale_changed.connect(self._on_gui_scale_changed)
+        self.settings_page.show_covers_changed.connect(self._on_show_covers_changed)
+        for view in self._recommendation_views():
+            view.artwork_retrieved.connect(
+                lambda title: self._log("retriev", f"artwork acquired · {title}")
+            )
         self.recommendations_page.more_requested.connect(
             lambda: self._start_more_recommendations(5)
         )
@@ -672,6 +860,11 @@ class MainWindow(QMainWindow):
         # CHANGE [BUG1]: no progress window; the button and status line report it.
         return True
 
+    def _on_show_covers_changed(self, show_covers: bool) -> None:
+        """Artwork on or off, applied without re-running the whole settings."""
+        for view in self._recommendation_views():
+            view.set_show_covers(bool(show_covers))
+
     def _on_gui_scale_changed(self, factor: float) -> None:
         """CHANGE [BUG2]: cards and rows are built with fixed sizes, so a scale
         change has to rebuild them rather than just restyle."""
@@ -721,6 +914,11 @@ class MainWindow(QMainWindow):
                 gradient_start=settings.gradient_start,
                 gradient_end=settings.gradient_end,
             )
+        self._retint_icons()
+        self._log(
+            "render",
+            f"{settings.theme} palette bound · x{settings.gui_scale:.2f}",
+        )
         for view in self._recommendation_views():
             view.set_default_sort(settings.default_recommendation_sort)
             view.set_show_covers(settings.show_covers)
@@ -731,6 +929,51 @@ class MainWindow(QMainWindow):
                     settings.include_hidden_recommendations
                 )
         self.advanced_operations_page.refresh_prerequisites()
+
+    # Human-readable names for the worker keys the controller emits.
+    _OPERATION_NAMES = {
+        "sync": "library uplink",
+        "recommendations": "scoring pass",
+        "more": "feed extension",
+    }
+
+    @staticmethod
+    def _operation_name(operation_key: str) -> str:
+        text = str(operation_key or "operation")
+        for token, name in MainWindow._OPERATION_NAMES.items():
+            if token in text:
+                return name
+        return text
+
+    def _log(self, tag: str, message: str) -> None:
+        """Write one line to the activity console, if it exists yet."""
+        console = getattr(self, "system_log", None)
+        if console is not None:
+            console.append(tag, message)
+
+    def _log_progress(self, tag: str, percent: float, message: str = "") -> None:
+        console = getattr(self, "system_log", None)
+        if console is not None:
+            console.progress(tag, percent, message)
+
+    def _retint_icons(self) -> None:
+        """Rebuild every themed glyph after the palette changes.
+
+        The rendered pixmaps are cached by colour, so the cache is dropped
+        first; otherwise the next request returns the previous theme's tint.
+        """
+        clear_ui_icon_cache()
+        console = getattr(self, "system_log", None)
+        if console is not None:
+            console.retint()
+        for definition in PAGE_DEFINITIONS:
+            button = self.navigation_buttons.get(definition.page_id)
+            if button is not None:
+                button.setIcon(themed_ui_icon(f"nav-{definition.page_id.value}"))
+        for page in (self.discover_page, *self._recommendation_views()):
+            retint = getattr(page, "retint_icons", None)
+            if callable(retint):
+                retint()
 
     def _open_active_output_folder(self) -> None:
         if self.profile_service is None or self.active_profile is None:
@@ -747,8 +990,12 @@ class MainWindow(QMainWindow):
         """
         self.home_page.show_activity(message, tone=tone)
         self.discover_page.set_status(message)
+        self._log("error" if tone == "error" else "status", message)
 
     def _on_operation_started(self, operation_key: str) -> None:
+        self._engine_busy = True
+        self._refresh_system_readout()
+        self._log("engine", f"{self._operation_name(operation_key)} engaged")
         if operation_key.startswith("sync:"):
             self.home_page.set_operation_running(ACTION_SYNC, True)
             self.discover_page.set_refreshing(True)
@@ -759,6 +1006,9 @@ class MainWindow(QMainWindow):
             self.recommendations_page.set_more_running(True)
 
     def _on_operation_finished(self, operation_key: str) -> None:
+        self._engine_busy = False
+        self._refresh_system_readout()
+        self._log("engine", f"{self._operation_name(operation_key)} resolved")
         if operation_key.startswith("sync:"):
             self.home_page.set_operation_running(ACTION_SYNC, False)
             self.discover_page.set_refreshing(False)

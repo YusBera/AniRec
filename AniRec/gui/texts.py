@@ -255,14 +255,17 @@ OAUTH_STATUS_TEXT = {
 class DiscoverTextCatalog:
     """Copy for the Discover surface. Plain language, no pipeline vocabulary."""
 
-    refresh: str = "Get new recommendations"
-    refreshing: str = "Finding anime for you…"
+    channel: str = "DISCOVER // 推薦"
+    state_caption: str = "STATE"
+    taste_caption: str = "TASTE VECTOR"
+    refresh: str = "RUN ANALYSIS"
+    refreshing: str = "ANALYSING…"
     refresh_accessible: str = "Update your anime list and pick new recommendations"
-    status_ready: str = "Ready when you are."
+    status_ready: str = "READY"
     status_never_synced: str = "Connect your MyAnimeList account to get started."
     status_synced_template: str = "Last updated {when}."
-    taste_show: str = "Why these?"
-    taste_hide: str = "Hide"
+    taste_show: str = "EXPAND"
+    taste_hide: str = "COLLAPSE"
     taste_summary: str = "You tend to enjoy {genres}."
     taste_empty: str = "Your taste appears here once AniRec has seen your ratings."
     taste_none_yet: str = "nothing yet"
@@ -274,14 +277,14 @@ class DiscoverTextCatalog:
 class SettingsTextCatalog:
     """Copy for the simplified Settings surface."""
 
-    adventurousness: str = "Adventurousness"
+    adventurousness: str = "ADVENTUROUSNESS"
     adventurousness_hint: str = (
         "Low keeps close to what you already love. High reaches further for "
         "something unexpected."
     )
-    adventurousness_low: str = "Familiar"
-    adventurousness_high: str = "Surprising"
-    developer_tools: str = "Developer tools"
+    adventurousness_low: str = "FAMILIAR"
+    adventurousness_high: str = "SURPRISING"
+    developer_tools: str = "DEVELOPER TOOLS"
     developer_tools_hint: str = (
         "Shows the individual data steps AniRec runs for you. Not needed for "
         "normal use."

@@ -7,6 +7,7 @@ FEAT2 (badge colours follow the theme).
 from __future__ import annotations
 
 import hashlib
+from time import monotonic
 from dataclasses import dataclass, replace
 from enum import Enum
 
@@ -50,8 +51,10 @@ from ..services import (
     RecommendationStateService,
 )
 from .recommendation_card import CARD_WIDTH, RecommendationCard
+from .resources import themed_ui_icon, ui_icon_pixmap
 from .scaling import scaled
 from .design_tokens import SPACE
+from .instrument_widgets import InstrumentPanel, ScanSweep
 from .recommendation_detail_dialog import RecommendationDetailDialog
 from .recommendation_row import RecommendationRow
 from .recommendation_view_model import RecommendationViewModel, recommendation_view_models
@@ -159,6 +162,15 @@ def _feedback_in_memory(
 VIEW_FADE_MILLISECONDS = 160
 
 
+# Endless scrolling. The trigger is how close to the end of the feed a reader
+# has to be before more is fetched; the debounce collapses a whole flick's
+# worth of scroll events into one request; the cooldown is the floor between
+# requests even when a worker never answers.
+AUTOLOAD_TRIGGER_PX = 420
+AUTOLOAD_DEBOUNCE_MS = 220
+AUTOLOAD_COOLDOWN_S = 1.5
+
+
 def _badge_colours():
     """Track, fill and text for the match bar, from the palette in force.
 
@@ -176,6 +188,7 @@ def _badge_colours():
     accent = application.property("resolvedAccent") if application else None
     contrast = application.property("resolvedAccentContrast") if application else None
     background = application.property("resolvedBackground") if application else None
+    signal = application.property("resolvedSignal") if application else None
     if not accent:
         theme = (application.property("activeTheme") if application else None) or "dark"
         try:
@@ -185,19 +198,43 @@ def _badge_colours():
         accent = colours["accent"]
         contrast = colours["accent_contrast"]
         background = colours["bg"]
+        signal = colours["focus"]
 
     track = QColor(background)
     # CHANGE [FEAT2]: opaque enough to read as the bar's full length over
     # cover art. At 165 it disappeared into dark artwork and the fill had
     # nothing to be a proportion of.
     track.setAlpha(215)
-    return track, QColor(accent), QColor(contrast)
+    # The fourth colour is the "not yours" term. The rail bands the community
+    # contribution in it, the way the detail view and the landing page do, so
+    # the split between your taste and everyone else's is visible on the card
+    # without opening anything.
+    return track, QColor(accent), QColor(contrast), QColor(signal or "#6FC6C0")
 
 
 def recommendation_key(model: RecommendationViewModel, source_index: int) -> str:
     if model.mal_id is not None:
         return f"mal:{model.mal_id}"
     return f"local:{source_index}:{model.display_title.casefold()}"
+
+
+
+def _vertical_bar() -> QFrame:
+    """A hard separator between fields on a control bar."""
+    rule = QFrame()
+    rule.setObjectName("stripDivider")
+    rule.setFixedWidth(1)
+    rule.setFixedHeight(13)
+    return rule
+
+
+def _resolved_colour(role: str, fallback: str) -> str:
+    """Read a colour the active theme published, with a safe default."""
+    from PySide6.QtWidgets import QApplication
+
+    application = QApplication.instance()
+    value = application.property(role) if application is not None else None
+    return str(value or fallback)
 
 
 class RecommendationExplorerPage(QWidget):
@@ -213,7 +250,15 @@ class RecommendationExplorerPage(QWidget):
     # CHANGE [BUG5]: lets the surrounding surface collapse its header once
     # the feed is scrolled, so browsing is not done through a slot.
     feed_scrolled = Signal(int)
+    # Emitted when artwork actually lands, so the activity panel can say
+    # so. Carries the title it belongs to rather than the URL.
+    artwork_retrieved = Signal(str)
     MAX_COVER_REQUESTS_PER_PASS = 6
+
+    # How many times one URL may be re-requested before the feed gives up on
+    # it. A transient failure must not cost the card its artwork forever; a
+    # permanently bad URL must not be retried on every scroll.
+    MAX_COVER_ATTEMPTS = 3
 
     def __init__(
         self,
@@ -241,6 +286,8 @@ class RecommendationExplorerPage(QWidget):
         self._view_mode = RecommendationViewMode.CARDS
         self.show_covers = True
         self._cover_attempted: set[str] = set()
+        # Counted per URL so a retry is bounded rather than endless.
+        self._cover_failures: dict[str, int] = {}
         self._cover_operation_urls: dict[str, str] = {}
         self._cover_data_by_url: dict[str, bytes] = {}
         self.detail_dialog: RecommendationDetailDialog | None = None
@@ -251,6 +298,7 @@ class RecommendationExplorerPage(QWidget):
         self._ephemeral = False
         self._view_animation = None
         self._build_ui()
+        self._update_more_actions()
         self._update_feedback_summary()
         if self.worker_controller is not None:
             self.worker_controller.result_ready.connect(self._on_worker_result)
@@ -269,6 +317,15 @@ class RecommendationExplorerPage(QWidget):
     def view_mode(self) -> RecommendationViewMode:
         return self._view_mode
 
+    def _sweep_feed(self) -> None:
+        """Run the refresh sweep, if the feed is the visible surface."""
+        sweep = getattr(self, "scan_sweep", None)
+        if sweep is None or self._view_mode is not RecommendationViewMode.CARDS:
+            return
+        if not self.card_scroll.isVisible():
+            return
+        sweep.sweep()
+
     def set_recommendations(
         self,
         recommendations: tuple[Recommendation, ...] | list[Recommendation],
@@ -280,7 +337,16 @@ class RecommendationExplorerPage(QWidget):
         if models == self._models:
             self._apply_query()
             return
+        # CHANGE [SCROLL-FLICKER]: the sweep runs when the feed is replaced,
+        # not when it grows. Endless scrolling calls this method with the old
+        # list plus five more, which differs from the old list, so every
+        # top-up used to fire a 520ms band across the viewport - while the
+        # user was mid-scroll, which is what read as flickering. An append is
+        # not a refresh: nothing above the new cards changed.
+        extended = len(models) > len(self._models) and models[: len(self._models)] == self._models
         self._models = models
+        if not extended:
+            self._sweep_feed()
         self._key_by_model = {
             id(model): recommendation_key(model, index)
             for index, model in enumerate(self._models)
@@ -308,6 +374,11 @@ class RecommendationExplorerPage(QWidget):
     def _update_more_actions(self) -> None:
         enabled = self._more_available and not self._more_running
         self.more_button.setEnabled(enabled)
+        # An unavailable top-up is already explained by the surrounding
+        # connection/generation state.  Hiding it avoids a large disabled slab
+        # that looks actionable but cannot convert; it returns as soon as the
+        # candidate pool exists (and stays visible while a request is running).
+        self.more_button.setVisible(self._more_available or self._more_running)
         self.refill_button.setEnabled(enabled)
         unavailable = self._more_unavailable_reason or "Generate recommendations first."
         self.more_button.setToolTip(
@@ -432,18 +503,40 @@ class RecommendationExplorerPage(QWidget):
     def selected_model(self) -> RecommendationViewModel | None:
         return self._model_by_key.get(self._selected_key or "")
 
+    # CHANGE [PAGE]: one inset and one rhythm for every surface, named from
+    # the spacing scale rather than typed as raw pixels. Discover, My Library
+    # and Settings each carried their own numbers - (0,0,0,0)/8, (8,8,8,8)/12
+    # and (8,8,8,8)/8 - so switching tabs nudged the whole page.
+    PAGE_MARGIN = SPACE["sm"]
+    PAGE_SPACING = SPACE["md"]
+
+    def set_embedded(self, embedded: bool) -> None:
+        """Drop the page inset when this sits inside another page.
+
+        Discover wraps this component in a surface that supplies the page
+        margin itself. Without this the two insets stacked and Discover's feed
+        sat eight pixels further in than the identical feed on My Library.
+        """
+        layout = self.layout()
+        if layout is None:
+            return
+        margin = 0 if embedded else self.PAGE_MARGIN
+        layout.setContentsMargins(margin, margin, margin, margin)
+
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 8, 8, 8)
-        root.setSpacing(12)
+        root.setContentsMargins(
+            self.PAGE_MARGIN, self.PAGE_MARGIN, self.PAGE_MARGIN, self.PAGE_MARGIN
+        )
+        root.setSpacing(self.PAGE_SPACING)
 
-        self.hero = QFrame()
+        self.hero = InstrumentPanel()
         self.hero.setObjectName("recommendationHero")
         hero_layout = QHBoxLayout(self.hero)
         hero_layout.setContentsMargins(20, 10, 20, 10)
         hero_layout.setSpacing(20)
         heading_copy = QVBoxLayout()
-        heading_copy.setSpacing(6)
+        heading_copy.setSpacing(SPACE["xs"])
         eyebrow = QLabel("PERSONAL DISCOVERY")
         eyebrow.setObjectName("recommendationEyebrow")
         self.hero_eyebrow = eyebrow
@@ -464,8 +557,7 @@ class RecommendationExplorerPage(QWidget):
 
         self.feedback_summary_label = QLabel()
         self.feedback_summary_label.setObjectName("recommendationFeedbackSummary")
-        self.feedback_summary_label.setWordWrap(True)
-        heading_copy.addWidget(self.feedback_summary_label)
+        self.feedback_summary_label.setWordWrap(False)
         hero_layout.addLayout(heading_copy, 1)
 
         hero_actions = QVBoxLayout()
@@ -498,9 +590,16 @@ class RecommendationExplorerPage(QWidget):
         self.more_button.setProperty("buttonRole", "secondary")
         # 46px made this the tallest control in the app, which is a lot of
         # band for a top-up action. Matches every other button now.
-        self.more_button.setMinimumSize(190, 36)
+        # CHANGE [ROW]: the width is pinned, the height is not.
+        #
+        # This asked for 26px both ways. A stylesheet min-height beats
+        # setMaximumHeight, so the button rendered at the sheet's 36 while the
+        # layout sized it from a 26px maximum - which is why it sat ten pixels
+        # below the rest of its row, top at y=63 against everything else at
+        # y=53. Pin the axis you actually care about and let the row share the
+        # other.
+        self.more_button.setMinimumWidth(150)
         self.more_button.setEnabled(False)
-        hero_actions.addWidget(self.more_button)
         hero_layout.addLayout(hero_actions)
         root.addWidget(self.hero)
 
@@ -550,18 +649,18 @@ class RecommendationExplorerPage(QWidget):
         self.library_bar = QFrame()
         self.library_bar.setObjectName("recommendationLibraryBar")
         library_layout = QVBoxLayout(self.library_bar)
-        library_layout.setContentsMargins(8, 8, 8, 8)
-        library_layout.setSpacing(6)
+        library_layout.setContentsMargins(0, 0, 0, 0)
+        library_layout.setSpacing(SPACE["sm"])
         tab_row = QHBoxLayout()
-        tab_row.setSpacing(6)
+        tab_row.setSpacing(SPACE["xs"])
         self.library_tabs: dict[str, QPushButton] = {}
         self.library_tab_group = QButtonGroup(self)
         self.library_tab_group.setExclusive(True)
         for state, label in (
-            ("all", "For You"),
-            ("liked", "Liked"),
-            ("disliked", "Disliked"),
-            ("watch-later", "Watch Later"),
+            ("all", "FOR YOU"),
+            ("liked", "LIKED"),
+            ("disliked", "DISLIKED"),
+            ("watch-later", "WATCH LATER"),
         ):
             button = QPushButton(f"{label}  0")
             button.setObjectName(f"recommendationLibraryTab-{state}")
@@ -582,13 +681,24 @@ class RecommendationExplorerPage(QWidget):
         library_layout.addLayout(tab_row)
 
         view_row = QHBoxLayout()
-        view_row.setSpacing(6)
-        view_row.addStretch()
+        view_row.setSpacing(SPACE["sm"])
+        # CHANGE [ORPHAN]: the count sat between two stretches, centred in the
+        # window with the controls it describes pushed to the far right. It
+        # reads as a caption for those controls, so it is anchored to the left
+        # of the bar and one stretch separates the readout from the switches.
         self.result_count_label = QLabel()
         self.result_count_label.setObjectName("recommendationResultCount")
         view_row.addWidget(self.result_count_label)
-        view_row.addStretch()
+        # CHANGE [BAND]: the feedback summary and the top-up action used to
+        # sit in a full-width band of their own above this bar - a fourth
+        # stacked box on Discover carrying one sentence and one button. They
+        # belong with the readouts and switches that describe the same feed.
+        view_row.addWidget(_vertical_bar())
+        view_row.addWidget(self.feedback_summary_label)
+        view_row.addStretch(1)
+        view_row.addWidget(self.more_button)
         self.filter_toggle_button = QPushButton("Filters")
+        self.filter_toggle_button.setIcon(themed_ui_icon("filter"))
         self.filter_toggle_button.setObjectName("recommendationFilterToggle")
         self.filter_toggle_button.setProperty("buttonRole", "ghost")
         self.filter_toggle_button.setCheckable(True)
@@ -605,15 +715,18 @@ class RecommendationExplorerPage(QWidget):
         self.show_hidden_checkbox.setEnabled(False)
         view_row.addWidget(self.show_hidden_checkbox)
         self.cards_button = QPushButton("Cards")
+        self.cards_button.setIcon(themed_ui_icon("view-grid"))
         self.cards_button.setObjectName("recommendationCardsViewButton")
         self.cards_button.setProperty("viewToggle", True)
         self.cards_button.setCheckable(True)
         self.list_button = QPushButton("List")
+        self.list_button.setIcon(themed_ui_icon("view-list"))
         self.list_button.setObjectName("recommendationListViewButton")
         self.list_button.setProperty("viewToggle", True)
         self.list_button.setCheckable(True)
         self.list_button.setAccessibleName("Show recommendations as a compact list")
         self.table_button = QPushButton("Table")
+        self.table_button.setIcon(themed_ui_icon("view-table"))
         self.table_button.setObjectName("recommendationTableViewButton")
         self.table_button.setProperty("viewToggle", True)
         self.table_button.setCheckable(True)
@@ -634,6 +747,10 @@ class RecommendationExplorerPage(QWidget):
         self.view_bar.setObjectName("recommendationViewBar")
         view_bar_layout = QVBoxLayout(self.view_bar)
         view_bar_layout.setContentsMargins(0, 0, 0, 0)
+        # CHANGE [PAGE]: stated, not inherited. Left unset this took Qt's
+        # default of 6, which is not a value on the spacing scale and was the
+        # only reason this bar's rhythm differed from the one above it.
+        view_bar_layout.setSpacing(0)
         view_bar_layout.addLayout(view_row)
 
         root.addWidget(self.library_bar)
@@ -670,6 +787,16 @@ class RecommendationExplorerPage(QWidget):
 
         self.content_stack = QStackedWidget()
         self.content_stack.setObjectName("recommendationContentStack")
+        # CHANGE [PAGE]: a QStackedLayout defaults to a 9px margin all round.
+        # Nobody chose 9 - it is off the spacing scale, and it inset the feed
+        # a further nine pixels inside the page's own eight, so the grid sat
+        # seventeen pixels from the edge while every bar above it sat at
+        # eight. The stack carries full-bleed content; the page owns the
+        # inset.
+        stack_layout = self.content_stack.layout()
+        if stack_layout is not None:
+            stack_layout.setContentsMargins(0, 0, 0, 0)
+            stack_layout.setSpacing(0)
         self.card_scroll = QScrollArea()
         self.card_scroll.setObjectName("recommendationCardScroll")
         self.card_scroll.setWidgetResizable(True)
@@ -694,15 +821,30 @@ class RecommendationExplorerPage(QWidget):
         self.card_layout = QGridLayout(self.card_container)
         self.card_layout.setContentsMargins(0, 0, 0, 0)
         self.card_layout.setSpacing(16)
-        self.card_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.card_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.card_scroll.setWidget(self.card_container)
         self.card_scroll.verticalScrollBar().valueChanged.connect(
             self.feed_scrolled.emit
         )
+        # One sweep widget over the viewport, not an effect per card.
+        self.scan_sweep = ScanSweep(self.card_scroll.viewport())
         self.card_scroll.viewport().installEventFilter(self)
         self.card_scroll.verticalScrollBar().valueChanged.connect(
             lambda _value: self._schedule_visible_covers()
         )
+        self.card_scroll.verticalScrollBar().valueChanged.connect(
+            lambda _value: self._consider_autoload()
+        )
+        # Endless scrolling, with the brakes it needs. A scroll bar emits
+        # valueChanged for every pixel of a flick, so the request is debounced
+        # rather than fired from the event, and three independent guards below
+        # stop a fast scroll turning into a queue of overlapping fetches.
+        self._autoload_timer = QTimer(self)
+        self._autoload_timer.setSingleShot(True)
+        self._autoload_timer.setInterval(AUTOLOAD_DEBOUNCE_MS)
+        self._autoload_timer.timeout.connect(self._autoload_now)
+        self._autoload_enabled = True
+        self._autoload_blocked_until = 0.0
 
         self.table = QTableWidget(0, 8)
         self.table.setObjectName("recommendationTable")
@@ -725,12 +867,15 @@ class RecommendationExplorerPage(QWidget):
         self.empty_panel.setObjectName("recommendationEmptyPanel")
         self.empty_panel.setMaximumWidth(680)
         panel_layout = QVBoxLayout(self.empty_panel)
-        panel_layout.setContentsMargins(40, 34, 40, 34)
+        panel_layout.setContentsMargins(
+            SPACE["3xl"], SPACE["2xl"], SPACE["3xl"], SPACE["2xl"]
+        )
         panel_layout.setSpacing(12)
-        self.empty_icon_label = QLabel("✦")
+        self.empty_icon_label = QLabel()
         self.empty_icon_label.setObjectName("recommendationEmptyIcon")
-        self.empty_icon_label.setFixedSize(56, 56)
+        self.empty_icon_label.setFixedSize(48, 48)
         self.empty_icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_icon_name = "view-grid"
         self.empty_title_label = QLabel("Your feed is waiting")
         self.empty_title_label.setObjectName("recommendationEmptyTitle")
         self.empty_title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -762,6 +907,7 @@ class RecommendationExplorerPage(QWidget):
         panel_layout.addWidget(
             self.empty_icon_label, 0, Qt.AlignmentFlag.AlignHCenter
         )
+        panel_layout.addSpacing(8)
         panel_layout.addWidget(self.empty_title_label)
         panel_layout.addWidget(self.empty_label)
         panel_layout.addLayout(empty_actions)
@@ -875,6 +1021,9 @@ class RecommendationExplorerPage(QWidget):
         """
         for widget in (*self._cards_by_key.values(), *self._rows_by_key.values()):
             widget.apply_scale()
+        # The one thing that does change a card's natural height.
+        self._invalidate_card_height()
+        self._laid_out = (0, ())
         self._reflow_cards()
         self._restore_selection()
 
@@ -896,6 +1045,9 @@ class RecommendationExplorerPage(QWidget):
             self.hero_action_caption,
         ):
             widget.setVisible(not decorative)
+        # Everything that did work has moved to the control bar, so in compact
+        # mode the band would be an empty rectangle. It is hidden outright.
+        self.hero.setVisible(not decorative and "all" in self._visible_states)
 
     def set_visible_states(self, states) -> None:
         """Restrict which library collections this view offers.
@@ -911,6 +1063,11 @@ class RecommendationExplorerPage(QWidget):
         self._visible_states = tuple(wanted)
         for state, button in self.library_tabs.items():
             button.setVisible(state in self._visible_states)
+        # My Library is a filing surface, not a second recommendation funnel.
+        # Keeping the Discover feedback banner and a disabled "Recommend more"
+        # action above an empty library produced a rectangle whose only job was
+        # to advertise that it could not be used.
+        self.hero.setVisible("all" in self._visible_states)
         # A single collection needs no tab to choose between.
         self.library_bar.setVisible(len(self._visible_states) > 1)
         if self.state_filter.currentData() not in self._visible_states:
@@ -933,11 +1090,12 @@ class RecommendationExplorerPage(QWidget):
             "disliked": len(self.local_state.disliked_mal_ids),
             "watch-later": len(self.local_state.watch_later_mal_ids),
         }
+        # Qt has no text-transform, so the case lives in the string.
         labels = {
-            "all": "For You",
-            "liked": "Liked",
-            "disliked": "Disliked",
-            "watch-later": "Watch Later",
+            "all": "FOR YOU",
+            "liked": "LIKED",
+            "disliked": "DISLIKED",
+            "watch-later": "WATCH LATER",
         }
         current_state = self.state_filter.currentData()
         for state, button in self.library_tabs.items():
@@ -1091,9 +1249,31 @@ class RecommendationExplorerPage(QWidget):
         animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _show_current_view(self) -> None:
+        state_filter = self.state_filter.currentData()
+        model_ids = {model.mal_id for model in self._models}
+        reviewed_ids = (
+            self.local_state.liked_mal_ids | self.local_state.disliked_mal_ids
+        )
+        if state_filter == "liked":
+            collection_ids = model_ids & self.local_state.liked_mal_ids
+        elif state_filter == "disliked":
+            collection_ids = model_ids & self.local_state.disliked_mal_ids
+        elif state_filter == "watch-later":
+            collection_ids = model_ids & self.local_state.watch_later_mal_ids
+        else:
+            collection_ids = model_ids - reviewed_ids
+        has_collection_items = bool(collection_ids)
+        has_hidden_items = bool(collection_ids & self.local_state.hidden_mal_ids)
+        self.show_hidden_checkbox.setVisible(has_hidden_items)
+
         if not self._visible_models:
+            # Keep the Cards/List/Table affordance in a stable location on
+            # every surface (including an empty Library), but do not invite
+            # people to open filters that cannot produce a result yet.
+            self.view_bar.setVisible(True)
+            self.filter_toggle_button.setChecked(False)
+            self.filter_toggle_button.setVisible(has_collection_items)
             has_source = bool(self._models)
-            state_filter = self.state_filter.currentData()
             exhausted = (
                 has_source
                 and state_filter == "all"
@@ -1105,35 +1285,35 @@ class RecommendationExplorerPage(QWidget):
             )
             if exhausted:
                 title = "You’re all caught up"
-                icon = "✓"
+                icon = "like-active"
                 message = (
                     "Every current pick has been reviewed. Generate 10 fresh anime "
                     "from your updated taste model, or revisit the choices you saved."
                 )
             elif state_filter == "liked" and not self._has_active_filters():
                 title = "No liked anime yet"
-                icon = "♥"
+                icon = "folder-liked"
                 message = "Anime you like will stay here so you can inspect or change the vote later."
             elif state_filter == "disliked" and not self._has_active_filters():
                 title = "Nothing filed as Disliked"
-                icon = "–"
+                icon = "folder-disliked"
                 message = "Anime marked Not for me will stay here and can be moved back at any time."
             elif state_filter == "watch-later" and not self._has_active_filters():
                 title = "Your Watch Later list is empty"
-                icon = "☆"
+                icon = "folder-watch-later"
                 message = "Save an anime from any card and it will appear in this collection."
             elif has_source:
                 title = "No matches found"
-                icon = "⌕"
+                icon = "search"
                 message = "Try clearing or widening the active filters to bring more anime back."
             else:
                 title = "Build your first feed"
-                icon = "✦"
+                icon = "view-grid"
                 message = (
                     "Generate recommendations from Home to create a personal anime feed."
                 )
             self.empty_title_label.setText(title)
-            self.empty_icon_label.setText(icon)
+            self._set_empty_icon(icon)
             self.empty_label.setText(message)
             self.refill_button.setVisible(exhausted)
             self.clear_filters_button.setVisible(has_source and self._has_active_filters())
@@ -1142,6 +1322,8 @@ class RecommendationExplorerPage(QWidget):
             )
             self.content_stack.setCurrentIndex(self.empty_index)
             return
+        self.view_bar.setVisible(True)
+        self.filter_toggle_button.setVisible(True)
         self.refill_button.setVisible(False)
         self.clear_filters_button.setVisible(False)
         self.browse_liked_button.setVisible(False)
@@ -1287,9 +1469,74 @@ class RecommendationExplorerPage(QWidget):
         )
         return card
 
+    def _set_empty_icon(self, name: str) -> None:
+        """Paint the empty-state mark from the interface icon set.
+
+        CHANGE [DEFECT-ICON]: the glyph was tinted ``resolvedAccent`` and the
+        stylesheet paints this label's background ``$accent`` - a brass mark
+        on a brass plate, which rendered as a solid brass square with no icon
+        in it on every empty state. The stylesheet already declares the right
+        answer next to the background it sets (``color: $accent_contrast``);
+        a QLabel pixmap does not read that property, so the contrast colour
+        has to be handed to the renderer here.
+        """
+        self._empty_icon_name = name
+        pixmap = ui_icon_pixmap(
+            name, _resolved_colour("resolvedAccentContrast", "#0A120E"), 32
+        )
+        if pixmap.isNull():
+            self.empty_icon_label.clear()
+        else:
+            self.empty_icon_label.setPixmap(pixmap)
+
+    def retint_icons(self) -> None:
+        """Re-render the view selectors after a theme change.
+
+        A QIcon holds rendered pixmaps, not a colour reference, so switching
+        themes re-styles every widget but leaves the glyphs painted in the
+        previous theme's colour until they are rebuilt.
+        """
+        self._set_empty_icon(getattr(self, "_empty_icon_name", "view-grid"))
+        for button, name in (
+            (self.filter_toggle_button, "filter"),
+            (self.cards_button, "view-grid"),
+            (self.list_button, "view-list"),
+            (self.table_button, "view-table"),
+        ):
+            button.setIcon(themed_ui_icon(name))
+
     def _reflow_cards(self) -> None:
         cards = list(self._cards_by_key.values())
         self._equalise_card_heights(cards)
+        # CHANGE [SCROLL-FLICKER]: emptying the layout and re-adding every
+        # widget is what a column-count change needs; it is not what a
+        # scroll-triggered top-up needs. Appending five cards used to take
+        # all forty out of the grid and put them back, which relaid the whole
+        # feed under the pointer. When the column count and the order of the
+        # existing cards are both unchanged, only the new cards are placed.
+        gap = self.card_layout.horizontalSpacing()
+        minimum = scaled(CARD_WIDTH)
+        available = max(self.card_scroll.viewport().width(), minimum)
+        columns = max(1, (available + gap) // (minimum + gap))
+        keys = tuple(self._cards_by_key)
+        previous_columns, previous_keys = getattr(self, "_laid_out", (0, ()))
+        appended = (
+            previous_columns == columns
+            and len(keys) > len(previous_keys)
+            and keys[: len(previous_keys)] == previous_keys
+        )
+        if appended:
+            for index in range(len(previous_keys), len(keys)):
+                self.card_layout.addWidget(
+                    cards[index],
+                    index // columns,
+                    index % columns,
+                    Qt.AlignmentFlag.AlignTop,
+                )
+            self._laid_out = (columns, keys)
+            for column in range(max(columns, self.card_layout.columnCount())):
+                self.card_layout.setColumnStretch(column, 1 if column < columns else 0)
+            return
         while self.card_layout.count():
             self.card_layout.takeAt(0)
         # CHANGE [SCALE]: the cards are laid out at scaled(CARD_WIDTH), so
@@ -1297,9 +1544,19 @@ class RecommendationExplorerPage(QWidget):
         # column too many at any GUI scale above 100% and pushed the last
         # one off the right edge. scaling.py says as much in its own
         # docstring: hand-chosen pixel sizes go through scaled().
-        grid_stride = scaled(CARD_WIDTH) + self.card_layout.horizontalSpacing()
-        available = max(self.card_scroll.viewport().width(), grid_stride)
-        columns = max(1, available // grid_stride)
+        # CHANGE [SCALE]: the cards are laid out at scaled(CARD_WIDTH), so
+        # measuring the stride with the unscaled constant counted one column
+        # too many at any GUI scale above 100%.
+        #
+        # CHANGE [MARGIN]: n columns need n widths and n-1 gaps, not n of
+        # each. Counting a trailing gap that is never drawn understated how
+        # many cards fit, and the layout's AlignLeft then piled every leftover
+        # pixel - measured at 108 to 111 of them - against the right edge as a
+        # margin nobody asked for. The columns share the row now.
+        gap = self.card_layout.horizontalSpacing()
+        minimum = scaled(CARD_WIDTH)
+        available = max(self.card_scroll.viewport().width(), minimum)
+        columns = max(1, (available + gap) // (minimum + gap))
         for index, card in enumerate(cards):
             self.card_layout.addWidget(
                 card,
@@ -1307,9 +1564,24 @@ class RecommendationExplorerPage(QWidget):
                 index % columns,
                 Qt.AlignmentFlag.AlignTop,
             )
+        self._laid_out = (columns, tuple(self._cards_by_key))
+        # Every column that holds a card takes an equal share of the width;
+        # any column left over from a previous, wider layout takes none.
+        for column in range(max(columns, self.card_layout.columnCount())):
+            self.card_layout.setColumnStretch(column, 1 if column < columns else 0)
 
     # Qt's "no maximum". Not exported by PySide6, so it is spelled out.
     _UNCONSTRAINED_HEIGHT = 16777215
+
+    def _invalidate_card_height(self) -> None:
+        """Forget the measured card height so the next reflow measures again.
+
+        CHANGE [SCROLL-FLICKER]: only a change of GUI scale or font scale can
+        change it. Width cannot: every wrapped label on the card reserves a
+        fixed number of lines, so a card's natural height is 511px at a 700px
+        viewport and 511px at a 1042px one.
+        """
+        self._card_height = 0
 
     def _equalise_card_heights(self, cards) -> None:
         """CHANGE [BUG7]: give every card in the grid the same height.
@@ -1324,17 +1596,28 @@ class RecommendationExplorerPage(QWidget):
         the font scale without a second set of constants to keep in step. The
         constraint is lifted before measuring, or the previous height would be
         all sizeHint could report and the cards could only ever grow.
+
+        CHANGE [SCROLL-FLICKER]: the measurement is cached. Re-measuring
+        means lifting the height constraint on every card first, and a grid
+        of forty briefly-unconstrained cards re-lays out to a different
+        height before being pinned back - visible as the feed jumping while
+        a top-up lands. Measured across a top-up and four resizes, every one
+        of those passes recomputed the same 511px it already had.
         """
         if not cards:
             return
-        for card in cards:
-            card.setMinimumHeight(0)
-            card.setMaximumHeight(self._UNCONSTRAINED_HEIGHT)
-        tallest = max(card.sizeHint().height() for card in cards)
+        tallest = getattr(self, "_card_height", 0)
         if tallest <= 0:
-            return
+            for card in cards:
+                card.setMinimumHeight(0)
+                card.setMaximumHeight(self._UNCONSTRAINED_HEIGHT)
+            tallest = max(card.sizeHint().height() for card in cards)
+            if tallest <= 0:
+                return
+            self._card_height = tallest
         for card in cards:
-            card.setFixedHeight(tallest)
+            if card.minimumHeight() != tallest or card.maximumHeight() != tallest:
+                card.setFixedHeight(tallest)
 
     def _rebuild_table(self) -> None:
         self.table.blockSignals(True)
@@ -1493,22 +1776,23 @@ class RecommendationExplorerPage(QWidget):
     def _update_feedback_summary(self) -> None:
         likes = len(self.local_state.liked_mal_ids)
         dislikes = len(self.local_state.disliked_mal_ids)
+        # CHANGE [READOUT]: these were paragraph-length sentences written for
+        # a full-width band. On the control bar that band collapsed into, the
+        # longest of them ran off the end mid-word. They are status readouts
+        # now: same facts, told the way the rest of the bar tells them.
         if not self.can_review:
-            text = "Connect a profile to teach AniRec what fits your taste."
+            text = "NO PROFILE · REVIEWING DISABLED"
         elif self.profile_id is None:
             # Sample data. Reviewing works and reshapes the feed, but the
             # result is not kept, so say so rather than implying it is saved.
             text = (
-                f"Sample review: {likes} liked · {dislikes} not for me. "
-                "Connect your account to keep what you decide."
+                f"SAMPLE · {likes} LIKED · {dislikes} PASSED "
+                "· CONNECT TO KEEP"
             )
         elif not likes and not dislikes:
-            text = "Taste learning is ready — like or dislike any card to shape future picks."
+            text = "MODEL READY · VOTE TO SHAPE THE FEED"
         else:
-            text = (
-                f"Live taste model: {likes} liked · {dislikes} disliked. "
-                "The remaining feed and every future pick update after each vote."
-            )
+            text = f"MODEL LIVE · {likes} LIKED · {dislikes} PASSED"
         self.feedback_summary_label.setText(text)
         self.taste_folders_button.setText(
             f"Taste folders · {likes} liked · {dislikes} disliked"
@@ -1529,18 +1813,60 @@ class RecommendationExplorerPage(QWidget):
             self.detail_dialog.cover_requested.connect(self._request_detail_cover)
             self.detail_dialog.hide_requested.connect(self._toggle_hidden)
             self.detail_dialog.watch_later_requested.connect(self._toggle_watch_later)
+            self.detail_dialog.previous_requested.connect(
+                lambda: self._step_detail(-1)
+            )
+            self.detail_dialog.next_requested.connect(
+                lambda: self._step_detail(1)
+            )
             self.detail_dialog.liked_requested.connect(
                 lambda model: self._toggle_feedback(model, "liked")
             )
             self.detail_dialog.disliked_requested.connect(
                 lambda model: self._toggle_feedback(model, "disliked")
             )
-        self.detail_dialog.set_model(model)
-        self.detail_dialog.set_cover_visible(self.show_covers)
-        self._sync_detail_local_state()
+        self._set_detail_model(model)
         self.detail_dialog.show()
         self.detail_dialog.raise_()
         self.detail_dialog.activateWindow()
+
+    def _set_detail_model(self, model: RecommendationViewModel) -> None:
+        if self.detail_dialog is None:
+            return
+        self.detail_dialog.set_model(model)
+        self.detail_dialog.set_cover_visible(self.show_covers)
+        # CHANGE [DETAIL-COVER]: show the artwork the feed already has while
+        # the larger one is fetched.
+        #
+        # The dialog asks for `large_cover_url`, which is a different URL from
+        # the card's, so opening the breakdown always started a fresh download
+        # and sat on the placeholder for as long as it took. The feed has
+        # usually already downloaded the smaller image for the very card that
+        # was clicked; showing it costs nothing and is replaced the moment the
+        # large one lands.
+        if self.show_covers and model.cover_url:
+            cached = self._cover_data_by_url.get(model.cover_url)
+            if cached is not None:
+                self.detail_dialog.set_cover_data(cached)
+        models = self._models or (model,)
+        try:
+            index = models.index(model)
+        except ValueError:
+            index = 0
+        self.detail_dialog.set_navigation(index + 1, len(models))
+        self._sync_detail_local_state()
+
+    def _step_detail(self, offset: int) -> None:
+        if self.detail_dialog is None or self.detail_dialog.model is None:
+            return
+        models = self._models
+        if len(models) < 2:
+            return
+        try:
+            current_index = models.index(self.detail_dialog.model)
+        except ValueError:
+            current_index = 0
+        self._set_detail_model(models[(current_index + offset) % len(models)])
 
     def _sync_detail_local_state(self) -> None:
         if self.detail_dialog is None or self.detail_dialog.model is None:
@@ -1567,7 +1893,48 @@ class RecommendationExplorerPage(QWidget):
         if watched is self.card_scroll.viewport() and event.type() == QEvent.Type.Resize:
             self._reflow_cards()
             self._schedule_visible_covers()
+            sweep = getattr(self, "scan_sweep", None)
+            if sweep is not None:
+                sweep.setGeometry(self.card_scroll.viewport().rect())
         return super().eventFilter(watched, event)
+
+    def set_autoload_enabled(self, enabled: bool) -> None:
+        """Turn endless scrolling on or off for this surface."""
+        self._autoload_enabled = bool(enabled)
+
+    def _consider_autoload(self) -> None:
+        """Debounce a scroll gesture into at most one fetch request."""
+        if not self._autoload_enabled:
+            return
+        if self._view_mode is not RecommendationViewMode.CARDS:
+            return
+        if self._more_running or not self._more_available:
+            return
+        bar = self.card_scroll.verticalScrollBar()
+        # A feed that does not scroll cannot be scrolled to the bottom of, and
+        # would otherwise satisfy the threshold permanently and fetch forever.
+        if bar.maximum() <= 0:
+            return
+        if bar.maximum() - bar.value() > AUTOLOAD_TRIGGER_PX:
+            return
+        self._autoload_timer.start()
+
+    def _autoload_now(self) -> None:
+        """Fire one top-up, if every guard still agrees."""
+        if not self._autoload_enabled or self._more_running or not self._more_available:
+            return
+        now = monotonic()
+        if now < self._autoload_blocked_until:
+            return
+        bar = self.card_scroll.verticalScrollBar()
+        if bar.maximum() <= 0 or bar.maximum() - bar.value() > AUTOLOAD_TRIGGER_PX:
+            return
+        # Hold the gate until the worker reports back, and in any case for a
+        # minimum interval, so a stalled or failed fetch cannot be retried on
+        # every subsequent scroll event.
+        self._autoload_blocked_until = now + AUTOLOAD_COOLDOWN_S
+        self.set_more_running(True)
+        self.more_requested.emit()
 
     def _schedule_visible_covers(self) -> None:
         if self._view_mode is RecommendationViewMode.CARDS:
@@ -1624,10 +1991,20 @@ class RecommendationExplorerPage(QWidget):
         if url is None or not isinstance(result, CoverImageResult):
             return
         self._cover_data_by_url[url] = result.data
+        self._cover_failures.pop(url, None)
+        # CHANGE [COVER-RETRY]: a finished download frees a slot in the
+        # per-pass budget, so ask again for whatever is still on screen
+        # without artwork. Otherwise anything past the sixth visible card
+        # waited for a scroll that a reader with a full window never makes.
+        self._schedule_visible_covers()
         # CHANGE [BUG3]: deliver to rows as well, not only cards.
+        landed = ""
         for card in self._cards_by_key.values():
             if card.model.cover_url == url:
                 card.set_cover_data(result.data)
+                landed = card.model.display_title
+        if landed:
+            self.artwork_retrieved.emit(landed)
         for row in self._rows_by_key.values():
             if row.model.cover_url == url:
                 row.set_cover_data(result.data)
@@ -1640,4 +2017,29 @@ class RecommendationExplorerPage(QWidget):
                 self.detail_dialog.set_cover_data(result.data)
 
     def _on_worker_error(self, operation_key: str, _error: object) -> None:
-        self._cover_operation_urls.pop(operation_key, None)
+        """Let a cover that failed be asked for again.
+
+        CHANGE [COVER-RETRY]: this used to drop only the operation mapping and
+        leave the URL in ``_cover_attempted``, which is the set
+        ``_request_cover`` checks before doing anything. So one failed
+        download - a dropped connection, a timeout, anything transient - meant
+        that card kept its placeholder for the rest of the session no matter
+        how long anyone waited, and no scroll or resize could recover it.
+
+        The reason this looked survivable is that the detail dialog asks for
+        ``large_cover_url``, a different URL that was never marked attempted.
+        Opening the breakdown therefore fetched the artwork and made the feed
+        look like the slow one rather than the broken one.
+
+        Retries are bounded: a URL that has failed MAX_COVER_ATTEMPTS times
+        stays attempted, so a genuinely dead link is not re-requested on every
+        pass.
+        """
+        url = self._cover_operation_urls.pop(operation_key, None)
+        if url is None:
+            return
+        failures = self._cover_failures.get(url, 0) + 1
+        self._cover_failures[url] = failures
+        if failures < self.MAX_COVER_ATTEMPTS:
+            self._cover_attempted.discard(url)
+            self._schedule_visible_covers()

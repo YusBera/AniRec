@@ -22,11 +22,22 @@ from PySide6.QtWidgets import (
 )
 
 from .design_tokens import SPACE
+from .instrument_widgets import InstrumentPanel
+from .resources import themed_ui_icon
 from .texts import DISCOVER_TEXT
 
 
 # How far the feed must scroll before the introductory header folds away.
 COLLAPSE_THRESHOLD_PX = 24
+
+
+def _vertical_rule() -> QFrame:
+    """A hard 1px separator, used between fields on a header strip."""
+    rule = QFrame()
+    rule.setObjectName("stripDivider")
+    rule.setFixedWidth(1)
+    rule.setFixedHeight(14)
+    return rule
 
 
 class TastePanel(QFrame):
@@ -41,6 +52,10 @@ class TastePanel(QFrame):
 
         header = QHBoxLayout()
         header.setSpacing(SPACE["sm"])
+        self.caption_label = QLabel(DISCOVER_TEXT.taste_caption)
+        self.caption_label.setObjectName("discoverChannel")
+        header.addWidget(self.caption_label)
+        header.addWidget(_vertical_rule())
         self.toggle_button = QPushButton(DISCOVER_TEXT.taste_show)
         self.toggle_button.setObjectName("tastePanelToggle")
         self.toggle_button.setProperty("buttonRole", "link")
@@ -98,7 +113,19 @@ class TastePanel(QFrame):
 
 
 class DiscoverPage(QWidget):
-    """Action strip, taste summary, and the recommendation feed."""
+    """The Discover surface: one instrument header, then the feed.
+
+    CHANGE [HEADER-REHAUL]: this surface used to open with a stack of
+    full-width strips - an action row, a taste row, and the explorer's own
+    hero band underneath - each with its own frame, its own margins and a gap
+    between them. Three boxes to carry a state word, a sentence and a button.
+
+    They are one panel now, two lines tall: identity and state and the run
+    control on the first line, the taste vector on the second, divided by a
+    single hairline. The taste half stays a child widget so it can still fold
+    away on scroll, but folding it now collapses a line inside a panel rather
+    than removing a whole box from the page.
+    """
 
     refresh_requested = Signal()
 
@@ -111,40 +138,80 @@ class DiscoverPage(QWidget):
         self.setObjectName("page-discover")
         self.setAccessibleName("Discover page")
 
+        # CHANGE [PAGE]: the same inset and rhythm every other surface uses.
+        # The explorer inside supplies its own page margin when it *is* the
+        # page, so it is told not to here - otherwise the two would stack and
+        # Discover's feed would sit further in than My Library's.
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(SPACE["sm"])
+        layout.setContentsMargins(
+            SPACE["sm"], SPACE["sm"], SPACE["sm"], SPACE["sm"]
+        )
+        layout.setSpacing(SPACE["md"])
 
-        strip = QFrame()
+        header = InstrumentPanel()
+        header.setObjectName("discoverHeader")
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(0)
+
+        # --- line one: who, what state, and the one action ---
+        strip = QWidget()
         strip.setObjectName("discoverActionStrip")
         strip_layout = QHBoxLayout(strip)
-        strip_layout.setContentsMargins(0, 0, 0, 0)
+        strip_layout.setContentsMargins(
+            SPACE["md"], SPACE["sm"], SPACE["md"], SPACE["sm"]
+        )
         strip_layout.setSpacing(SPACE["md"])
 
+        self.channel_label = QLabel(DISCOVER_TEXT.channel)
+        self.channel_label.setObjectName("discoverChannel")
+        self.state_caption = QLabel(DISCOVER_TEXT.state_caption)
+        self.state_caption.setObjectName("discoverStateCaption")
         self.status_label = QLabel(DISCOVER_TEXT.status_ready)
-        self.status_label.setObjectName("dashboardMetricLabel")
+        self.status_label.setObjectName("discoverStateValue")
         self.status_label.setWordWrap(True)
         self.status_label.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
 
-        # One button replaces the seven step pipeline page. The steps still
-        # exist, behind the developer tools switch in Settings, for anyone who
-        # wants to run them individually.
         self.refresh_button = QPushButton(DISCOVER_TEXT.refresh)
         self.refresh_button.setObjectName("discoverRefreshButton")
         self.refresh_button.setProperty("buttonRole", "primary")
         self.refresh_button.setAccessibleName(DISCOVER_TEXT.refresh_accessible)
+        self.refresh_button.setIcon(
+            themed_ui_icon("refresh", role="resolvedAccentContrast")
+        )
+        self.refresh_button.setMinimumWidth(146)
+        self.refresh_button.setMaximumWidth(168)
+        self.refresh_button.setFixedHeight(28)
+        self.refresh_button.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
+        )
         self.refresh_button.clicked.connect(self.refresh_requested.emit)
 
-        strip_layout.addWidget(self.status_label, 1)
+        strip_layout.addWidget(self.channel_label)
+        strip_layout.addWidget(_vertical_rule())
+        strip_layout.addWidget(self.state_caption)
+        strip_layout.addWidget(self.status_label)
+        strip_layout.addStretch(1)
         strip_layout.addWidget(self.refresh_button)
-        layout.addWidget(strip)
+        header_layout.addWidget(strip)
 
+        self._header_rule = QFrame()
+        self._header_rule.setObjectName("railRule")
+        self._header_rule.setFixedHeight(1)
+        header_layout.addWidget(self._header_rule)
+
+        # --- line two: the taste vector behind this feed ---
         self.taste_panel = TastePanel()
-        layout.addWidget(self.taste_panel)
+        header_layout.addWidget(self.taste_panel)
+
+        layout.addWidget(header)
+        self._header = header
+        self._strip = strip
 
         self.explorer = explorer
+        explorer.set_embedded(True)
         layout.addWidget(explorer, 1)
 
         # CHANGE [BUG5]: the header took 41% of a 1280x720 window, leaving about
@@ -155,6 +222,16 @@ class DiscoverPage(QWidget):
         if hasattr(explorer, "feed_scrolled"):
             explorer.feed_scrolled.connect(self._on_feed_scrolled)
 
+    def retint_icons(self) -> None:
+        """Re-render this surface's glyphs for the active theme."""
+        self.refresh_button.setIcon(
+            themed_ui_icon("refresh", role="resolvedAccentContrast")
+        )
+
+    @staticmethod
+    def _divider() -> QFrame:
+        return _vertical_rule()
+
     def _on_feed_scrolled(self, position: int) -> None:
         self.set_header_collapsed(position > COLLAPSE_THRESHOLD_PX)
 
@@ -164,10 +241,11 @@ class DiscoverPage(QWidget):
         if collapsed == self._collapsed:
             return
         self._collapsed = collapsed
-        # The taste summary and the status line are orientation, not controls.
-        # The action stays, because it is the reason to be on this page.
+        # The taste summary is orientation, not a control, so it is what goes
+        # while browsing. The action and the state stay: they are why you are
+        # on this surface and what the machine is doing about it.
         self.taste_panel.setVisible(not collapsed)
-        self.status_label.setVisible(not collapsed)
+        self._header_rule.setVisible(not collapsed)
 
     @property
     def header_collapsed(self) -> bool:
