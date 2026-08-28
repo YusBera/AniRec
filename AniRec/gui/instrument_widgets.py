@@ -16,6 +16,7 @@ from PySide6.QtCore import (
     QEvent,
     QPoint,
     QPointF,
+    QRect,
     QRectF,
     Qt,
     QTimer,
@@ -219,7 +220,12 @@ LAMP_BOX = 16
 
 # Halo rings, from outermost to innermost. Alphas fall steeply so the
 # bloom reads as light rather than as a coloured border.
-GLOW_RINGS = (16, 30, 58)
+#
+# CHANGE [BLOOM]: the outer ring was 58 on a 16px box - a halo wider than the
+# lamp's own widget, clipped square by it, and the loudest thing in a 238px
+# rail. A status light reporting a healthy channel should not look like an
+# alarm. Halved, so the bloom sits inside the box it is drawn in.
+GLOW_RINGS = (16, 30, 28)
 
 
 class StatusLight(QWidget):
@@ -283,19 +289,68 @@ class StatusLight(QWidget):
         # no blur, so it is built from concentric rings of falling alpha,
         # which is also closer to how a real lamp haloes on a CRT.
         self.setFixedSize(scaled(LAMP_BOX), scaled(LAMP_BOX))
-        # The idle flicker runs off its own timer rather than an animation:
-        # it is a random walk, not a curve between two values, and a timer
-        # that only ticks while the lamp is lit costs nothing when it is not.
+        # The lamp fills its own box with the colour behind it and declares
+        # itself opaque.  A translucent widget makes Qt repaint every ancestor
+        # underneath it, so the 120ms flicker on two lit lamps measured as 8
+        # full-window repaints a second at idle, and a busy pulse as 62.  The
+        # box is 16px and the halo is clipped to it either way, so filling it
+        # costs nothing visually and takes the ancestor repaints to zero.
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         self._flicker = 1.0
-        self._flicker_timer = QTimer(self)
-        self._flicker_timer.setInterval(self.FLICKER_MS)
-        self._flicker_timer.timeout.connect(self._on_flicker)
         self.set_state(state)
 
-    def _on_flicker(self) -> None:
-        """Wander the brightness a little, without ever going dark."""
-        self._flicker = 1.0 - random.random() * self.FLICKER_DEPTH
-        self.update()
+    # ---- shared flicker driver -------------------------------------------
+    #
+    # The flicker is a random walk rather than a curve, so it is a timer and
+    # not an animation.  It used to be a timer *per lamp*: four lamps meant
+    # four wakeups delivering four independent repaints.  One driver ticks
+    # every lit lamp together, and skips lamps nobody can see - a backgrounded
+    # window now costs nothing at all rather than 8 repaints a second.
+
+    _flicker_driver: QTimer | None = None
+    _flicker_members: "weakref.WeakSet[StatusLight]" = weakref.WeakSet()
+
+    @classmethod
+    def _driver(cls) -> QTimer:
+        if cls._flicker_driver is None:
+            timer = QTimer()
+            timer.setInterval(cls.FLICKER_MS)
+            # Coarse: the tick is a brightness wander, not a deadline, and a
+            # precise timer would keep the CPU out of its idle states.
+            timer.setTimerType(Qt.TimerType.CoarseTimer)
+            timer.timeout.connect(cls._tick_flicker)
+            cls._flicker_driver = timer
+        return cls._flicker_driver
+
+    @classmethod
+    def _tick_flicker(cls) -> None:
+        live = 0
+        for lamp in list(cls._flicker_members):
+            try:
+                if lamp.state == "off":
+                    continue
+                live += 1
+                # Off-screen, on an inactive page, or in a window the user is
+                # not looking at: still lit, just not worth a repaint.
+                if not lamp.isVisible() or not lamp.window().isActiveWindow():
+                    continue
+                lamp._flicker = 1.0 - random.random() * cls.FLICKER_DEPTH
+                lamp.update()
+            except RuntimeError:
+                # The C++ side went away between ticks.
+                cls._flicker_members.discard(lamp)
+        if live == 0:
+            cls._driver().stop()
+
+    def _join_flicker(self) -> None:
+        StatusLight._flicker_members.add(self)
+        driver = StatusLight._driver()
+        if not driver.isActive():
+            driver.start()
+
+    def _leave_flicker(self) -> None:
+        StatusLight._flicker_members.discard(self)
+        self._flicker = 1.0
 
     def set_state(self, state: str) -> None:
         state = str(state).casefold()
@@ -310,10 +365,9 @@ class StatusLight(QWidget):
             self._pulse.stop()
             self._level = 1.0
         if state == "off":
-            self._flicker_timer.stop()
-            self._flicker = 1.0
-        elif not self._flicker_timer.isActive():
-            self._flicker_timer.start()
+            self._leave_flicker()
+        else:
+            self._join_flicker()
         self.setAccessibleName(f"status {state}")
         self.update()
 
@@ -373,6 +427,9 @@ class StatusLight(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
 
         full = QRectF(self.rect())
+        # Declared opaque in __init__, so this fill is now the widget's own
+        # ground rather than something the ancestors have to supply.
+        painter.fillRect(full, _application_colour("resolvedSidebar", "#050907"))
         side = float(scaled(LAMP_CORE))
         lamp_rect = QRectF(
             full.center().x() - side / 2.0,
@@ -527,15 +584,20 @@ class Scanlines(QWidget):
                 self.raise_()
         return super().eventFilter(watched, event)
 
-    def _scanned_region(self) -> QRegion:
+    def _scanned_region(self, damaged: QRect | None = None) -> QRegion:
         """Everything this overlay covers, less the widgets that opted out.
 
         ``visibleRegion`` rather than ``geometry``: a cover scrolled half out
         of the feed viewport is clipped by it, and subtracting the whole
         widget rectangle would punch a hole through the chrome above the
         viewport where nothing is showing.
+
+        ``damaged`` is the rectangle Qt actually asked for.  Scoping to it
+        matters because this walks every exempted cover on the page: a 16px
+        lamp repainting in the rail used to cost a full pass over the feed's
+        artwork, sixty times a second while a lamp pulsed.
         """
-        region = QRegion(self.rect())
+        region = QRegion(self.rect() if damaged is None else damaged)
         parent = self.parentWidget()
         if parent is None:
             return region
@@ -547,16 +609,22 @@ class Scanlines(QWidget):
                 if visible.isEmpty():
                     continue
                 offset = widget.mapTo(parent, QPoint(0, 0))
-                region -= visible.translated(offset)
+                translated = visible.translated(offset)
+                # Nothing to subtract if the exempted widget is nowhere near
+                # the damage.
+                if damaged is not None and not translated.intersects(damaged):
+                    continue
+                region -= translated
             except RuntimeError:
                 # The widget went away between the weak set and here.
                 continue
         return region
 
-    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 - Qt API
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        painter.setClipRegion(self._scanned_region())
+        damaged = event.rect()
+        painter.setClipRegion(self._scanned_region(damaged))
         ink = QColor(0, 0, 0, self.INK_ALPHA)
 
         # CHANGE [MOIRE]: the raster is laid out in device pixels, not logical
@@ -575,10 +643,16 @@ class Scanlines(QWidget):
         # to 2 would darken half of every cycle instead of a quarter.
         thickness = max(1, scaled(self.LINE))
         painter.scale(1.0 / ratio, 1.0 / ratio)
-        width = int(self.width() * ratio) + 1
-        height = int(self.height() * ratio) + 1
-        for y in range(0, height, pitch):
-            painter.fillRect(0, y, width, thickness, ink)
+        # Only the damaged band, in device rows. The raster is absolute - row
+        # zero is always a line - so the start is floored onto the pitch grid
+        # rather than onto the damage, and a partial repaint lands on exactly
+        # the same lines a full one would.
+        left = int(damaged.left() * ratio)
+        width = int(damaged.width() * ratio) + 2
+        first = int(damaged.top() * ratio) // pitch * pitch
+        last = int(damaged.bottom() * ratio) + 1
+        for y in range(first, last, pitch):
+            painter.fillRect(left, y, width, thickness, ink)
         painter.end()
 
 
@@ -625,9 +699,26 @@ class ScanSweep(QWidget):
         self.raise_()
         self._animation.start()
 
+    def _band_rect(self, position: float) -> QRect:
+        """The rows the band occupies at ``position``."""
+        band = max(6.0, self.height() * self.BAND)
+        travel = self.height() + band
+        bottom = position * travel
+        top = bottom - band
+        # A row of slack each side for the leading edge line and rounding.
+        return QRect(0, int(top) - 2, self.width(), int(band) + 5)
+
     def _on_value(self, value) -> None:
+        previous = self._position
         self._position = max(0.0, min(1.0, float(value)))
-        self.update()
+        # Only the rows the band just left and the rows it just entered.
+        #
+        # This used to be a bare ``update()``, which invalidates the whole
+        # widget - and the widget is the whole viewport, so every frame
+        # recomposited the entire feed behind it. That measured at 31-38ms a
+        # frame no matter how tall the band was, which is the tell: the cost
+        # was never the band, it was the invalidation.
+        self.update(self._band_rect(previous).united(self._band_rect(self._position)))
 
     def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
         if self.height() <= 0:
@@ -655,4 +746,225 @@ class ScanSweep(QWidget):
         edge.setAlpha(90)
         painter.setPen(QPen(edge, 1))
         painter.drawLine(0, int(bottom), self.width(), int(bottom))
+        painter.end()
+
+
+class NavMarker(QWidget):
+    """The rail's selection mark, as one object that travels between rows.
+
+    The mark used to be ``border-left-color`` on whichever nav button was
+    checked, so selection teleported: the old row lost its rail and the new
+    one gained it in the same frame, with nothing connecting them.  Moving one
+    mark between the rows says the same thing and also says which way you
+    went, which is the part a jump cut throws away.
+
+    Timing is linear and short, like ``ScanSweep``.  A carriage travelling to
+    a stop runs at a constant rate; easing would read as phone-app motion, and
+    this is chrome on an instrument.
+
+    The widget is opaque and exactly the width of the mark, so travelling it
+    never forces a repaint of anything except the narrow column it moves in.
+    """
+
+    DURATION_MS = 150
+    WIDTH = 3
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("navMarker")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._top = 0.0
+        self._height = 0.0
+        self._from = (0.0, 0.0)
+        self._to = (0.0, 0.0)
+        self._placed = False
+        self._target: "weakref.ReferenceType[QWidget] | None" = None
+        # A single scalar, lerped in the handler.  QVariantAnimation cannot
+        # interpolate a Python tuple - it emits the start value and then the
+        # end value, and the mark does not move at all.
+        self._animation = QVariantAnimation(self)
+        self._animation.setDuration(self.DURATION_MS)
+        self._animation.setStartValue(0.0)
+        self._animation.setEndValue(1.0)
+        self._animation.setEasingCurve(QEasingCurve.Type.Linear)
+        self._animation.valueChanged.connect(self._on_value)
+        if parent is not None:
+            parent.installEventFilter(self)
+        self.hide()
+
+    def eventFilter(self, watched, event) -> bool:
+        # The rail lays out after the mark is built, so the first target
+        # geometry is a placeholder.  Re-sync whenever the rail changes shape
+        # - that also covers a font-scale change moving every row.
+        if watched is self.parentWidget() and event.type() in (
+            QEvent.Type.Resize,
+            QEvent.Type.Show,
+            QEvent.Type.LayoutRequest,
+        ):
+            self._resync()
+        return super().eventFilter(watched, event)
+
+    def _resync(self) -> None:
+        target = self._target() if self._target is not None else None
+        if target is None:
+            return
+        try:
+            self._settle(target)
+        except RuntimeError:
+            self._target = None
+
+    def _settle(self, target: QWidget) -> None:
+        """Place the mark on ``target`` with no travel."""
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        top = float(target.mapTo(parent, QPoint(0, 0)).y())
+        height = float(target.height())
+        if (top, height) == (self._top, self._height):
+            return
+        self._animation.stop()
+        self._apply(top, height)
+
+    def _on_value(self, value) -> None:
+        try:
+            progress = float(value)
+        except (TypeError, ValueError):
+            return
+        top = self._from[0] + (self._to[0] - self._from[0]) * progress
+        height = self._from[1] + (self._to[1] - self._from[1]) * progress
+        self._apply(top, height)
+
+    def _apply(self, top: float, height: float) -> None:
+        self._top = top
+        self._height = height
+        self.setGeometry(
+            0, int(round(top)), scaled(self.WIDTH), max(1, int(round(height)))
+        )
+        self.update()
+
+    def move_to(self, target: QWidget, animate: bool = True) -> None:
+        """Travel to sit against ``target``'s left edge.
+
+        The first placement of a session is not a movement - there is no
+        previous selection for the mark to have come from - so it is placed
+        without animating.
+        """
+        parent = self.parentWidget()
+        if parent is None or target is None:
+            return
+        self._target = weakref.ref(target)
+        top = float(target.mapTo(parent, QPoint(0, 0)).y())
+        height = float(target.height())
+        self._animation.stop()
+        if not animate or not self._placed:
+            self._apply(top, height)
+            self._placed = True
+            self.show()
+            self.raise_()
+            return
+        if (top, height) == (self._top, self._height):
+            return
+        self._from = (self._top, self._height)
+        self._to = (top, height)
+        self.show()
+        self.raise_()
+        self._animation.start()
+
+    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        # Opaque: the rail's ground first, then the mark, so the widget owes
+        # its ancestors nothing on repaint.
+        painter.fillRect(self.rect(), _application_colour("resolvedSidebar", "#050907"))
+        painter.fillRect(self.rect(), _application_colour("resolvedAccent", "#C6A15B"))
+        painter.end()
+
+
+class ChannelWipe(QWidget):
+    """A short bright segment that runs the width of the page once, on change.
+
+    The page transition this replaces was an opacity fade over the whole
+    surface.  It measured at five to seven frames - the effect re-renders the
+    entire page into an offscreen buffer every frame, and on the card feed
+    that costs 26-54ms each - so the fade read as a stutter rather than as a
+    transition, which is worse than the jump cut it was meant to soften.
+
+    This is the same information carried by a bounded, opaque strip: two
+    device pixels tall, its own ground painted, so nothing underneath it is
+    ever recomposited.  It measures at roughly 60fps for the same reason the
+    rail mark does.
+
+    A tuning head crossing a channel, and it stops when it gets there.
+    """
+
+    DURATION_MS = 190
+    THICKNESS = 2
+
+    # Segment width as a fraction of the strip.
+    SEGMENT = 0.22
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("channelWipe")
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._position = 0.0
+        self._animation = QVariantAnimation(self)
+        self._animation.setDuration(self.DURATION_MS)
+        self._animation.setStartValue(0.0)
+        self._animation.setEndValue(1.0)
+        self._animation.setEasingCurve(QEasingCurve.Type.Linear)
+        self._animation.valueChanged.connect(self._on_value)
+        self._animation.finished.connect(self.hide)
+        self.hide()
+
+    @property
+    def animation(self) -> QVariantAnimation:
+        """The travel itself, for callers that need to observe or await it."""
+        return self._animation
+
+    def _on_value(self, value) -> None:
+        try:
+            self._position = max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            return
+        self.update()
+
+    def run(self) -> None:
+        """One pass. A second request restarts rather than stacking."""
+        parent = self.parentWidget()
+        if parent is None or parent.width() <= 0:
+            return
+        self.setGeometry(0, 0, parent.width(), max(1, scaled(self.THICKNESS)))
+        self._animation.stop()
+        self._position = 0.0
+        self.show()
+        self.raise_()
+        self._animation.start()
+
+    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 - Qt API
+        if self.width() <= 0:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        # Opaque ground first: this strip owes its ancestors no repaint.
+        painter.fillRect(self.rect(), _application_colour("resolvedBackground", "#070C09"))
+
+        segment = max(24.0, self.width() * self.SEGMENT)
+        travel = self.width() + segment
+        right = self._position * travel
+        left = right - segment
+
+        tint = _application_colour("resolvedAccent", "#C6A15B")
+        # Bright at the leading edge, falling off behind it, so the segment
+        # reads as travelling rather than as a block sliding.
+        wash = QLinearGradient(left, 0.0, right, 0.0)
+        for stop, alpha in ((0.0, 0), (0.55, 70), (1.0, 235)):
+            colour = QColor(tint)
+            colour.setAlpha(alpha)
+            wash.setColorAt(stop, colour)
+        painter.fillRect(QRectF(left, 0.0, segment, float(self.height())), wash)
         painter.end()

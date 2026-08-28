@@ -138,6 +138,12 @@ class DiscoverPage(QWidget):
         self.setObjectName("page-discover")
         self.setAccessibleName("Discover page")
 
+        # What STATE reports: whether a run is in flight, and whether the last
+        # one failed. Declared before the strip is built, because the strip
+        # paints its opening state as it is assembled.
+        self._running = False
+        self._faulted = False
+
         # CHANGE [PAGE]: the same inset and rhythm every other surface uses.
         # The explorer inside supplies its own page margin when it *is* the
         # page, so it is told not to here - otherwise the two would stack and
@@ -167,10 +173,22 @@ class DiscoverPage(QWidget):
         self.channel_label.setObjectName("discoverChannel")
         self.state_caption = QLabel(DISCOVER_TEXT.state_caption)
         self.state_caption.setObjectName("discoverStateCaption")
+        # The STATE value: a vocabulary, fixed and short, in the numeric face.
+        # It used to hold whatever _report_activity last passed, so after a
+        # sync a field captioned STATE read "MAL data updated - 412 completed
+        # titles synced." - a wrapped past-tense sentence in a state field,
+        # which never returned to READY.
         self.status_label = QLabel(DISCOVER_TEXT.status_ready)
         self.status_label.setObjectName("discoverStateValue")
-        self.status_label.setWordWrap(True)
         self.status_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred
+        )
+        # The sentence, in the reading face, beside the state rather than
+        # inside it.
+        self.message_label = QLabel("")
+        self.message_label.setObjectName("discoverStatusMessage")
+        self.message_label.setWordWrap(True)
+        self.message_label.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
         )
 
@@ -183,16 +201,19 @@ class DiscoverPage(QWidget):
         )
         self.refresh_button.setMinimumWidth(146)
         self.refresh_button.setMaximumWidth(168)
-        self.refresh_button.setFixedHeight(28)
         self.refresh_button.setSizePolicy(
             QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed
         )
         self.refresh_button.clicked.connect(self.refresh_requested.emit)
+        # Paint the opening state through the same path every later one
+        # takes, so READY carries its tone from the first frame.
+        self._render_state()
 
         strip_layout.addWidget(self.channel_label)
         strip_layout.addWidget(_vertical_rule())
         strip_layout.addWidget(self.state_caption)
         strip_layout.addWidget(self.status_label)
+        strip_layout.addWidget(self.message_label)
         strip_layout.addStretch(1)
         strip_layout.addWidget(self.refresh_button)
         header_layout.addWidget(strip)
@@ -254,11 +275,34 @@ class DiscoverPage(QWidget):
     def set_genre_stats(self, stats) -> None:
         self.taste_panel.set_genre_stats(tuple(stats or ()))
 
-    def set_status(self, message: str) -> None:
-        self.status_label.setText(message or DISCOVER_TEXT.status_ready)
+    def set_status(self, message: str, *, tone: str = "success") -> None:
+        """Report what happened. The sentence goes beside STATE, not into it."""
+        self.message_label.setText(message or "")
+        self._faulted = tone == "error"
+        self._render_state()
 
     def set_refreshing(self, running: bool) -> None:
         self.refresh_button.setEnabled(not running)
         self.refresh_button.setText(
             DISCOVER_TEXT.refreshing if running else DISCOVER_TEXT.refresh
         )
+        self._running = running
+        if running:
+            # A new run supersedes the previous one's verdict and its message;
+            # leaving the old sentence up beside BUSY reports the wrong run.
+            self._faulted = False
+            self.message_label.setText("")
+        self._render_state()
+
+    def _render_state(self) -> None:
+        """Drive STATE from what the machine is doing, and nothing else."""
+        if self._running:
+            text, tone = DISCOVER_TEXT.status_busy, "busy"
+        elif self._faulted:
+            text, tone = DISCOVER_TEXT.status_fault, "error"
+        else:
+            text, tone = DISCOVER_TEXT.status_ready, "ok"
+        self.status_label.setText(text)
+        self.status_label.setProperty("tone", tone)
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)

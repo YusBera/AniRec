@@ -79,8 +79,13 @@ QFrame#sidebar QPushButton[navItem="true"] {
 QFrame#sidebar QPushButton[navItem="true"]:hover {
     background: $surface; color: $text;
 }
+/* CHANGE [RAIL-MARK]: the selection mark is a widget (NavMarker) that
+   travels between rows, not a border colour that teleports. The 3px
+   transparent border-left stays on every row so the mark occupies reserved
+   space rather than shifting the labels when it arrives. Focus keeps its own
+   rail colour: an unselected focused row must still be tellable apart. */
 QFrame#sidebar QPushButton[navItem="true"]:checked {
-    background: $surface; color: $accent_soft; border-left-color: $accent;
+    background: $surface; color: $accent_soft;
 }
 /* Focus and selection must stay tellable apart: an unselected item takes the
    rail in the system colour, the selected one keeps brass and gains a ring. */
@@ -88,7 +93,7 @@ QFrame#sidebar QPushButton[navItem="true"]:focus:!checked {
     background: $surface; border-left-color: $focus;
 }
 QFrame#sidebar QPushButton[navItem="true"]:focus:checked {
-    border-left-color: $accent; color: $text_strong;
+    color: $text_strong;
 }
 
 /* The system readout. Keys recede, values carry a state tone. */
@@ -112,10 +117,16 @@ QLabel#readoutValue {
     color: $text_muted; font-family: $font_mono; font-size: $font_xs;
     font-weight: 600; letter-spacing: 1px;
 }
-QLabel#readoutValue[tone="ok"]   { color: $success_text; }
+/* "ok" here means the system is fine, which is cyan's job. This was
+   $success_text - a green that appears nowhere else in the design and left
+   the ENGINE lamp cyan with the word beside it green. */
+QLabel#readoutValue[tone="ok"]   { color: $focus; }
 QLabel#readoutValue[tone="warn"] { color: $accent_soft; }
 QLabel#readoutValue[tone="busy"] { color: $busy_text; }
-QLabel#readoutValue[tone="idle"] { color: $text_disabled; }
+/* $text_muted, not $text_disabled: idle measured 2.57:1 on dark and
+   2.01:1 on light against AA's 4.5:1, and the rows rendered that way are
+   PROFILE and MAL - the two facts a new user most needs to see. */
+QLabel#readoutValue[tone="idle"] { color: $text_muted; }
 
 QLabel#sidebarTitle {
     color: $text_strong; font-family: $font_display;
@@ -184,6 +195,17 @@ QLabel#discoverStateValue {
     color: $text; font-family: $font_mono;
     font-size: $font_sm; font-weight: 600; letter-spacing: 0.5px;
 }
+/* The same tone vocabulary the rail's readout uses, so READY/BUSY/FAULT mean
+   the same thing in both places. */
+QLabel#discoverStateValue[tone="ok"]    { color: $focus; }
+QLabel#discoverStateValue[tone="busy"]  { color: $busy_text; }
+QLabel#discoverStateValue[tone="error"] { color: $danger_text; }
+/* The sentence beside the state: prose, so the reading face. It used to be
+   written into the STATE field itself and rendered as wrapped monospace. */
+QLabel#discoverStatusMessage {
+    color: $text_muted; font-family: $font_stack;
+    font-size: $font_sm; font-weight: 400; letter-spacing: 0;
+}
 QFrame#stripDivider { background: $border_strong; border: none; }
 
 /* CHANGE [FEED-FURNITURE]: the feed's own controls were still sentence-case
@@ -193,7 +215,8 @@ QFrame#stripDivider { background: $border_strong; border: none; }
 QPushButton[feedback="liked"], QPushButton[feedback="disliked"],
 QPushButton[savedAction="true"], QPushButton[viewToggle="true"],
 QPushButton#recommendationDetailsButton, QPushButton#recommendationMoreButton,
-QPushButton#recommendationHideButton, QPushButton#recommendationMalButton {
+QPushButton#recommendationHideButton, QPushButton#recommendationMalButton,
+QPushButton#recommendationFilterToggle {
     font-family: $font_mono; font-size: $font_xs; font-weight: 700;
     letter-spacing: 1px; border-radius: 0;
 }
@@ -305,7 +328,9 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit {
 /* CHANGE [ROW]: a spin box wraps its own line edit, which takes the padding
    above a second time and pushed the control to 40px against every other
    control's 36. The outer padding comes back down by the difference. */
-QSpinBox, QDoubleSpinBox { padding: 5px 9px; }
+/* Numeric fields take the numeric face: these hold counts and multipliers
+   ("10", "Any", "1.00x"), and they were rendering in the reading face. */
+QSpinBox, QDoubleSpinBox { padding: 5px 9px; font-family: $font_mono; }
 QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover { border-color: $border_strong; }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border: 2px solid $focus; }
 QLineEdit:read-only { background: $well; color: $text_muted; }
@@ -329,13 +354,18 @@ QMenu::item:selected { background: $accent; color: $accent_contrast; }
    near-identical; a solid slab the moment a gradient theme pulled them apart.
    These controls belong to whatever surface is behind them. */
 QCheckBox, QRadioButton, QSlider { background: transparent; }
-QCheckBox { spacing: 10px; color: $text; }
+/* min-height so a check-box row occupies the same band as every other
+   control in the grid. The rows ran 36/36/36/36/16/16 and the label column
+   sat against two different control heights. */
+QCheckBox { spacing: 10px; color: $text; min-height: 20px; padding: 8px 0; }
 QCheckBox::indicator {
     width: 13px; height: 13px; border: 1px solid $border_strong;
     border-radius: ${radius_sm}px; background: $surface_sunken;
 }
 QCheckBox::indicator:hover { border-color: $focus; }
-QCheckBox::indicator:checked { background: $accent; border-color: $accent_hover; }
+/* Cyan: a settings check box is machine configuration, not the user's
+   taste, and amber is reserved for what is theirs. */
+QCheckBox::indicator:checked { background: $focus; border-color: $focus; }
 QRadioButton { spacing: 8px; color: $text; }
 QRadioButton::indicator {
     width: 15px; height: 15px; border: 1px solid $border_strong;
@@ -406,6 +436,24 @@ QLabel#wizardStepIndicator { color: $text_muted; font-weight: 700; }
 QLabel#wizardRequiredHint, QLabel#wizardFieldHint { color: $text_muted; font-size: $font_sm; }
 QLabel#wizardIntro { color: $text; font-size: $font_md; }
 QLabel#wizardSteps { color: $text_muted; font-size: $font_sm; }
+/* The wizard's form keys and machine-value fields, so the first screen a new
+   user sees belongs to the same machine as Settings. The keys were rendering
+   as prose in the reading face; the inputs hold a hex client id, a secret and
+   a redirect URI - machine values, which take the machine face. */
+QLabel#wizardFieldKey {
+    color: $text_muted; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 600; letter-spacing: 1px;
+}
+QLineEdit#apiClientIdInput, QLineEdit#apiClientSecretInput,
+QLineEdit#apiRedirectUriInput, QLineEdit#malProfileReferenceInput,
+QLineEdit#settingsClientId, QLineEdit#settingsClientSecret {
+    font-family: $font_mono;
+}
+
+/* The colour here applies only to any plain text in the label. The label
+   holds an <a>, and Qt takes anchor colour from QPalette::Link - set in
+   theme.py - never from a stylesheet. Changing the value below will not
+   change the link. */
 QLabel#wizardApiLink { color: $accent_soft; font-weight: 600; }
 QLabel#apiTestStatus, QLabel#oauthStatusLabel, QLabel#analysisStatusLabel { color: $text_muted; }
 
@@ -527,7 +575,7 @@ QFrame#recommendationLibraryBar {
 QPushButton[libraryTab="true"] {
     background: transparent; border: 1px solid $border; border-radius: 0;
     color: $text_subtle; padding: 7px 12px; min-height: 20px;
-    font-family: $font_display; font-size: $font_xs; font-weight: 600;
+    font-family: $font_mono; font-size: $font_xs; font-weight: 600;
     letter-spacing: 2px;
 }
 /* CHANGE [FOCUS]: selection takes amber, focus on an unselected tab takes
@@ -558,8 +606,11 @@ QLabel#recommendationFilterLabel, QLabel#recommendationResultCount { color: $tex
 QFrame#recommendationEmptyPanel {
     background: transparent; border: none; border-radius: 0;
 }
+/* An empty collection is an absence, not the user's action, so it does not
+   get amber - and a solid filled plate above a heading is the mobile
+   empty-state illustration idiom. Outline only. */
 QLabel#recommendationEmptyIcon {
-    background: $accent; color: $accent_contrast; border: 1px solid $accent_hover;
+    background: transparent; color: $border_strong; border: 1px solid $border_strong;
     border-radius: 0; font-family: $font_mono; font-size: $font_2xl; font-weight: 800;
 }
 QLabel#recommendationEmptyTitle {
@@ -661,7 +712,10 @@ QGroupBox[settingsCard="true"] QLabel#settingsApiStatus {
     font-family: $font_stack; font-size: $font_sm;
     font-weight: 400; letter-spacing: 0; color: $text_muted;
 }
-/* Panel actions are controls. */
+/* Panel actions are controls - and so are the page's own footer actions,
+   which sit outside any group box and were falling through to the reading
+   face while every button beside them was mono. */
+QWidget#page-settings QPushButton,
 QGroupBox[settingsCard="true"] QPushButton {
     font-family: $font_mono; font-size: $font_xs;
     font-weight: 700; letter-spacing: 1px; border-radius: 0;

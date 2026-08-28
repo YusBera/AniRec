@@ -67,17 +67,18 @@ SCRIM_RAMP = (
 READOUT_HALO_ALPHA = 205
 READOUT_HALO_SPREAD = 2
 
-# The bloom is a blurred copy of the glyphs, not offset copies of them. Four
-# translated draws at low alpha produced four legible ghosts rather than a
-# glow - visible on the render as a doubled "93%". The blur is the same cheap
-# scale-down-scale-up used for the cover backdrop.
-READOUT_BLOOM_ALPHA = 132
-READOUT_BLOOM_DIVISOR = 3
 RAIL_HEIGHT = 4.0
 # How much a hovered cell grows, and the share its neighbours take. The
 # falloff is what makes dragging along the rail feel continuous instead
 # of like stepping between separate buttons.
-CELL_LIFT = 7.0
+#
+# CHANGE [RAIL-LIFT]: 2.0, not 7.0. On a 4px rail a 7px lift grew the hovered
+# cell to 275% of its height with its neighbours trailing behind it, which is
+# a magnifying dock - phone-app motion, and on the one widget in the product
+# that is a measurement. A rail that deforms under the cursor is harder to
+# read at exactly the moment the user is trying to read it. 2.0 still marks
+# which contribution is under the pointer without restating its magnitude.
+CELL_LIFT = 2.0
 NEIGHBOUR_SHARE = 0.5
 RAIL_GAP = 3.0
 CELL_PITCH = 7
@@ -331,31 +332,13 @@ class MatchBadge(QWidget):
         ):
             painter.drawText(text_rect.translated(dx, dy), alignment, label)
 
-        # The bloom: the glyphs drawn once into a transparent layer, scaled
-        # down and back up so they smear, then composited under the crisp
-        # text. One bilinear pass each way, no convolution, and it reads as
-        # light spreading in the mask rather than as a second number.
-        layer = QPixmap(self.size())
-        layer.fill(Qt.GlobalColor.transparent)
-        scratch = QPainter(layer)
-        scratch.setFont(font)
-        scratch.setPen(QPen(self._fill))
-        scratch.drawText(text_rect, alignment, label)
-        scratch.end()
-        divisor = max(2, READOUT_BLOOM_DIVISOR)
-        smeared = layer.scaled(
-            max(1, layer.width() // divisor),
-            max(1, layer.height() // divisor),
-            Qt.AspectRatioMode.IgnoreAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        ).scaled(
-            layer.size(),
-            Qt.AspectRatioMode.IgnoreAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        painter.setOpacity(READOUT_BLOOM_ALPHA / 255.0)
-        painter.drawPixmap(0, 0, smeared)
-        painter.setOpacity(1.0)
+        # CHANGE [BLOOM]: the bloom is gone. The readout already carries an
+        # eight-direction halo at alpha 205, and stacking a second glow on top
+        # of it was more phosphor than a two-digit number needs - the kind of
+        # decoration that reads as an effect rather than as a measurement.
+        # It also drops a full-size QPixmap allocation and two bilinear scales
+        # from every paint, though that measured as only 1.33ms -> 1.25ms: the
+        # reason to remove it is that it was decoration, not that it was slow.
 
         painter.setPen(QPen(self._fill))
         painter.drawText(text_rect, alignment, label)

@@ -151,6 +151,40 @@ class WelcomePage(WizardPage):
         self.content_layout.insertWidget(4, self.connect_hint)
 
 
+
+def _configure_wizard_form(form: QFormLayout) -> None:
+    """Give the wizard's forms the key column Settings already uses.
+
+    The wizard was a stock Qt form on a dark background: labels left-aligned
+    at Qt's default, sitting beside inputs that grew or did not depending on
+    what was in them, on the first screen a new user sees. Settings had all of
+    this settled; this is the same treatment, so the two surfaces read as the
+    same machine.
+    """
+    form.setLabelAlignment(
+        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+    )
+    form.setFormAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+    form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+    form.setHorizontalSpacing(18)
+    form.setVerticalSpacing(8)
+
+
+def _name_field_keys(form: QFormLayout) -> None:
+    """Tag the labels QFormLayout creates so they can be styled as keys.
+
+    ``addRow("Client ID", widget)`` builds its own QLabel, which has no object
+    name and therefore falls through to the reading face. Naming them after
+    the fact is what lets the stylesheet treat them as panel keys rather than
+    as prose.
+    """
+    for row in range(form.rowCount()):
+        item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
+        widget = item.widget() if item is not None else None
+        if widget is not None and not widget.objectName() and widget.text().strip():
+            widget.setObjectName("wizardFieldKey")
+
 class ApiSettingsPage(WizardPage):
     test_requested = Signal(object, str)
 
@@ -160,6 +194,7 @@ class ApiSettingsPage(WizardPage):
         self._saved_secret = initial_settings.client_secret
 
         form = QFormLayout()
+        _configure_wizard_form(form)
         self.client_id_input = QLineEdit(initial_settings.client_id or "")
         self.client_id_input.setObjectName("apiClientIdInput")
         self.profile_reference_input = QLineEdit()
@@ -213,6 +248,7 @@ class ApiSettingsPage(WizardPage):
         self.content_layout.insertWidget(1, self.intro_label)
         self.content_layout.insertWidget(2, self.api_link)
         self.content_layout.insertWidget(3, self.steps_label)
+        _name_field_keys(form)
         self.content_layout.insertLayout(4, form)
 
         self.test_button = QPushButton(WIZARD_TEXT.test_connection)
@@ -358,6 +394,7 @@ class AnalysisPage(WizardPage):
     def __init__(self) -> None:
         super().__init__(WizardStep.ANALYSIS)
         form = QFormLayout()
+        _configure_wizard_form(form)
         self.top_limit_input = self._spinbox(1, 10_000, 500)
         self.recommendation_count_input = self._spinbox(1, 100, 10)
         self.candidate_pool_input = self._spinbox(1, 10_000, 150)
@@ -366,6 +403,7 @@ class AnalysisPage(WizardPage):
         form.addRow(WIZARD_TEXT.recommendation_count, self.recommendation_count_input)
         form.addRow(WIZARD_TEXT.candidate_pool_size, self.candidate_pool_input)
         form.addRow(WIZARD_TEXT.randomness_factor, self.randomness_input)
+        _name_field_keys(form)
         self.content_layout.insertLayout(1, form)
 
         self.status_label = QLabel(WIZARD_TEXT.analysis_ready)

@@ -34,8 +34,13 @@ QFrame#sidebar QPushButton[navItem="true"] {
 QFrame#sidebar QPushButton[navItem="true"]:hover {
     background: #0C1410; color: #C6D4C2;
 }
+/* CHANGE [RAIL-MARK]: the selection mark is a widget (NavMarker) that
+   travels between rows, not a border colour that teleports. The 3px
+   transparent border-left stays on every row so the mark occupies reserved
+   space rather than shifting the labels when it arrives. Focus keeps its own
+   rail colour: an unselected focused row must still be tellable apart. */
 QFrame#sidebar QPushButton[navItem="true"]:checked {
-    background: #0C1410; color: #E9C275; border-left-color: #D9A441;
+    background: #0C1410; color: #E9C275;
 }
 /* Focus and selection must stay tellable apart: an unselected item takes the
    rail in the system colour, the selected one keeps brass and gains a ring. */
@@ -43,7 +48,7 @@ QFrame#sidebar QPushButton[navItem="true"]:focus:!checked {
     background: #0C1410; border-left-color: #5FBFB5;
 }
 QFrame#sidebar QPushButton[navItem="true"]:focus:checked {
-    border-left-color: #D9A441; color: #DCE8D8;
+    color: #DCE8D8;
 }
 
 /* The system readout. Keys recede, values carry a state tone. */
@@ -67,10 +72,16 @@ QLabel#readoutValue {
     color: #849686; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
     font-weight: 600; letter-spacing: 1px;
 }
-QLabel#readoutValue[tone="ok"]   { color: #6FCF99; }
+/* "ok" here means the system is fine, which is cyan's job. This was
+   #6FCF99 - a green that appears nowhere else in the design and left
+   the ENGINE lamp cyan with the word beside it green. */
+QLabel#readoutValue[tone="ok"]   { color: #5FBFB5; }
 QLabel#readoutValue[tone="warn"] { color: #E9C275; }
 QLabel#readoutValue[tone="busy"] { color: #8FCFC7; }
-QLabel#readoutValue[tone="idle"] { color: #47564A; }
+/* #849686, not #47564A: idle measured 2.57:1 on dark and
+   2.01:1 on light against AA's 4.5:1, and the rows rendered that way are
+   PROFILE and MAL - the two facts a new user most needs to see. */
+QLabel#readoutValue[tone="idle"] { color: #849686; }
 
 QLabel#sidebarTitle {
     color: #DCE8D8; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif;
@@ -139,6 +150,17 @@ QLabel#discoverStateValue {
     color: #C6D4C2; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace;
     font-size: 8.3pt; font-weight: 600; letter-spacing: 0.5px;
 }
+/* The same tone vocabulary the rail's readout uses, so READY/BUSY/FAULT mean
+   the same thing in both places. */
+QLabel#discoverStateValue[tone="ok"]    { color: #5FBFB5; }
+QLabel#discoverStateValue[tone="busy"]  { color: #8FCFC7; }
+QLabel#discoverStateValue[tone="error"] { color: #D98363; }
+/* The sentence beside the state: prose, so the reading face. It used to be
+   written into the STATE field itself and rendered as wrapped monospace. */
+QLabel#discoverStatusMessage {
+    color: #849686; font-family: "Yu Gothic UI", "Meiryo UI", "Segoe UI Variable Text", "Segoe UI", "Noto Sans CJK JP", "DejaVu Sans", sans-serif;
+    font-size: 8.3pt; font-weight: 400; letter-spacing: 0;
+}
 QFrame#stripDivider { background: #2E4636; border: none; }
 
 /* CHANGE [FEED-FURNITURE]: the feed's own controls were still sentence-case
@@ -148,7 +170,8 @@ QFrame#stripDivider { background: #2E4636; border: none; }
 QPushButton[feedback="liked"], QPushButton[feedback="disliked"],
 QPushButton[savedAction="true"], QPushButton[viewToggle="true"],
 QPushButton#recommendationDetailsButton, QPushButton#recommendationMoreButton,
-QPushButton#recommendationHideButton, QPushButton#recommendationMalButton {
+QPushButton#recommendationHideButton, QPushButton#recommendationMalButton,
+QPushButton#recommendationFilterToggle {
     font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt; font-weight: 700;
     letter-spacing: 1px; border-radius: 0;
 }
@@ -260,7 +283,9 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit {
 /* CHANGE [ROW]: a spin box wraps its own line edit, which takes the padding
    above a second time and pushed the control to 40px against every other
    control's 36. The outer padding comes back down by the difference. */
-QSpinBox, QDoubleSpinBox { padding: 5px 9px; }
+/* Numeric fields take the numeric face: these hold counts and multipliers
+   ("10", "Any", "1.00x"), and they were rendering in the reading face. */
+QSpinBox, QDoubleSpinBox { padding: 5px 9px; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; }
 QLineEdit:hover, QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover { border-color: #2E4636; }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus { border: 2px solid #5FBFB5; }
 QLineEdit:read-only { background: #040806; color: #849686; }
@@ -284,13 +309,18 @@ QMenu::item:selected { background: #D9A441; color: #0A0F0B; }
    near-identical; a solid slab the moment a gradient theme pulled them apart.
    These controls belong to whatever surface is behind them. */
 QCheckBox, QRadioButton, QSlider { background: transparent; }
-QCheckBox { spacing: 10px; color: #C6D4C2; }
+/* min-height so a check-box row occupies the same band as every other
+   control in the grid. The rows ran 36/36/36/36/16/16 and the label column
+   sat against two different control heights. */
+QCheckBox { spacing: 10px; color: #C6D4C2; min-height: 20px; padding: 8px 0; }
 QCheckBox::indicator {
     width: 13px; height: 13px; border: 1px solid #2E4636;
     border-radius: 0px; background: #0A120E;
 }
 QCheckBox::indicator:hover { border-color: #5FBFB5; }
-QCheckBox::indicator:checked { background: #D9A441; border-color: #E8B85C; }
+/* Cyan: a settings check box is machine configuration, not the user's
+   taste, and amber is reserved for what is theirs. */
+QCheckBox::indicator:checked { background: #5FBFB5; border-color: #5FBFB5; }
 QRadioButton { spacing: 8px; color: #C6D4C2; }
 QRadioButton::indicator {
     width: 15px; height: 15px; border: 1px solid #2E4636;
@@ -361,6 +391,24 @@ QLabel#wizardStepIndicator { color: #849686; font-weight: 700; }
 QLabel#wizardRequiredHint, QLabel#wizardFieldHint { color: #849686; font-size: 8.3pt; }
 QLabel#wizardIntro { color: #C6D4C2; font-size: 9.0pt; }
 QLabel#wizardSteps { color: #849686; font-size: 8.3pt; }
+/* The wizard's form keys and machine-value fields, so the first screen a new
+   user sees belongs to the same machine as Settings. The keys were rendering
+   as prose in the reading face; the inputs hold a hex client id, a secret and
+   a redirect URI - machine values, which take the machine face. */
+QLabel#wizardFieldKey {
+    color: #849686; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 600; letter-spacing: 1px;
+}
+QLineEdit#apiClientIdInput, QLineEdit#apiClientSecretInput,
+QLineEdit#apiRedirectUriInput, QLineEdit#malProfileReferenceInput,
+QLineEdit#settingsClientId, QLineEdit#settingsClientSecret {
+    font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace;
+}
+
+/* The colour here applies only to any plain text in the label. The label
+   holds an <a>, and Qt takes anchor colour from QPalette::Link - set in
+   theme.py - never from a stylesheet. Changing the value below will not
+   change the link. */
 QLabel#wizardApiLink { color: #E9C275; font-weight: 600; }
 QLabel#apiTestStatus, QLabel#oauthStatusLabel, QLabel#analysisStatusLabel { color: #849686; }
 
@@ -482,7 +530,7 @@ QFrame#recommendationLibraryBar {
 QPushButton[libraryTab="true"] {
     background: transparent; border: 1px solid #1E2E24; border-radius: 0;
     color: #748676; padding: 7px 12px; min-height: 20px;
-    font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 7.4pt; font-weight: 600;
+    font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt; font-weight: 600;
     letter-spacing: 2px;
 }
 /* CHANGE [FOCUS]: selection takes amber, focus on an unselected tab takes
@@ -513,8 +561,11 @@ QLabel#recommendationFilterLabel, QLabel#recommendationResultCount { color: #849
 QFrame#recommendationEmptyPanel {
     background: transparent; border: none; border-radius: 0;
 }
+/* An empty collection is an absence, not the user's action, so it does not
+   get amber - and a solid filled plate above a heading is the mobile
+   empty-state illustration idiom. Outline only. */
 QLabel#recommendationEmptyIcon {
-    background: #D9A441; color: #0A0F0B; border: 1px solid #E8B85C;
+    background: transparent; color: #2E4636; border: 1px solid #2E4636;
     border-radius: 0; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 14.4pt; font-weight: 800;
 }
 QLabel#recommendationEmptyTitle {
@@ -616,7 +667,10 @@ QGroupBox[settingsCard="true"] QLabel#settingsApiStatus {
     font-family: "Yu Gothic UI", "Meiryo UI", "Segoe UI Variable Text", "Segoe UI", "Noto Sans CJK JP", "DejaVu Sans", sans-serif; font-size: 8.3pt;
     font-weight: 400; letter-spacing: 0; color: #849686;
 }
-/* Panel actions are controls. */
+/* Panel actions are controls - and so are the page's own footer actions,
+   which sit outside any group box and were falling through to the reading
+   face while every button beside them was mono. */
+QWidget#page-settings QPushButton,
 QGroupBox[settingsCard="true"] QPushButton {
     font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
     font-weight: 700; letter-spacing: 1px; border-radius: 0;

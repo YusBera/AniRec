@@ -261,7 +261,11 @@ class DiscoverTextCatalog:
     refresh: str = "RUN ANALYSIS"
     refreshing: str = "ANALYSING…"
     refresh_accessible: str = "Update your anime list and pick new recommendations"
+    # A field captioned STATE holds states, not sentences. The message
+    # that used to be written here now has its own prose label beside it.
     status_ready: str = "READY"
+    status_busy: str = "BUSY"
+    status_fault: str = "FAULT"
     status_never_synced: str = "Connect your MyAnimeList account to get started."
     status_synced_template: str = "Last updated {when}."
     taste_show: str = "EXPAND"

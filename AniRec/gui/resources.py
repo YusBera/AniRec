@@ -26,9 +26,62 @@ def placeholder_pixmap(*, base_override: str | Path | None = None) -> QPixmap:
     return QPixmap(str(path)) if path.is_file() else QPixmap()
 
 
+# Natural size of the cover placeholder artwork, and the theme roles its
+# three substitutable colours are taken from.
+COVER_PLACEHOLDER_SIZE = (440, 660)
+COVER_PLACEHOLDER_ROLES = {
+    "@ground@": ("resolvedWell", "#040806"),
+    "@border@": ("resolvedBorder", "#1E2E24"),
+    "@mark@": ("resolvedCoverMark", "#2E4636"),
+}
+
+_COVER_PLACEHOLDER_CACHE: dict[tuple[str, str, str], QPixmap] = {}
+
+
 def cover_placeholder_pixmap(*, base_override: str | Path | None = None) -> QPixmap:
+    """Render the "no artwork" plate in the colours of the active theme.
+
+    The file used to be loaded straight through ``QPixmap``, so it shipped
+    hardcoded neutral greys: correct against nothing, and in light mode four
+    near-black slabs sat in a sage-paper interface. Qt's SVG renderer has no
+    CSS cascade, so the palette is substituted into the source text before
+    rendering, exactly as ``ui_icon_pixmap`` does for the interface icons.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    application = QApplication.instance()
+    colours = {}
+    for token, (role, fallback) in COVER_PLACEHOLDER_ROLES.items():
+        value = application.property(role) if application is not None else None
+        colours[token] = str(value or fallback)
+
+    key = (colours["@ground@"], colours["@border@"], colours["@mark@"])
+    cached = _COVER_PLACEHOLDER_CACHE.get(key)
+    if cached is not None:
+        return cached
+
     path = resource_path(COVER_PLACEHOLDER_RESOURCE, base_override=base_override)
-    return QPixmap(str(path)) if path.is_file() else QPixmap()
+    if not path.is_file():
+        return QPixmap()
+    source = path.read_text(encoding="utf-8")
+    for token, colour in colours.items():
+        source = source.replace(token, colour)
+
+    renderer = QSvgRenderer(QByteArray(source.encode("utf-8")))
+    if not renderer.isValid():
+        return QPixmap()
+    pixmap = QPixmap(*COVER_PLACEHOLDER_SIZE)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    _COVER_PLACEHOLDER_CACHE[key] = pixmap
+    return pixmap
+
+
+def clear_cover_placeholder_cache() -> None:
+    """Drop the rendered plates so the next request re-renders per theme."""
+    _COVER_PLACEHOLDER_CACHE.clear()
 
 
 FONT_RESOURCE_DIR = "gui/resources/fonts"

@@ -6,7 +6,7 @@ from enum import Enum
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPalette
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
 from ..infrastructure.paths import resource_path
@@ -107,6 +107,31 @@ class ThemeManager:
         self.application.setProperty("resolvedText", colours["text"])
         self.application.setProperty("resolvedTextSubtle", colours["text_subtle"])
         self.application.setProperty("resolvedSignal", colours["focus"])
+        # The rail's ground. Published so a lamp can fill its own box with the
+        # colour behind it and declare itself opaque: a translucent 16px widget
+        # forces Qt to repaint every ancestor under it on each flicker tick,
+        # which measured as 8 full-window repaints a second while idle.
+        self.application.setProperty("resolvedSidebar", colours["sidebar"])
+        # The dim wordmark on the "no artwork" plate. Published because Qt's
+        # SVG renderer has no cascade, so the colour is substituted into the
+        # placeholder's source text before it is rendered.
+        self.application.setProperty("resolvedCoverMark", colours["border_strong"])
+        # CHANGE [LINK]: rich text takes its anchor colour from
+        # ``QPalette::Link``, never from a stylesheet ``color``. The sheet
+        # declared ``QLabel#wizardApiLink { color: $accent_soft; }`` and that
+        # rule has no effect on an <a> - the wizard's link shipped rendering
+        # #99ebff, a blue belonging to no theme here, on the first screen a
+        # new user sees. This is the same class of bug as the unstyled slider
+        # that drew in the platform highlight colour.
+        #
+        # Set on the palette, so every rich-text link in the application is
+        # fixed in one place rather than per label.
+        link_palette = QPalette(self.application.palette())
+        link_palette.setColor(QPalette.ColorRole.Link, QColor(colours["accent_soft"]))
+        link_palette.setColor(
+            QPalette.ColorRole.LinkVisited, QColor(colours["accent_soft"])
+        )
+        self.application.setPalette(link_palette)
         # Publish painted-widget colours before the style change event.  The
         # score rail and scanline panels then repaint in the incoming palette,
         # rather than briefly retaining the previous theme.

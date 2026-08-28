@@ -139,7 +139,9 @@ def test_a_failed_operation_reports_inline_rather_than_opening_a_window():
     window._on_operation_error("sync:p1", error)
 
     assert window.error_dialogs == {}
-    status = window.discover_page.status_label.text()
-    assert "Could not reach MyAnimeList" in status
-    assert "Check your connection" in status
+    message = window.discover_page.message_label.text()
+    assert "Could not reach MyAnimeList" in message
+    assert "Check your connection" in message
+    # A field captioned STATE holds a state, and a failure is one.
+    assert window.discover_page.status_label.text() == "FAULT"
     window.close()

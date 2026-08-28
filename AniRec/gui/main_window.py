@@ -79,12 +79,19 @@ from .about_page import AboutPage
 from .discover_page import DiscoverPage
 from .home_page import ACTION_GENERATE, ACTION_SYNC, HomePage
 from .genre_analysis_page import GenreAnalysisPage
-from .instrument_widgets import InstrumentPanel, Scanlines, StatusLight
+from .instrument_widgets import (
+    ChannelWipe,
+    InstrumentPanel,
+    NavMarker,
+    Scanlines,
+    StatusLight,
+)
 from .error_dialog import ErrorDialog
 from .progress_dialog import OperationProgressDialog
 from .recommendation_page import RecommendationExplorerPage
 from .resources import (
     app_icon,
+    clear_cover_placeholder_cache,
     clear_ui_icon_cache,
     placeholder_pixmap,
     themed_ui_icon,
@@ -460,6 +467,16 @@ class MainWindow(QMainWindow):
             )
         self.genre_analysis_page.set_genre_stats(stats)
         self.discover_page.set_genre_stats(stats)
+        # The two lines that used to be asserted at construction, reported
+        # here instead - each only when the thing it names actually happened,
+        # and each carrying the count that proves it.
+        if result is not None:
+            self._log(
+                "source",
+                f"local vault mounted · {len(result.recommendations)} records",
+            )
+        if stats:
+            self._log("engine", f"taste vector restored · {len(stats)} genres")
         self.advanced_operations_page.set_profile(profile)
         self.settings_page.set_context(profile)
         settings = self.settings_service.load()
@@ -553,6 +570,11 @@ class MainWindow(QMainWindow):
             self.navigation_buttons[definition.page_id] = button
             layout.addWidget(button)
 
+        # One mark that travels between the rows, rather than a border colour
+        # that teleports. Parented to the rail so it can be positioned across
+        # button boundaries.
+        self.nav_marker = NavMarker(sidebar)
+
         layout.addWidget(self._hairline())
         self.system_readout = SystemReadout()
         layout.addWidget(self.system_readout)
@@ -571,14 +593,24 @@ class MainWindow(QMainWindow):
         version_note.setContentsMargins(14, 8, 14, 12)
         layout.addWidget(version_note)
         self._refresh_system_readout()
-        self.system_log.boot(
-            (
-                ("boot", f"core {APP_VERSION} online"),
-                ("boot", "local vault mounted"),
-                ("engine", "taste vector restored"),
-                ("engine", "scoring engine armed"),
-            )
-        )
+        # CHANGE [TELEMETRY]: three of the four lines that used to be here
+        # were literals fired unconditionally at construction, before any
+        # profile, vault or settings had loaded. "taste vector restored" was
+        # the worst of them - it asserted a restore in the same frame the rail
+        # above it truthfully reported PROFILE --, in the one panel whose job
+        # is to show that this application does not invent state.
+        #
+        # "local vault mounted" and "taste vector restored" now come from
+        # refresh_dashboard, where the load actually happens and there is a
+        # real count to print. "scoring engine armed" is gone rather than
+        # relocated: nothing is armed at any particular moment, and the
+        # ENGINE row already reports readiness.
+        # Appended, not paced through ``boot()``. The boot gate holds
+        # ``_booting`` until its sequence finishes and queues every real event
+        # that arrives meanwhile; with a single line there is nothing to pace,
+        # and the gate only risks swallowing the genuine startup traffic that
+        # follows it. ``boot()`` stays for any caller with a real sequence.
+        self.system_log.append("boot", f"core {APP_VERSION} online")
         return sidebar
 
     @staticmethod
@@ -606,9 +638,13 @@ class MainWindow(QMainWindow):
         profile_name = self._profile_name
         readout.set_value("PROFILE", profile_name or "--", tone="ok" if profile_name else "idle")
         connected = self._mal_connected
+        # "warn", not "idle". Offline is a state the user can act on; an
+        # absent profile is simply nothing yet. Both rendered identically
+        # before, so the cluster could not tell "not connected" from "not
+        # applicable" - and colour was the only thing distinguishing them.
         readout.set_value(
             "MAL", "ONLINE" if connected else "OFFLINE",
-            tone="ok" if connected else "idle",
+            tone="ok" if connected else "warn",
         )
 
     def _build_content_area(self) -> QWidget:
@@ -632,7 +668,10 @@ class MainWindow(QMainWindow):
         banner_label = QLabel(WIZARD_TEXT.demo_banner)
         banner_label.setObjectName("demoBannerText")
         banner_button = QPushButton(WIZARD_TEXT.demo_banner_action)
-        banner_button.setProperty("buttonRole", "primary")
+        # Secondary, not primary: this is a standing notice, not the action
+        # the screen is asking for. Two solid amber buttons in the top 180px
+        # meant neither of them read as the primary one.
+        banner_button.setProperty("buttonRole", "secondary")
         banner_button.clicked.connect(self._leave_demo_mode)
         banner_layout.addWidget(banner_label)
         banner_layout.addWidget(banner_button)
@@ -692,6 +731,10 @@ class MainWindow(QMainWindow):
             self.page_indexes[definition.page_id] = index
             self.page_widgets[definition.page_id] = page
         layout.addWidget(self.page_stack, 1)
+        # The page-change wipe rides on the stack itself, so it spans the
+        # page and nothing else. Bounded and opaque, unlike the whole-page
+        # fade it replaced.
+        self.page_wipe = ChannelWipe(self.page_stack)
         return content
 
     @staticmethod
@@ -961,8 +1004,10 @@ class MainWindow(QMainWindow):
 
         The rendered pixmaps are cached by colour, so the cache is dropped
         first; otherwise the next request returns the previous theme's tint.
+        The cover placeholder is rendered the same way and goes with them.
         """
         clear_ui_icon_cache()
+        clear_cover_placeholder_cache()
         console = getattr(self, "system_log", None)
         if console is not None:
             console.retint()
@@ -989,7 +1034,7 @@ class MainWindow(QMainWindow):
         longer on screen. Discover carries the visible one.
         """
         self.home_page.show_activity(message, tone=tone)
-        self.discover_page.set_status(message)
+        self.discover_page.set_status(message, tone=tone)
         self._log("error" if tone == "error" else "status", message)
 
     def _on_operation_started(self, operation_key: str) -> None:
@@ -1117,9 +1162,38 @@ class MainWindow(QMainWindow):
     def navigate_to(self, page_id: PageId | str) -> None:
         """Select a page and keep visual/navigation state synchronized."""
         resolved_page_id = PageId(page_id)
+        changed = self.page_stack.currentIndex() != self.page_indexes[resolved_page_id]
         self.page_stack.setCurrentIndex(self.page_indexes[resolved_page_id])
         for page_id, button in self.navigation_buttons.items():
             button.setChecked(page_id is resolved_page_id)
+        self._move_nav_marker(resolved_page_id)
+        if changed:
+            self._mark_page_change()
+
+    def _move_nav_marker(self, page_id: PageId) -> None:
+        """Send the rail's selection mark to the row that is now current."""
+        marker = getattr(self, "nav_marker", None)
+        button = self.navigation_buttons.get(page_id)
+        if marker is None or button is None:
+            return
+        # No guard on the target's geometry here. Before the rail is laid out
+        # a nav button reports the rail's full height rather than its own, so
+        # there is nothing to test for - the mark takes whatever it is given
+        # and NavMarker re-syncs itself when the rail lays out.
+        marker.move_to(button)
+
+    def _mark_page_change(self) -> None:
+        """Run the wipe across the top of the page that just came up.
+
+        Deliberately not an opacity fade over the page: that buffers the whole
+        surface every frame and measured at five to seven frames on the card
+        feed, which reads as a stutter. This is a two-pixel opaque strip and
+        costs nothing underneath it.
+        """
+        wipe = getattr(self, "page_wipe", None)
+        if wipe is None:
+            return
+        wipe.run()
 
     @property
     def current_page_id(self) -> PageId:

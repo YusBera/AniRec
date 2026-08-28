@@ -67,7 +67,10 @@ def test_a_failure_is_reported_on_the_surface_not_in_a_window(window):
     window._on_operation_error("more-recommendations:p1", error)
 
     assert window.error_dialogs == {}
-    assert "Could not reach MyAnimeList" in window.discover_page.status_label.text()
+    # The sentence lives on the message label; the STATE field beside it
+    # reports the state, not the sentence.
+    assert "Could not reach MyAnimeList" in window.discover_page.message_label.text()
+    assert window.discover_page.status_label.text() == "FAULT"
 
 
 def test_a_retry_is_still_available_after_a_failure(window):

@@ -15,14 +15,12 @@ from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
     QPoint,
-    QPropertyAnimation,
     Qt,
     QTimer,
     Signal,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QGraphicsOpacityEffect,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -54,7 +52,7 @@ from .recommendation_card import CARD_WIDTH, RecommendationCard
 from .resources import themed_ui_icon, ui_icon_pixmap
 from .scaling import scaled
 from .design_tokens import SPACE
-from .instrument_widgets import InstrumentPanel, ScanSweep
+from .instrument_widgets import ChannelWipe, InstrumentPanel, ScanSweep
 from .recommendation_detail_dialog import RecommendationDetailDialog
 from .recommendation_row import RecommendationRow
 from .recommendation_view_model import RecommendationViewModel, recommendation_view_models
@@ -159,7 +157,6 @@ def _feedback_in_memory(
 
 
 # Long enough to read as a transition, short enough not to delay the switch.
-VIEW_FADE_MILLISECONDS = 160
 
 
 # Endless scrolling. The trigger is how close to the end of the feed a reader
@@ -828,6 +825,9 @@ class RecommendationExplorerPage(QWidget):
         )
         # One sweep widget over the viewport, not an effect per card.
         self.scan_sweep = ScanSweep(self.card_scroll.viewport())
+        # On the stack rather than on a view, so it spans whichever
+        # layout is current without being rebuilt per switch.
+        self._view_wipe = ChannelWipe(self.content_stack)
         self.card_scroll.viewport().installEventFilter(self)
         self.card_scroll.verticalScrollBar().valueChanged.connect(
             lambda _value: self._schedule_visible_covers()
@@ -1203,15 +1203,20 @@ class RecommendationExplorerPage(QWidget):
         self._visible_models = filter_and_sort_recommendations(
             state_filtered, self._filters(), self._sort_mode()
         )
-        if state_filter == "liked":
-            count_text = f"{len(self._visible_models)} liked anime"
-        elif state_filter == "disliked":
-            count_text = f"{len(self._visible_models)} disliked anime"
-        elif state_filter == "watch-later":
-            count_text = f"{len(self._visible_models)} saved for later"
+        # One register for the row: this sits immediately beside the feedback
+        # summary ("SAMPLE · 0 LIKED · 0 PASSED"), and the two were sentence
+        # case and caps in the same face on the same baseline.
+        #
+        # On a collection tab it reports SHOWN rather than naming the
+        # collection again. The tab already carries the collection's total and
+        # the summary carries the vote counts; repeating "LIKED" here put the
+        # same number on screen three times. SHOWN is also the more useful
+        # fact, because it is the count after the active filters.
+        if state_filter in ("liked", "disliked", "watch-later"):
+            count_text = f"{len(self._visible_models)} SHOWN"
         else:
             count_text = (
-                f"{len(self._visible_models)} unreviewed · {len(reviewed_ids)} filed"
+                f"{len(self._visible_models)} UNREVIEWED · {len(reviewed_ids)} FILED"
             )
         self.result_count_label.setText(count_text)
         self._update_library_tabs()
@@ -1226,27 +1231,27 @@ class RecommendationExplorerPage(QWidget):
         self._update_local_action_state()
 
     def _fade_in_current_view(self) -> None:
-        """Cross fade when the layout changes, so the switch is not a jump cut.
+        """Mark the layout change with a wipe across the top of the feed.
 
-        Short and opacity only. A longer or moving transition would fight the
-        scroll position the user is holding, and Qt has no CSS transition to
-        lean on here.
+        This was an opacity fade over the whole view. A graphics effect
+        re-renders its entire source into an offscreen buffer every frame, and
+        on a feed of cards that measured 26-54ms per frame - five to seven
+        frames for the whole transition, which reads as a stutter rather than
+        as a cross fade.
+
+        The wipe carries the same "this surface just changed" signal from a
+        two-pixel opaque strip, and measures at frame rate. It is also the
+        same motion the shell uses when the page changes, so switching layout
+        and switching page now speak with one voice.
         """
         widget = self.content_stack.currentWidget()
         if widget is None:
             return
-        effect = QGraphicsOpacityEffect(widget)
-        widget.setGraphicsEffect(effect)
-        animation = QPropertyAnimation(effect, b"opacity", self)
-        animation.setDuration(VIEW_FADE_MILLISECONDS)
-        animation.setStartValue(0.0)
-        animation.setEndValue(1.0)
-        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-        # Detach afterwards: a lingering effect forces the whole subtree
-        # through an offscreen buffer on every repaint.
-        animation.finished.connect(lambda: widget.setGraphicsEffect(None))
-        self._view_animation = animation
-        animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        self._view_wipe.run()
+        # Kept under its original name: the invariant the suite pins is that a
+        # layout switch animates and has a real duration, not which widget
+        # carries the animation.
+        self._view_animation = self._view_wipe.animation
 
     def _show_current_view(self) -> None:
         state_filter = self.state_filter.currentData()
@@ -1790,9 +1795,11 @@ class RecommendationExplorerPage(QWidget):
                 "· CONNECT TO KEEP"
             )
         elif not likes and not dislikes:
-            text = "MODEL READY · VOTE TO SHAPE THE FEED"
+            # Named for what is actually tested - a saved profile - rather
+            # than for a "model" this application does not have.
+            text = "PROFILE READY · VOTE TO SHAPE THE FEED"
         else:
-            text = f"MODEL LIVE · {likes} LIKED · {dislikes} PASSED"
+            text = f"VOTES SAVED · {likes} LIKED · {dislikes} PASSED"
         self.feedback_summary_label.setText(text)
         self.taste_folders_button.setText(
             f"Taste folders · {likes} liked · {dislikes} disliked"

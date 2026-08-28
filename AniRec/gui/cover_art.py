@@ -13,8 +13,9 @@ and the detail dialog cannot drift apart.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, Qt
+from PySide6.QtCore import QEasingCurve, QRectF, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap
+from PySide6.QtWidgets import QLabel, QWidget
 
 
 # How far the backdrop is scaled down before being scaled back up. The result
@@ -105,3 +106,76 @@ def rounded_cover(source: QPixmap, width: int, height: int, radius: int) -> QPix
     )
     painter.end()
     return canvas
+
+
+class CoverLabel(QLabel):
+    """A cover that dissolves in when its artwork actually arrives.
+
+    Artwork is fetched after the card is already on screen, so a cover used to
+    replace its placeholder between one frame and the next - the single most
+    visible pop in the feed, and the one moment where something real did
+    happen and the interface said nothing about it.
+
+    The fade is armed explicitly by the caller rather than firing on every
+    ``setPixmap``: re-fitting after a resize or a GUI-scale change also sets a
+    pixmap, and dissolving then would be motion attached to no event.
+
+    Paint-only. ``pixmap()`` returns the incoming artwork the moment it is
+    set, so anything reading the label sees the new cover immediately and only
+    the drawing lags.
+    """
+
+    FADE_MS = 220
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._outgoing: QPixmap | None = None
+        self._armed = False
+        self._mix = 0.0
+        self._fade = QVariantAnimation(self)
+        self._fade.setDuration(self.FADE_MS)
+        self._fade.setStartValue(1.0)
+        self._fade.setEndValue(0.0)
+        # Linear: a constant-rate dissolve, like every other transition here.
+        self._fade.setEasingCurve(QEasingCurve.Type.Linear)
+        self._fade.valueChanged.connect(self._on_mix)
+        self._fade.finished.connect(self._on_finished)
+
+    def arm_fade(self) -> None:
+        """The next pixmap is newly arrived artwork, so dissolve into it."""
+        self._armed = True
+
+    def _on_mix(self, value) -> None:
+        try:
+            self._mix = max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            return
+        self.update()
+
+    def _on_finished(self) -> None:
+        self._outgoing = None
+        self._mix = 0.0
+        self.update()
+
+    def setPixmap(self, pixmap: QPixmap) -> None:  # noqa: N802 - Qt API
+        if self._armed and not self.pixmap().isNull() and not pixmap.isNull():
+            self._outgoing = self.pixmap()
+            self._mix = 1.0
+            self._fade.stop()
+            self._fade.start()
+        self._armed = False
+        super().setPixmap(pixmap)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().paintEvent(event)
+        outgoing = self._outgoing
+        if outgoing is None or self._mix <= 0.0:
+            return
+        # The old cover laid back over the new one and taken away, so the
+        # artwork resolves rather than appearing.
+        painter = QPainter(self)
+        painter.setOpacity(self._mix)
+        x = (self.width() - outgoing.width()) // 2
+        y = (self.height() - outgoing.height()) // 2
+        painter.drawPixmap(x, y, outgoing)
+        painter.end()

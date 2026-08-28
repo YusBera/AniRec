@@ -1,21 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="440" height="660" viewBox="0 0 440 660">
   <metadata>Original AniRec portrait cover placeholder, created for this GPL-3.0 project.</metadata>
-  <defs>
-    <linearGradient id="bg" x1="40" y1="20" x2="410" y2="640" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#1A1A1C"/><stop offset="1" stop-color="#0E0E10"/>
-    </linearGradient>
-    <!-- Deliberately dim. A missing cover is the least interesting thing on a
-         card, so the mark reads as absence rather than competing with the
-         real artwork beside it. -->
-    <linearGradient id="a" x1="130" y1="160" x2="320" y2="470" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#6E6E70"/><stop offset="1" stop-color="#3A3A3C"/>
-    </linearGradient>
-  </defs>
-  <rect width="440" height="660" fill="url(#bg)"/>
-  <circle cx="344" cy="126" r="82" fill="#8A8A8C" opacity=".08"/>
-  <circle cx="92" cy="548" r="108" fill="#7A7A7C" opacity=".05"/>
-  <rect x="58" y="92" width="324" height="430" rx="18" fill="#141416" stroke="#3C3C3E" stroke-width="4"/>
-  <path d="M112 446l103-254c8-20 36-20 45 0l105 254h-65l-21-55h-91l-20 55h-56zm98-114h47l-24-68-23 68z" fill="url(#a)"/>
-  <path d="M158 556h124" stroke="#5A5A5C" stroke-width="12" stroke-linecap="round"/>
-  <path d="M188 586h64" stroke="#3E3E40" stroke-width="8" stroke-linecap="round"/>
+  <!--
+    A blank plate in the frame, not a skeleton loader.
+
+    The previous version was a rounded card (rx="18") with round line caps,
+    two blurred circles and two grey bars under a glyph - the loading-state
+    idiom from modern web apps, drawn in hardcoded neutral-blue greys that
+    belonged to no theme in this application. Nothing is loading here: this is
+    a permanent statement that a title has no artwork, and it is the largest
+    object on the primary surface whenever covers are missing.
+
+    So: square corners, one hairline frame, and a dim wordmark on the well.
+    Colours carry theme tokens rather than literals - Qt's SVG renderer has no
+    CSS cascade, so resources.cover_placeholder_pixmap substitutes them into
+    the source text before rendering, the same way the interface icons work.
+  -->
+  <rect width="440" height="660" fill="@ground@"/>
+  <rect x="1.5" y="1.5" width="437" height="657" fill="none" stroke="@border@" stroke-width="3"/>
+  <path d="M112 446l103-254c8-20 36-20 45 0l105 254h-65l-21-55h-91l-20 55h-56zm98-114h47l-24-68-23 68z" fill="@mark@"/>
 </svg>

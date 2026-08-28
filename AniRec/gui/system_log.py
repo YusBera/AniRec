@@ -32,6 +32,9 @@ from PySide6.QtWidgets import (
 # and the cost of re-rendering the document.
 MAX_LINES = 200
 
+# A record occupies a stamp/tag row and an indented message row.
+ROWS_PER_RECORD = 2
+
 # Delay between startup lines. Long enough to read as a sequence, short
 # enough that the panel is fully populated before anyone reaches for it.
 BOOT_LINE_MS = 130
@@ -149,7 +152,9 @@ class SystemLog(QFrame):
         self.view.setReadOnly(True)
         self.view.setUndoRedoEnabled(False)
         self.view.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
-        self.view.setMaximumBlockCount(MAX_LINES)
+        # Two blocks per record since a record is laid out over two rows,
+        # so the view holds the same MAX_LINES records the deque does.
+        self.view.setMaximumBlockCount(MAX_LINES * ROWS_PER_RECORD)
         self.view.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
@@ -177,14 +182,32 @@ class SystemLog(QFrame):
 
     # ---- writing -------------------------------------------------------
 
+    @staticmethod
+    def _compose(stamp: str, tag: str, body: str) -> str:
+        """Lay one record out over two rows.
+
+        CHANGE [WRAP]: every record used to be written as a single
+        ``HH:MM:SS TAG message`` line into a 200px column. Measured against
+        IBM Plex Mono at 7.4pt, not one real line fitted - they ran 204px to
+        354px - so every record wrapped, and the continuation row started
+        flush left in the timestamp's column. That destroyed the one thing
+        the tag column is for: being scannable without reading the messages.
+
+        The prefix alone is 14 characters, about 42% of the column, so no
+        amount of shortening it makes the single-line form fit. Splitting the
+        record instead keeps the stamp and tag on an uncluttered row that
+        always fits, and indents the message under it. The same vertical
+        space the ragged wrap was already using, spent deliberately.
+        """
+        return f"{stamp} {str(tag)[:7].upper()}\n  {body}"
+
     def append(self, tag: str, message: str) -> None:
         """Record one event. ``tag`` is a short uppercase channel name."""
         if self._booting:
             self._boot_queue.append((str(tag), str(message)))
             return
         stamp = datetime.now().strftime("%H:%M:%S")
-        line = f"{stamp} {str(tag)[:7].upper():<7} {message}"
-        self._lines.append(line)
+        self._lines.append(self._compose(stamp, tag, message))
         self._live_tag = None
         self._render(follow=self._at_tail())
 
@@ -194,7 +217,7 @@ class SystemLog(QFrame):
         stamp = datetime.now().strftime("%H:%M:%S")
         meter = render_meter(percent)
         suffix = f" {message}" if message else ""
-        line = f"{stamp} {key[:7]:<7} {meter}{suffix}"
+        line = self._compose(stamp, key, f"{meter}{suffix}")
 
         if self._live_tag == key and self._lines:
             self._lines[-1] = line
