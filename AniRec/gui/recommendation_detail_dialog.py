@@ -322,7 +322,7 @@ class RecommendationDetailDialog(QDialog):
 
     def set_model(self, model: RecommendationViewModel) -> None:
         self.model = model
-        self.setWindowTitle(f"{model.display_title} — Score Inspector")
+        self.setWindowTitle(f"{model.display_title} | Score Inspector")
         self.setAccessibleName(f"Score inspector for {model.display_title}")
         self.title_label.setText(model.display_title)
         self.secondary_title_label.setText(model.secondary_title or "")
@@ -339,13 +339,18 @@ class RecommendationDetailDialog(QDialog):
         self.episodes_label.setText(f"Episodes: {model.episodes_text}")
         self.status_label.setText(f"Status: {model.status}")
         self.year_label.setText(f"Airing year: {model.year_text}")
-        self.dates_label.setText(f"Aired: {model.start_date} — {model.end_date}")
+        self.dates_label.setText(f"Aired: {model.start_date} to {model.end_date}")
         self.synopsis_label.setText(model.synopsis)
         self.reason_label.setText(model.reason)
         contribution_text = self._contributions_text(model)
         self.contributions_label.setText(contribution_text)
         self._render_contributions(model)
-        self.score_track.set_data(model.genre_contributions, model.personal_match)
+        self.score_track.set_data(
+            model.genre_contributions,
+            model.personal_match,
+            genres=model.genres,
+            studios=model.studios,
+        )
         contribution_sum = sum(value for _name, value in model.genre_contributions)
         if model.genre_contributions:
             self.sum_total_label.setText(

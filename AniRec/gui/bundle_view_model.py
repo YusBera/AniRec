@@ -13,7 +13,7 @@ started and false of one they have not.
 
 Everything here is deliberately free of Qt and of services, so the grouping
 can be tested against plain data. What it cannot do is invent relation edges:
-see ``docs/BUNDLE_HANDOFF.md`` for why the edges are missing for exactly the
+see ``docs/design/BUNDLE_HANDOFF.md`` for why the edges are missing for exactly the
 franchises this wants to group, and what closing that costs.
 """
 

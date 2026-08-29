@@ -93,11 +93,11 @@ def test_dashboard_loads_profile_metrics_top_genres_and_recent_english_titles(
     assert home.metric_values["last_sync"].text() == "03 Aug 2026 · 17:30"
     assert home.metric_values["recommendations"].text() == "6"
     assert [home.genre_list.item(index).text() for index in range(5)] == [
-        "Action — 50.0",
-        "Mystery — 40.0",
-        "Comedy — 30.0",
-        "Drama — 20.0",
-        "Fantasy — 10.0",
+        "Action: 50.0",
+        "Mystery: 40.0",
+        "Comedy: 30.0",
+        "Drama: 20.0",
+        "Fantasy: 10.0",
     ]
     assert [home.recommendation_list.item(index).text() for index in range(5)] == [
         "English 1",

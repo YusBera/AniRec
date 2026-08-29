@@ -885,6 +885,556 @@ QLabel#bundlePanelLegend {
 QWidget#bundleUnfold { background: transparent; }
 
 /* ==========================================================================
+   FILTERS: PILLS, TAGS, TYPEAHEAD
+
+   None of this is a rounded chip. The application is a front panel, so an
+   active filter is a stencilled tag strip - caption in the machine face, the
+   value beside it, a hard dismiss box on the end - which is the object the
+   collection tabs and the rail readouts already are.
+
+   Each kind gets a colour, and the colour is a border and a caption tint
+   rather than a fill: eight solid chips in six colours is a bag of sweets,
+   and it is the values that should be read, not the categories. Every colour
+   is a role the palette already defines, so the row follows light, dark, OLED
+   and any gradient without a second palette.
+   ========================================================================== */
+QWidget#filterPillBar, QWidget#filterPillRow { background: transparent; }
+QFrame#filterPill {
+    background: $surface_sunken;
+    border: 1px solid $border_strong;
+    border-radius: 0;
+}
+QFrame#filterPill:hover { background: $surface_raised; border-color: $text_subtle; }
+/* Focus is the signal colour here as everywhere else, so a keyboard user can
+   see which of eight filters they are about to remove. */
+QFrame#filterPill:focus { border: 1px solid $focus; }
+QLabel#filterPillCaption {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 1px; background: transparent;
+}
+QLabel#filterPillValue {
+    color: $text; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 600; background: transparent;
+}
+/* The caption carries the kind. Genre uses the cool blue/aqua signal family;
+   studio uses the brass/orange accent family. The same mapping is used in
+   both contribution rails, so a category never changes meaning by surface. */
+QFrame#filterPill[filterKind="genre"] { border-color: $saved_border; }
+QFrame#filterPill[filterKind="genre"] QLabel#filterPillCaption { color: $saved_text; }
+QFrame#filterPill[filterKind="studio"] { border-color: $accent_muted; }
+QFrame#filterPill[filterKind="studio"] QLabel#filterPillCaption { color: $accent_soft; }
+QFrame#filterPill[filterKind="year"] QLabel#filterPillCaption { color: $text_muted; }
+QFrame#filterPill[filterKind="score"] QLabel#filterPillCaption { color: $warning_text; }
+QFrame#filterPill[filterKind="status"] QLabel#filterPillCaption { color: $text_muted; }
+QFrame#filterPill[filterKind="episodes"] QLabel#filterPillCaption { color: $text_muted; }
+QFrame#filterPill[filterKind="profile"] { border-color: $busy_border; }
+QFrame#filterPill[filterKind="profile"] QLabel#filterPillCaption { color: $busy_text; }
+/* A profile that is still loading recedes; one that failed takes the danger
+   border. Neither is a colour-only signal: the lamp, the accessible name and
+   the tooltip all carry the same fact in words. */
+QFrame#filterPill[pillState="loading"] { border-color: $busy_border; }
+QFrame#filterPill[pillState="loading"] QLabel#filterPillValue { color: $text_muted; }
+QFrame#filterPill[pillState="error"] {
+    background: $danger_bg; border-color: $danger_border;
+}
+QFrame#filterPill[pillState="error"] QLabel#filterPillCaption,
+QFrame#filterPill[pillState="error"] QLabel#filterPillValue { color: $danger_text; }
+QPushButton#filterPillDismiss {
+    background: transparent; border: none; border-radius: 0;
+    color: $text_subtle; font-family: $font_mono; font-size: $font_md;
+    font-weight: 700; padding: 0; min-height: 18px; text-align: center;
+}
+QPushButton#filterPillDismiss:hover { background: $danger_bg; color: $danger_text; }
+QPushButton#filterPillDismiss:focus { border: 1px solid $focus; background: transparent; }
+QPushButton#filterPillRetry, QPushButton#filterPillClear {
+    font-family: $font_mono; font-size: $font_xs; font-weight: 700;
+    letter-spacing: 1px; padding: 4px 6px; min-height: 16px;
+}
+
+/* Card metadata that filters. Compact by construction: no fill, a hairline
+   box, and the same size the genre sentence it replaced was set at, so the
+   card reads as metadata and not as a toolbar. Rows of these are laid into
+   exactly the height the old wrapped label reserved. */
+QPushButton#metadataTag, QPushButton#metadataTagOverflow {
+    background: transparent;
+    border: 1px solid $border;
+    border-radius: 0;
+    color: $text_muted;
+    font-family: $font_mono; font-size: $font_xs; font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 0px 5px; min-height: 12px; text-align: center;
+}
+QPushButton#metadataTag[tagKind="genre"] {
+    border-color: $saved_border; color: $saved_text;
+}
+QPushButton#metadataTag[tagKind="studio"] {
+    border-color: $accent_muted; color: $accent_soft;
+}
+QPushButton#metadataTag[tagKind="genre"]:hover {
+    background: $saved_bg; border-color: $saved_border; color: $saved_text;
+}
+QPushButton#metadataTag[tagKind="studio"]:hover {
+    background: $accent_muted; border-color: $accent; color: $accent_soft;
+}
+/* CHANGE [LINK]: the tag a hovered rail block belongs to. Written after the
+   tagKind rules so it wins on equal specificity, and it lights the tag in
+   that tag's own family rather than one shared highlight colour - a genre
+   stays in the saved/blue family, a studio stays brass, so the link is read
+   as "this one" rather than as a new kind of state. */
+QPushButton#metadataTag[tagKind="genre"][linked="true"] {
+    background: $saved_bg; border-color: $saved_text; color: $text_strong;
+}
+QPushButton#metadataTag[tagKind="studio"][linked="true"] {
+    background: $accent_muted; border-color: $accent_soft; color: $text_strong;
+}
+/* Hovering a contributor that is not one of these tags - the community term,
+   or pooled minor tags - recedes the whole strip. Silence would read the same
+   as hovering nothing; receding says "not from here". */
+QPushButton#metadataTag[dimmed="true"] {
+    border-color: $border_subtle; color: $text_disabled; background: transparent;
+}
+/* Keyboard reach has to be visible, or the tab order runs through controls
+   nobody can see they are on. */
+QPushButton#metadataTag:focus, QPushButton#metadataTagOverflow:focus {
+    border: 1px solid $focus; color: $focus;
+}
+QPushButton#metadataTagOverflow { color: $text_subtle; border-color: $border_subtle; }
+QPushButton#metadataTagOverflow:hover { border-color: $border_strong; color: $text; }
+QWidget#metadataTagStrip { background: transparent; }
+
+/* The genre and studio search, and the list it drops. The list is a child
+   widget rather than a popup window, so it is styled as part of the panel it
+   belongs to instead of as a floating menu. */
+QWidget#metadataTypeahead, QWidget#profileInput { background: transparent; }
+QLabel#filterControlLabel {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 600; letter-spacing: 1px;
+}
+QLineEdit#metadataTypeaheadInput, QLineEdit#profileInputField {
+    font-family: $font_mono; font-size: $font_sm;
+}
+QListWidget#metadataSuggestionList {
+    background: $surface_raised; border: 1px solid $border_strong;
+    border-radius: 0; padding: 2px;
+    font-family: $font_mono; font-size: $font_xs;
+}
+QListWidget#metadataSuggestionList::item {
+    padding: 4px 8px; border-radius: 0; color: $text;
+}
+QListWidget#metadataSuggestionList::item:hover { background: $surface_sunken; }
+/* The highlighted row is where Enter would land, so it takes the signal
+   colour rather than the accent: choosing a suggestion is machine assistance,
+   not a statement about the user's taste. */
+QListWidget#metadataSuggestionList::item:selected {
+    background: $selection; color: $focus;
+}
+QLabel#metadataSuggestionEmpty, QLabel#profileInputMessage {
+    color: $text_muted; font-size: $font_xs; padding: 3px 0;
+}
+QLabel#profileInputMessage[tone="error"] { color: $danger_text; }
+QLabel#profileInputMessage[tone="warn"] { color: $warning_text; }
+QPushButton#profileInputAdd {
+    font-family: $font_mono; font-size: $font_xs; font-weight: 700;
+    letter-spacing: 1px; border-radius: 0;
+}
+QFrame#discoverFilterWorkbench {
+    background: transparent; border: none;
+    border-top: 1px solid $border_subtle; border-radius: 0;
+}
+/* Group mode is stated once, in the readout vocabulary, rather than by a
+   toggle the user has to find and a second colour scheme for the feed. */
+QLabel#groupModeBanner {
+    background: $busy_bg; border: 1px solid $busy_border; border-radius: 0;
+    color: $busy_text; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 1px; padding: 5px 10px;
+}
+QLabel#groupModeBanner[tone="warn"] {
+    background: $warning_bg; border-color: $warning_border; color: $warning_text;
+}
+QLabel#groupModeBanner[tone="error"] {
+    background: $danger_bg; border-color: $danger_border; color: $danger_text;
+}
+
+/* ==========================================================================
+   COMPARE
+
+   The compatibility surface is the same machine as the feed. It borrows the
+   rack legend from the score inspector, the readout pairs from the navigation
+   rail, and the card from Discover. Nothing here is a KPI tile: a match score
+   is one large number in the accent, on the panel, with its supporting counts
+   in a row of readouts beside it - not four rounded cards with drop shadows.
+   ========================================================================== */
+QWidget#page-compare { background: $gradient_page; }
+QFrame#compareSelector {
+    background: $surface; border: 1px solid $border; border-radius: 0;
+}
+QLabel#compareChannel {
+    color: $accent_soft; font-family: $font_display; font-size: $font_xs;
+    font-weight: 800; letter-spacing: 2px;
+}
+QLabel#compareHint { color: $text_muted; font-size: $font_sm; }
+QLineEdit#compareUsernameInput { font-family: $font_mono; }
+QPushButton#compareSubmit {
+    font-family: $font_mono; font-size: $font_sm; font-weight: 700;
+    letter-spacing: 1.5px; border-radius: 0; min-height: 20px;
+}
+QComboBox#compareFriendPicker { font-family: $font_mono; }
+QLabel#compareFriendsNotice { color: $text_muted; font-size: $font_xs; }
+QLabel#compareInputMessage { color: $danger_text; font-size: $font_xs; }
+QFrame#compatibilityHeader {
+    background: $gradient_hero; border: 1px solid $border; border-radius: 0;
+}
+QLabel#compatibilityLegend {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#compatibilityUsername {
+    color: $text_strong; font-family: $font_display; font-size: $font_xl;
+    font-weight: 800;
+}
+/* One number, in the accent, at the size the score inspector uses for the
+   same fact. Amber because a match is about the user; a ring around it would
+   be a dashboard borrowing from a different product. */
+QLabel#compatibilityScore {
+    color: $accent; font-family: $font_mono; font-size: $font_4xl;
+    font-weight: 700;
+}
+QLabel#compatibilityScoreCaption, QLabel#compatibilityStatKey {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#compatibilityMatchLabel {
+    color: $accent_soft; font-family: $font_mono; font-size: $font_sm;
+    font-weight: 700; letter-spacing: 1px;
+}
+QLabel#compatibilityStatValue {
+    color: $text; font-family: $font_mono; font-size: $font_lg;
+    font-weight: 700;
+}
+QLabel#compatibilitySampleStamp {
+    background: $warning_bg; border: 1px solid $warning_border; border-radius: 0;
+    color: $warning_text; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 1px; padding: 3px 8px;
+}
+QFrame#comparisonSection { background: transparent; border: none; }
+QLabel#comparisonSectionTitle {
+    color: $text_strong; font-family: $font_display; font-size: $font_lg;
+    font-weight: 800;
+}
+QLabel#comparisonSectionDescription { color: $text_muted; font-size: $font_xs; }
+QLabel#comparisonSectionCount {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    letter-spacing: 1px;
+}
+QLabel#comparisonSectionEmpty {
+    background: transparent; border: 1px dashed $border; border-radius: 0;
+    color: $text_muted; font-size: $font_sm; padding: 14px 16px;
+}
+QFrame#compareStatePanel { background: transparent; border: none; }
+QLabel#compareStateTitle {
+    color: $text_strong; font-family: $font_display; font-size: $font_2xl;
+    font-weight: 800;
+}
+QLabel#compareStateMessage { color: $text_muted; font-size: $font_md; }
+QLabel#compareStateIcon {
+    background: transparent; color: $border_strong;
+    border: 1px solid $border_strong; border-radius: 0;
+}
+/* A failure and an absence must not look the same. An empty result keeps the
+   neutral outline above; a fault takes the danger role. */
+QFrame#compareStatePanel[stateTone="error"] QLabel#compareStateIcon {
+    color: $danger_text; border-color: $danger_border;
+}
+QFrame#compareStatePanel[stateTone="error"] QLabel#compareStateTitle {
+    color: $danger_text;
+}
+
+/* Two people's scores on one card. Four fields in the machine face - not a
+   pair of coloured deltas, which is a price ticker. The size of a
+   disagreement is carried by the strip's border, in three bands, because
+   ranking disagreements to one decimal place is not what anyone is here for. */
+QFrame#comparisonScoreStrip {
+    background: $surface_sunken; border: 1px solid $border; border-radius: 0;
+}
+QFrame#comparisonScoreStrip[agreement="close"] { border-color: $saved_border; }
+QFrame#comparisonScoreStrip[agreement="apart"] { border-color: $border_strong; }
+QFrame#comparisonScoreStrip[agreement="opposed"] { border-color: $accent; }
+QLabel#comparisonScoreCaption {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 1px; background: transparent;
+}
+QLabel#comparisonScoreValue {
+    color: $text; font-family: $font_mono; font-size: $font_sm;
+    font-weight: 700; background: transparent;
+}
+/* Yours in amber, theirs in cyan: the application's whole colour argument,
+   applied to the one place where "mine" and "someone else's" sit side by
+   side. The gap and the community figure stay neutral. */
+QLabel#comparisonScoreValue[field="you"] { color: $accent; }
+QLabel#comparisonScoreValue[field="them"] { color: $focus; }
+QLabel#comparisonScoreValue[field="mal"] { color: $text_subtle; }
+QFrame#comparisonScoreStrip[agreement="opposed"] QLabel#comparisonScoreValue[field="gap"] {
+    color: $accent_soft;
+}
+
+
+/* ==========================================================================
+   PROFILE
+
+   Eleven readouts about one reader, drawn as one panel with eleven legends
+   rather than as eleven widgets. Everything here is already in the sheet
+   above it: the section legend is Compare's section title, the figures are
+   the rail's readout pairs, the empty note is the feed's dashed note, and
+   the anime row is the list row's geometry with two scores in place of a
+   reason. Nothing on this surface has a radius, a shadow, or a gradient
+   laid over data.
+
+   The colour argument is the application's and is applied strictly: brass is
+   the reader's own score, aqua is the community's, and the status palette is
+   reserved for the direction of a disagreement. Nothing is carried by colour
+   alone - every delta is signed, and every direction is also a word.
+   ========================================================================== */
+QWidget#page-profile { background: $gradient_page; }
+QScrollArea#profileScroll, QWidget#profileContainer { background: transparent; }
+QLabel#profileChannel {
+    color: $accent_soft; font-family: $font_display; font-size: $font_xs;
+    font-weight: 800; letter-spacing: 2px;
+}
+QLabel#profileHint { color: $text_muted; font-size: $font_sm; }
+
+/* ---- header ---- */
+QFrame#profileHeader {
+    background: $gradient_hero; border: 1px solid $border; border-radius: 0;
+}
+/* Square, hairlined, and the same size whether it holds artwork or two
+   letters, so a profile with no avatar is not a different-shaped header. */
+QLabel#profileAvatar {
+    background: $surface_sunken; border: 1px solid $border_strong;
+    border-radius: 0; color: $text_subtle;
+    font-family: $font_display; font-size: $font_xl; font-weight: 800;
+    letter-spacing: 1px;
+}
+QLabel#profileLegend {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileUsername {
+    color: $text_strong; font-family: $font_display; font-size: $font_xl;
+    font-weight: 800;
+}
+QLabel#profileMemberSince {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    letter-spacing: 1px;
+}
+QLabel#profileSampleStamp {
+    background: $warning_bg; border: 1px solid $warning_border; border-radius: 0;
+    color: $warning_text; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 1px; padding: 3px 8px;
+}
+
+/* ---- the readout pair, which is most of this page ---- */
+QLabel#profileReadoutKey {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileReadoutValue {
+    color: $text; font-family: $font_mono; font-size: $font_md; font-weight: 700;
+}
+QLabel#profileReadoutValue[readoutSize="lg"] { font-size: $font_xl; }
+QLabel#profileReadoutValue[tone="you"] { color: $accent; }
+QLabel#profileReadoutValue[tone="community"] { color: $focus; }
+QLabel#profileReadoutValue[tone="against"] { color: $danger_text; }
+
+/* ---- section frame ---- */
+QFrame#profileSection { background: transparent; border: none; }
+QLabel#profileSectionTitle {
+    color: $text_strong; font-family: $font_display; font-size: $font_lg;
+    font-weight: 800;
+}
+QLabel#profileSectionDescription { color: $text_muted; font-size: $font_xs; }
+QLabel#profileSectionBadge {
+    background: $surface_sunken; border: 1px solid $border; border-radius: 0;
+    color: $accent_soft; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 1px; padding: 2px 8px;
+}
+/* An absence, not a fault: the dashed note the feed uses for empty sections. */
+QLabel#profileSectionEmpty, QLabel#profileEmptyNote {
+    background: transparent; border: 1px dashed $border; border-radius: 0;
+    color: $text_muted; font-size: $font_sm; padding: 12px 14px;
+}
+QFrame#profileSectionError {
+    background: $danger_bg; border: 1px solid $danger_border; border-radius: 0;
+}
+QLabel#profileSectionErrorText {
+    color: $danger_text; font-family: $font_mono; font-size: $font_sm;
+    font-weight: 700; letter-spacing: 1px;
+}
+QPushButton#profileSectionRetry {
+    font-family: $font_mono; font-size: $font_xs; font-weight: 700;
+    letter-spacing: 1.5px; border-radius: 0; min-height: 18px;
+}
+/* Every container and every painted instrument on this surface is
+   transparent, and it has to be said out loud. The sheet opens with
+   QWidget { background-color: $bg }, which Qt applies to any plain QWidget a
+   stylesheet touches - so an unnamed layout holder inside a panel paints the
+   page background as a dark rectangle across it. That is what put boxes
+   behind the score readouts on the highlight plates. */
+QWidget#profileSkeleton, QWidget#profileBarRail, QWidget#profileCellBank,
+QWidget#profilePolarityScale, QWidget#profileTimelinePlot,
+QWidget#profileBlock, QWidget#profileReflow, QWidget#profileSectionBody,
+QWidget#profileFingerprint, QWidget#profileHistogram,
+QWidget#profileVerdictColumn, QWidget#profileGenreDNA, QWidget#profileStudioDNA,
+QWidget#profileEras, QWidget#profileHabits, QWidget#profileTimeline,
+QStackedWidget#profileSectionStack, QStackedWidget#profileContentStack {
+    background: transparent;
+}
+
+/* ---- taste fingerprint ---- */
+QFrame#profileFingerprintModule {
+    background: $surface; border: 1px solid $border; border-radius: 0;
+}
+QLabel#profileFingerprintCaption {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileFingerprintValue {
+    color: $text_strong; font-family: $font_mono; font-size: $font_2xl;
+    font-weight: 700;
+}
+/* Brass only where the figure is a statement about the reader themselves. */
+QFrame#profileFingerprintModule[tone="you"] QLabel#profileFingerprintValue {
+    color: $accent;
+}
+QLabel#profileFingerprintLabel {
+    color: $accent_soft; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 1px;
+}
+QLabel#profileFingerprintDetail { color: $text_muted; font-size: $font_xs; }
+QLabel#profileScaleEnd {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    letter-spacing: 1px;
+}
+
+/* ---- rating distribution ---- */
+QLabel#profileHistogramScore {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_sm;
+    font-weight: 700;
+}
+QLabel#profileHistogramCount {
+    color: $text; font-family: $font_mono; font-size: $font_sm;
+}
+
+/* ---- one anime, two opinions ---- */
+QFrame#profileVerdictRow {
+    background: transparent; border: none;
+    border-bottom: 1px solid $border_subtle;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+}
+QFrame#profileVerdictRow:hover { background: $surface; }
+QFrame#profileVerdictRow[direction="above"] { border-left-color: $success_border; }
+QFrame#profileVerdictRow[direction="below"] { border-left-color: $danger_border; }
+QLabel#profileVerdictTitle { color: $text_strong; font-size: $font_sm; }
+QLabel#profileVerdictMeta {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    letter-spacing: 1px;
+}
+QLabel#profileVerdictCover { background: $well; border-radius: 0; }
+QLabel#profileVerdictCaption {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 1px;
+}
+QLabel#profileVerdictValue {
+    color: $text; font-family: $font_mono; font-size: $font_sm; font-weight: 700;
+}
+/* Yours in brass, theirs in aqua - the application's whole colour argument,
+   in the one place on this page where mine and everyone else's sit together. */
+QLabel#profileVerdictValue[field="you"] { color: $accent; }
+QLabel#profileVerdictValue[field="community"] { color: $focus; }
+QLabel#profileVerdictValue[field="gap"] { color: $text_subtle; }
+QFrame#profileVerdictRow[direction="above"] QLabel#profileVerdictValue[field="gap"] {
+    color: $success_text;
+}
+QFrame#profileVerdictRow[direction="below"] QLabel#profileVerdictValue[field="gap"] {
+    color: $danger_text;
+}
+
+/* ---- the one title a section singles out ---- */
+QFrame#profileHighlight {
+    background: $gradient_hero; border: 1px solid $border_strong; border-radius: 0;
+}
+QFrame#profileHighlight[tone="you"] { border-color: $accent; }
+QFrame#profileHighlight[tone="against"] { border-color: $danger_border; }
+QLabel#profileHighlightLegend {
+    color: $accent_soft; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+QFrame#profileHighlight[tone="against"] QLabel#profileHighlightLegend {
+    color: $danger_text;
+}
+QLabel#profileColumnHeading {
+    color: $text_muted; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+
+/* ---- genre and studio ---- */
+QLabel#profileVerdictLegend {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileVerdictName {
+    color: $text_strong; font-family: $font_display; font-size: $font_lg;
+    font-weight: 800;
+}
+QLabel#profileVerdictDetail {
+    color: $text_muted; font-family: $font_mono; font-size: $font_xs;
+    letter-spacing: 1px;
+}
+/* A selectable row, marked the way the navigation rail marks a destination:
+   a reserved edge that fills, never a border that appears and shifts text. */
+QFrame#profileGenreRow {
+    background: transparent; border: none;
+    border-left: 2px solid transparent; border-radius: 0;
+}
+QFrame#profileGenreRow:hover { background: $surface; }
+QFrame#profileGenreRow:focus { border-left-color: $focus; background: $surface; }
+QFrame#profileGenreRow[selected="true"] {
+    background: $surface; border-left-color: $accent;
+}
+QLabel#profileGenreName { color: $text; font-size: $font_sm; }
+QFrame#profileGenreRow[selected="true"] QLabel#profileGenreName {
+    color: $text_strong; font-weight: 600;
+}
+QLabel#profileGenreValue {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_sm;
+}
+QLabel#profileGenreValue[field="average"] { color: $accent_soft; }
+QFrame#profileGenreDrill {
+    background: $surface_sunken; border: 1px solid $border; border-radius: 0;
+}
+QLabel#profileTitleName { color: $text_muted; font-size: $font_sm; }
+QLabel#profileTitleScore {
+    color: $accent; font-family: $font_mono; font-size: $font_sm; font-weight: 700;
+}
+
+/* ---- eras, habits, timeline ---- */
+QLabel#profileEraLabel {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_sm;
+    letter-spacing: 1px;
+}
+QLabel#profileEraValue {
+    color: $text; font-family: $font_mono; font-size: $font_sm;
+}
+QLabel#profileEraValue[field="average"] { color: $accent_soft; }
+QLabel#profileRewatchNote {
+    color: $text_muted; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileAxisTick {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+}
+
+/* ==========================================================================
    DISABLED STATE - and it must stay the last block in this file.
 
    Qt follows CSS2 specificity, where QPushButton:disabled and

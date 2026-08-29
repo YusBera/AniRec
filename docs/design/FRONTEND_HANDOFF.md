@@ -255,8 +255,7 @@ Rules that are load-bearing:
 
 ## Traps in this codebase
 
-Full list in `.claude/skills/ui-ux-pro-max/references/qt-desktop.md`. The ones that
-have already caused visible bugs here:
+The Qt failures that have already caused visible bugs here:
 
 - **Stylesheet specificity.** `:disabled` and `[buttonRole="primary"]` score the same,
   so whichever is written last wins. Disabled rules go **after** every role rule, or a
@@ -331,11 +330,9 @@ Known, deliberate, and fair game:
 | `AniRec/gui/instrument_widgets.py` | painted parts: `InstrumentPanel`, `SteppedSlider`, `ScoreTrack`, `StatusLight`, `ScanSweep` |
 | `AniRec/gui/match_badge.py` | the card's match readout and contribution rail |
 | `AniRec/gui/system_log.py` | activity console, meter rendering, channel colouring |
-| `AniRec/gui/resources/icons/ui/` | the interface icon set (spec in `docs/ICON_HANDOFF.md`) |
+| `AniRec/gui/resources/icons/ui/` | the interface icon set (spec in `docs/design/ICON_HANDOFF.md`) |
 | `scripts/build_theme.py` | regenerates the packaged stylesheets |
 | `scripts/capture_docs_screenshots.py` | deterministic renders from sample data |
-| `docs/CONVERSION_TEARDOWN.md` | the audit this direction came out of |
-| `.claude/skills/ui-ux-pro-max/` | the method, as a reusable skill |
-
+| `docs/design/CONVERSION_TEARDOWN.md` | the audit this direction came out of |
 The landing pages are `docs/landing/index.html` (Scoring Bench) and
 `docs/landing/workstation.html` (the workstation alternative the app now follows).

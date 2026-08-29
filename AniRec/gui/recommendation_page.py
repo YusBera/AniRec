@@ -21,6 +21,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QLineEdit,
     QButtonGroup,
     QCheckBox,
     QComboBox,
@@ -48,7 +49,20 @@ from ..services import (
     RecommendationLocalState,
     RecommendationStateService,
 )
+from .discover_filters import (
+    ActiveFilter,
+    DiscoverFilterState,
+    FilterKind,
+    MAXIMUM_GROUP_PROFILES,
+    ProfileStatus,
+    episode_filter,
+    score_filter,
+)
+from .filter_pills import FilterPillBar
+from .metadata_index import MetadataCatalog
 from .recommendation_card import CARD_WIDTH, RecommendationCard
+from .texts import FILTER_TEXT
+from .typeahead import MetadataTypeahead, ProfileInput
 from .resources import themed_ui_icon, ui_icon_pixmap
 from .scaling import scaled
 from .design_tokens import SPACE
@@ -81,11 +95,47 @@ class RecommendationSortMode(str, Enum):
 
 @dataclass(frozen=True)
 class RecommendationFilters:
+    """What the visible feed is narrowed by.
+
+    CHANGE [FILTER]: genres, studios and years arrive as tuples because a
+    reader can now stack them - a genre clicked on one card, another chosen
+    from the search box. Within one of those kinds the values are an *or*: a
+    title matching any active genre stays. Across kinds they are an *and*.
+    That is the convention every faceted catalogue uses, and it is the one
+    that never answers a second selection with an empty feed.
+
+    ``genre`` and ``status`` survive as the single-value spellings the rest of
+    the application and its tests already use; ``genre`` folds into ``genres``
+    so there is still only one rule doing the matching.
+    """
+
     genre: str | None = None
     minimum_mal_score: float | None = None
     status: str | None = None
     minimum_episodes: int | None = None
     maximum_episodes: int | None = None
+    genres: tuple[str, ...] = ()
+    studios: tuple[str, ...] = ()
+    years: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.genre and self.genre not in self.genres:
+            object.__setattr__(self, "genres", (*self.genres, self.genre))
+
+    @property
+    def is_active(self) -> bool:
+        return any(
+            value
+            for value in (
+                self.genres,
+                self.studios,
+                self.years,
+                self.minimum_mal_score,
+                self.status,
+                self.minimum_episodes,
+                self.maximum_episodes,
+            )
+        )
 
 
 def filter_and_sort_recommendations(
@@ -95,11 +145,19 @@ def filter_and_sort_recommendations(
 ) -> tuple[RecommendationViewModel, ...]:
     """Return a stable, missing-last projection shared by cards and the table."""
 
-    genre = filters.genre.casefold() if filters.genre else None
+    genres = {item.casefold() for item in filters.genres}
+    studios = {item.casefold() for item in filters.studios}
+    years = set(filters.years)
     status = filters.status.casefold() if filters.status else None
     filtered = []
     for model in models:
-        if genre is not None and genre not in {item.casefold() for item in model.genres}:
+        if genres and not genres & {item.casefold() for item in model.genres}:
+            continue
+        if studios and not studios & {
+            item.casefold() for item in getattr(model, "studios", ())
+        }:
+            continue
+        if years and model.year not in years:
             continue
         if filters.minimum_mal_score is not None and (
             model.mal_score is None or model.mal_score < filters.minimum_mal_score
@@ -183,7 +241,11 @@ def _badge_colours():
 
     application = QApplication.instance()
     accent = application.property("resolvedAccent") if application else None
-    contrast = application.property("resolvedAccentContrast") if application else None
+    # This colour paints neutral contributors, the score marker and the rail
+    # outline. ``resolvedAccentContrast`` is specifically the dark ink placed
+    # *on top of* a brass button; against this dark rail it made the dominant
+    # community segment indistinguishable from the empty range.
+    text_colour = application.property("resolvedText") if application else None
     background = application.property("resolvedBackground") if application else None
     signal = application.property("resolvedSignal") if application else None
     if not accent:
@@ -193,7 +255,7 @@ def _badge_colours():
         except ValueError:
             colours = palette("dark")
         accent = colours["accent"]
-        contrast = colours["accent_contrast"]
+        text_colour = colours["text"]
         background = colours["bg"]
         signal = colours["focus"]
 
@@ -206,7 +268,7 @@ def _badge_colours():
     # contribution in it, the way the detail view and the landing page do, so
     # the split between your taste and everyone else's is visible on the card
     # without opening anything.
-    return track, QColor(accent), QColor(contrast), QColor(signal or "#6FC6C0")
+    return track, QColor(accent), QColor(text_colour), QColor(signal or "#6FC6C0")
 
 
 def recommendation_key(model: RecommendationViewModel, source_index: int) -> str:
@@ -214,6 +276,28 @@ def recommendation_key(model: RecommendationViewModel, source_index: int) -> str
         return f"mal:{model.mal_id}"
     return f"local:{source_index}:{model.display_title.casefold()}"
 
+
+
+def _profile_noun(count: int) -> str:
+    return (
+        FILTER_TEXT.profile_noun_one
+        if count == 1
+        else FILTER_TEXT.profile_noun_many
+    )
+
+
+def _as_int(value: object) -> int | None:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_float(value: object) -> float | None:
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
 
 
 def _vertical_bar() -> QFrame:
@@ -244,6 +328,15 @@ class RecommendationExplorerPage(QWidget):
     more_requested = Signal()
     refill_requested = Signal()
     view_mode_changed = Signal(str)
+    # CHANGE [FILTER]: one signal for "the query changed", carrying the
+    # normalised parameters. Whatever answers a query - the local projection
+    # today, a group-ranking backend later - subscribes to this rather than to
+    # six individual controls.
+    filters_changed = Signal(object)
+    # A username the reader asked to include. The page does not resolve it;
+    # resolving is one shared lookup, because Compare needs the same answer.
+    profile_requested = Signal(str)
+    profile_retry_requested = Signal(str)
     # CHANGE [BUG5]: lets the surrounding surface collapse its header once
     # the feed is scrolled, so browsing is not done through a slot.
     feed_scrolled = Signal(int)
@@ -281,6 +374,17 @@ class RecommendationExplorerPage(QWidget):
         self._rows_by_key: dict[str, RecommendationRow] = {}
         self._selected_key: str | None = None
         self._view_mode = RecommendationViewMode.CARDS
+        # CHANGE [FILTER]: every entry point writes here and every reader reads
+        # here. Before this a filter was wherever its control happened to live,
+        # so a second way to set the same filter meant a second copy of the
+        # answer - and a second copy is a copy that drifts.
+        self.filter_state = DiscoverFilterState(self)
+        # What the search box can offer, built from the records already loaded
+        # rather than from a table of studios shipped in the interface.
+        self.metadata_catalog = MetadataCatalog()
+        self._group_profiles_enabled = False
+        self._group_notice = ""
+        self._syncing_controls = False
         self.show_covers = True
         self._cover_attempted: set[str] = set()
         # Counted per URL so a retry is bounded rather than endless.
@@ -295,6 +399,7 @@ class RecommendationExplorerPage(QWidget):
         self._ephemeral = False
         self._view_animation = None
         self._build_ui()
+        self.filter_state.changed.connect(self._on_filter_state_changed)
         self._update_more_actions()
         self._update_feedback_summary()
         if self.worker_controller is not None:
@@ -466,28 +571,32 @@ class RecommendationExplorerPage(QWidget):
             self._schedule_visible_covers()
 
     def clear_filters(self) -> None:
-        for widget in (
-            self.genre_filter,
-            self.mal_score_filter,
-            self.status_filter,
-            self.minimum_episodes_filter,
-            self.maximum_episodes_filter,
+        """Drop every narrowing filter, and leave the added profiles alone.
+
+        Clearing is an escape from an over-filtered feed. A friend added for
+        group recommendations is not what over-filtered it, and silently
+        removing four people because someone pressed "Clear filters" on an
+        empty result is not what that control promises.
+        """
+        removed = False
+        for kind in (
+            FilterKind.GENRE,
+            FilterKind.STUDIO,
+            FilterKind.YEAR,
+            FilterKind.SCORE,
+            FilterKind.STATUS,
+            FilterKind.EPISODES,
         ):
-            widget.blockSignals(True)
-        self.genre_filter.setCurrentIndex(0)
-        self.mal_score_filter.setValue(0.0)
-        self.status_filter.setCurrentIndex(0)
-        self.minimum_episodes_filter.setValue(0)
-        self.maximum_episodes_filter.setValue(0)
-        for widget in (
-            self.genre_filter,
-            self.mal_score_filter,
-            self.status_filter,
-            self.minimum_episodes_filter,
-            self.maximum_episodes_filter,
-        ):
-            widget.blockSignals(False)
-        self._apply_query()
+            removed = self.filter_state.remove_kind(kind) or removed
+        if not removed:
+            # Nothing to clear still has to repaint: the empty state's advice
+            # depends on whether filters are active.
+            self._apply_query()
+
+    def clear_all_filters(self) -> None:
+        """Drop everything, profiles included. Only the pill row offers this."""
+        if not self.filter_state.clear():
+            self._apply_query()
 
     def select_key(self, key: str | None) -> None:
         if key is not None and key not in self._model_by_key:
@@ -617,6 +726,11 @@ class RecommendationExplorerPage(QWidget):
         self.mal_score_filter.setSpecialValueText("Any")
         self.status_filter = QComboBox()
         self.status_filter.setObjectName("recommendationStatusFilter")
+        # CHANGE [FILTER]: a year is one of the pills the row shows, so it
+        # needs a way in that is not "click one on a card and hope one is
+        # showing". Populated from the feed, like the genre list.
+        self.year_filter = QComboBox()
+        self.year_filter.setObjectName("recommendationYearFilter")
         self.minimum_episodes_filter = self._episode_spinbox("recommendationMinimumEpisodesFilter")
         self.maximum_episodes_filter = self._episode_spinbox("recommendationMaximumEpisodesFilter")
         self.sort_combo = QComboBox()
@@ -626,8 +740,14 @@ class RecommendationExplorerPage(QWidget):
         self.sort_combo.addItem("Airing year", RecommendationSortMode.YEAR.value)
         self.sort_combo.addItem("Alphabetical", RecommendationSortMode.ALPHABETICAL.value)
 
+        # Genre and year *add* a filter and reset themselves; the rest hold
+        # one value and show it. The split follows what the filter can mean:
+        # a feed can be narrowed to several genres at once and to exactly one
+        # minimum score, and a control that pretends otherwise is a control
+        # that goes stale the moment a second value arrives from a card.
         widgets = (
-            ("Genre", self.genre_filter),
+            ("Add genre", self.genre_filter),
+            ("Add year", self.year_filter),
             ("Minimum MAL score", self.mal_score_filter),
             ("Airing status", self.status_filter),
             ("Minimum episodes", self.minimum_episodes_filter),
@@ -641,7 +761,48 @@ class RecommendationExplorerPage(QWidget):
             label.setObjectName("recommendationFilterLabel")
             controls_layout.addWidget(label, row, column)
             controls_layout.addWidget(widget, row + 1, column)
+        # CHANGE [FILTER]: the two controls that take free text sit under the
+        # dropdown grid rather than in it. A grid cell is the wrong home for a
+        # field that drops a list beneath itself, and the profile input needs
+        # room for a sentence when a username fails.
+        self.filter_workbench = QFrame()
+        self.filter_workbench.setObjectName("discoverFilterWorkbench")
+        workbench_layout = QHBoxLayout(self.filter_workbench)
+        workbench_layout.setContentsMargins(
+            SPACE["md"], SPACE["sm"], SPACE["md"], SPACE["sm"]
+        )
+        workbench_layout.setSpacing(SPACE["lg"])
+        self.metadata_typeahead = MetadataTypeahead(self.metadata_catalog)
+        self.metadata_typeahead.suggestion_chosen.connect(self._on_suggestion_chosen)
+        workbench_layout.addWidget(self.metadata_typeahead, 1)
+        self.profile_input = ProfileInput()
+        self.profile_input.profile_submitted.connect(self._on_profile_submitted)
+        workbench_layout.addWidget(self.profile_input, 1)
+        # Only Discover offers group recommendations. My Library is a filing
+        # surface for what has already been decided, and adding someone else's
+        # taste to it would mean nothing.
+        self.profile_input.setVisible(False)
+        controls_layout.addWidget(
+            self.filter_workbench, controls_layout.rowCount(), 0, 1, 3
+        )
         self.filter_controls.setVisible(False)
+
+        # CHANGE [FILTER]: the active filters, between the controls and the
+        # results. Outside filter_controls on purpose - the panel folds away,
+        # and what is currently narrowing the feed must not fold away with it.
+        self.filter_pills = FilterPillBar()
+        self.filter_pills.filter_dismissed.connect(self._on_pill_dismissed)
+        self.filter_pills.retry_requested.connect(self._on_pill_retry)
+        self.filter_pills.clear_requested.connect(self.clear_all_filters)
+
+        # One line, stating that the feed is being built for more than one
+        # person. Not a mode toggle: the profiles on the pill row already say
+        # what is happening, and a switch that duplicates them is a second
+        # place for the truth to live.
+        self.group_banner = QLabel("")
+        self.group_banner.setObjectName("groupModeBanner")
+        self.group_banner.setWordWrap(True)
+        self.group_banner.setVisible(False)
 
         self.library_bar = QFrame()
         self.library_bar.setObjectName("recommendationLibraryBar")
@@ -753,6 +914,8 @@ class RecommendationExplorerPage(QWidget):
         root.addWidget(self.library_bar)
         root.addWidget(self.view_bar)
         root.addWidget(self.filter_controls)
+        root.addWidget(self.filter_pills)
+        root.addWidget(self.group_banner)
 
         self.selected_actions_frame = QFrame()
         self.selected_actions_frame.setObjectName("recommendationSelectedActions")
@@ -922,18 +1085,27 @@ class RecommendationExplorerPage(QWidget):
         self.empty_index = self.content_stack.addWidget(self.empty_widget)
         root.addWidget(self.content_stack, 1)
 
-        for widget in (
-            self.genre_filter,
-            self.mal_score_filter,
-            self.status_filter,
-            self.minimum_episodes_filter,
-            self.maximum_episodes_filter,
-            self.sort_combo,
-        ):
-            if isinstance(widget, QComboBox):
-                widget.currentIndexChanged.connect(lambda _index: self._apply_query())
-            else:
-                widget.valueChanged.connect(lambda _value: self._apply_query())
+        # Adders: choosing a value records a filter and the control returns
+        # to its resting label, because the pill row is now what shows what is
+        # active and two displays of one fact is one display too many.
+        self.genre_filter.currentIndexChanged.connect(
+            lambda _index: self._on_adder_changed(self.genre_filter, FilterKind.GENRE)
+        )
+        self.year_filter.currentIndexChanged.connect(
+            lambda _index: self._on_adder_changed(self.year_filter, FilterKind.YEAR)
+        )
+        # Bound: one value each, so the control both sets and shows it.
+        self.status_filter.currentIndexChanged.connect(
+            lambda _index: self._on_status_changed()
+        )
+        self.mal_score_filter.valueChanged.connect(
+            lambda _value: self._on_score_changed()
+        )
+        for widget in (self.minimum_episodes_filter, self.maximum_episodes_filter):
+            widget.valueChanged.connect(lambda _value: self._on_episodes_changed())
+        # Sorting is not a filter. It changes the order of an answer rather
+        # than which answer it is, so it does not belong on the pill row.
+        self.sort_combo.currentIndexChanged.connect(lambda _index: self._apply_query())
         self.cards_button.clicked.connect(lambda: self.set_view_mode(RecommendationViewMode.CARDS))
         self.list_button.clicked.connect(lambda: self.set_view_mode(RecommendationViewMode.LIST))
         self.table_button.clicked.connect(lambda: self.set_view_mode(RecommendationViewMode.TABLE))
@@ -1104,53 +1276,340 @@ class RecommendationExplorerPage(QWidget):
             button.setVisible(state in self._visible_states)
 
     def _populate_filter_options(self) -> None:
-        current_genre = self.genre_filter.currentData()
+        """Refill the option lists, and tell the search box what exists.
+
+        The catalogue is fed here because this is the one place that already
+        runs whenever the loaded set changes - including a scroll top-up, so a
+        studio that arrives with the eleventh page becomes findable without a
+        second pass over the models.
+        """
+        self.metadata_catalog.ingest(self._models)
         current_status = self.status_filter.currentData()
-        genres = sorted({genre for model in self._models for genre in model.genres}, key=str.casefold)
+        genres = sorted(
+            {genre for model in self._models for genre in model.genres},
+            key=str.casefold,
+        )
         statuses = sorted(
             {model.status for model in self._models if model.status != "Not available"},
             key=str.casefold,
         )
-        for combo, first_label, values, previous in (
-            (self.genre_filter, "Any genre", genres, current_genre),
-            (self.status_filter, "Any status", statuses, current_status),
+        years = sorted(
+            {model.year for model in self._models if model.year is not None},
+            reverse=True,
+        )
+
+        # Adders always come back to their resting row, so there is no
+        # previous selection to restore: what was chosen is on the pill row.
+        for combo, first_label, values in (
+            (self.genre_filter, "Add a genre…", genres),
+            (self.year_filter, "Add a year…", [str(year) for year in years]),
         ):
             combo.blockSignals(True)
             combo.clear()
             combo.addItem(first_label, None)
             for value in values:
                 combo.addItem(value, value)
-            index = combo.findData(previous)
-            combo.setCurrentIndex(max(0, index))
+            combo.setCurrentIndex(0)
             combo.blockSignals(False)
 
-    def _filters(self) -> RecommendationFilters:
-        minimum_mal = self.mal_score_filter.value()
-        minimum_episodes = self.minimum_episodes_filter.value()
-        maximum_episodes = self.maximum_episodes_filter.value()
-        return RecommendationFilters(
-            genre=self.genre_filter.currentData(),
-            minimum_mal_score=minimum_mal if minimum_mal > 0 else None,
-            status=self.status_filter.currentData(),
-            minimum_episodes=minimum_episodes if minimum_episodes > 0 else None,
-            maximum_episodes=maximum_episodes if maximum_episodes > 0 else None,
+        self.status_filter.blockSignals(True)
+        self.status_filter.clear()
+        self.status_filter.addItem("Any status", None)
+        for value in statuses:
+            self.status_filter.addItem(value, value)
+        index = self.status_filter.findData(current_status)
+        self.status_filter.setCurrentIndex(max(0, index))
+        self.status_filter.blockSignals(False)
+        self._refresh_typeahead_exclusions()
+
+    # ---- filter entry points --------------------------------------------
+
+    def _on_adder_changed(self, combo: QComboBox, kind: FilterKind) -> None:
+        """Record what was chosen, then let the control fall back to rest."""
+        if self._syncing_controls:
+            return
+        value = combo.currentData()
+        combo.blockSignals(True)
+        combo.setCurrentIndex(0)
+        combo.blockSignals(False)
+        if value:
+            self.filter_state.add_value(kind, str(value))
+
+    def _on_status_changed(self) -> None:
+        if self._syncing_controls:
+            return
+        self.filter_state.set_single(
+            FilterKind.STATUS, self.status_filter.currentData()
         )
+
+    def _on_score_changed(self) -> None:
+        if self._syncing_controls:
+            return
+        value = self.mal_score_filter.value()
+        if value > 0:
+            self.filter_state.add(score_filter(value))
+            # A minimum score replaces the previous one rather than stacking,
+            # so the previous pill has to go with it.
+            for item in self.filter_state.of_kind(FilterKind.SCORE):
+                if item.value != score_filter(value).value:
+                    self.filter_state.remove(FilterKind.SCORE, item.value)
+        else:
+            self.filter_state.remove_kind(FilterKind.SCORE)
+
+    def _on_episodes_changed(self) -> None:
+        if self._syncing_controls:
+            return
+        wanted = episode_filter(
+            self.minimum_episodes_filter.value() or None,
+            self.maximum_episodes_filter.value() or None,
+        )
+        self.filter_state.remove_kind(FilterKind.EPISODES)
+        if wanted is not None:
+            self.filter_state.add(wanted)
+
+    def _on_suggestion_chosen(self, suggestion) -> None:
+        self.filter_state.add_value(suggestion.kind, suggestion.value)
+
+    def _on_metadata_filter_requested(self, kind, value: str) -> None:
+        """A genre or studio pressed on a card.
+
+        Goes to exactly the same place a suggestion does, which is the whole
+        point of the shared state: there is no card-local filtering to keep in
+        step with the control-driven kind, and no way to end up with two pills
+        for one value.
+        """
+        self.filter_state.add_value(FilterKind(kind), str(value))
+
+    def _on_pill_dismissed(self, filter_) -> None:
+        if filter_.kind is FilterKind.PROFILE:
+            self.filter_state.remove(FilterKind.PROFILE, filter_.value)
+            return
+        self.filter_state.remove(filter_.kind, filter_.value)
+
+    def _on_pill_retry(self, filter_) -> None:
+        self.filter_state.update_profile(
+            filter_.value, status=ProfileStatus.PENDING, message=""
+        )
+        self.profile_retry_requested.emit(filter_.value)
+
+    def _on_profile_submitted(self, username: str) -> None:
+        """Take a username, refuse the ones that cannot work, pass on the rest.
+
+        The two refusals here are the ones the frontend can settle alone: a
+        duplicate, and the ceiling this interface set. Everything else - does
+        this person exist, is their list public - is a question only
+        MyAnimeList can answer, and asking it is the lookup's job.
+        """
+        name = str(username).strip()
+        if not name:
+            return
+        if self.filter_state.contains(FilterKind.PROFILE, name):
+            self.profile_input.set_message(
+                FILTER_TEXT.profile_duplicate.format(value=name), tone="warn"
+            )
+            return
+        if not self.filter_state.can_add_profile:
+            self.profile_input.set_limit_reached(True)
+            return
+        # The pill appears immediately and loads in place, so the interface
+        # answers the keystroke rather than the network.
+        self.filter_state.add(
+            ActiveFilter(
+                kind=FilterKind.PROFILE,
+                value=name,
+                status=ProfileStatus.PENDING,
+            )
+        )
+        self.profile_input.accept()
+        self.profile_requested.emit(name)
+
+    # ---- profile results -------------------------------------------------
+
+    def set_profile_resolved(self, username: str, display_name: str = "") -> None:
+        self.filter_state.update_profile(
+            username,
+            status=ProfileStatus.READY,
+            message="",
+            display_value=display_name or username,
+        )
+
+    def set_profile_failed(self, username: str, message: str) -> None:
+        """Mark one profile broken, and leave every other one alone.
+
+        Scoped on purpose. One username failing must not invalidate the four
+        beside it that worked, nor the results already on screen.
+        """
+        self.filter_state.update_profile(
+            username, status=ProfileStatus.ERROR, message=message
+        )
+
+    def set_group_notice(self, message: str) -> None:
+        """Add a standing sentence to the group line.
+
+        Separate from the profile states above it because it is a different
+        kind of fact: those report what happened to the usernames, this
+        reports what the application can currently do with them. Both belong
+        on one line - a second banner underneath the first would be two boxes
+        about the same thing.
+        """
+        self._group_notice = str(message or "")
+        self._update_group_banner()
+
+    def set_group_profiles_enabled(self, enabled: bool) -> None:
+        """Offer group recommendations on this surface, or do not."""
+        self._group_profiles_enabled = bool(enabled)
+        self.profile_input.setVisible(self._group_profiles_enabled)
+        if not self._group_profiles_enabled:
+            self.filter_state.remove_kind(FilterKind.PROFILE)
+
+    # ---- state changes ---------------------------------------------------
+
+    def _on_filter_state_changed(self) -> None:
+        self._sync_controls_from_state()
+        self.filter_pills.set_filters(self.filter_state.filters)
+        self._refresh_typeahead_exclusions()
+        self._update_group_banner()
+        self.profile_input.set_limit_reached(not self.filter_state.can_add_profile)
+        self._apply_query()
+        self.filters_changed.emit(self.filter_state.query_parameters())
+
+    def _sync_controls_from_state(self) -> None:
+        """Point the bound controls at what the state says, without echoing.
+
+        The guard matters: a control writing to the state which then writes
+        back to the control is how a single keystroke becomes an infinite
+        loop, and blockSignals alone would not stop the adders resetting
+        themselves mid-sync.
+        """
+        self._syncing_controls = True
+        try:
+            status = self.filter_state.first_value(FilterKind.STATUS)
+            index = self.status_filter.findData(status)
+            self.status_filter.blockSignals(True)
+            self.status_filter.setCurrentIndex(max(0, index))
+            self.status_filter.blockSignals(False)
+
+            score = self._score_bound() or 0.0
+            self.mal_score_filter.blockSignals(True)
+            self.mal_score_filter.setValue(score)
+            self.mal_score_filter.blockSignals(False)
+
+            minimum, maximum = self._episode_bounds()
+            for widget, value in (
+                (self.minimum_episodes_filter, minimum or 0),
+                (self.maximum_episodes_filter, maximum or 0),
+            ):
+                widget.blockSignals(True)
+                widget.setValue(int(value))
+                widget.blockSignals(False)
+        finally:
+            self._syncing_controls = False
+
+    def _refresh_typeahead_exclusions(self) -> None:
+        self.metadata_typeahead.set_active_filters(
+            tuple(
+                (item.kind, item.value)
+                for item in self.filter_state.filters
+                if item.kind in (FilterKind.GENRE, FilterKind.STUDIO)
+            )
+        )
+
+    def _update_group_banner(self) -> None:
+        """Say, in one line, that the feed is being built for several people.
+
+        Three things can be true at once - some resolved, some still loading,
+        some failed - and the banner reports the state that most changes what
+        the reader should expect from the results below it.
+        """
+        profiles = self.filter_state.profiles
+        if not profiles:
+            self.group_banner.setVisible(False)
+            return
+        ready = [item for item in profiles if item.status is ProfileStatus.READY]
+        pending = [item for item in profiles if item.is_loading]
+        failed = [item for item in profiles if item.is_failed]
+
+        if pending:
+            text = FILTER_TEXT.group_banner_loading.format(
+                count=len(pending), noun=_profile_noun(len(pending))
+            )
+            tone = ""
+        elif ready:
+            text = FILTER_TEXT.group_banner.format(
+                count=len(ready) + 1,
+                names=", ".join(item.display_value for item in ready),
+            )
+            tone = ""
+            if failed:
+                partial = (
+                    FILTER_TEXT.group_partial_one
+                    if len(failed) == 1
+                    else FILTER_TEXT.group_partial.format(count=len(failed))
+                )
+                text = f"{text} · {partial}"
+                tone = "warn"
+        else:
+            text = FILTER_TEXT.group_all_failed
+            tone = "error"
+        if self._group_notice:
+            text = f"{text}\n{self._group_notice}"
+            tone = tone or "warn"
+        self.group_banner.setText(text)
+        self.group_banner.setProperty("tone", tone)
+        self.group_banner.style().unpolish(self.group_banner)
+        self.group_banner.style().polish(self.group_banner)
+        self.group_banner.setVisible(True)
+
+    def _filters(self) -> RecommendationFilters:
+        """Read the query out of the shared state, not out of the widgets.
+
+        CHANGE [FILTER]: this used to interrogate five controls, which meant
+        the controls *were* the state and nothing that was not a control could
+        contribute to it. A genre clicked on a card had nowhere to go.
+        """
+        state = self.filter_state
+        minimum, maximum = self._episode_bounds()
+        return RecommendationFilters(
+            minimum_mal_score=self._score_bound(),
+            status=state.first_value(FilterKind.STATUS),
+            minimum_episodes=minimum,
+            maximum_episodes=maximum,
+            genres=tuple(item.value for item in state.of_kind(FilterKind.GENRE)),
+            studios=tuple(item.value for item in state.of_kind(FilterKind.STUDIO)),
+            years=tuple(
+                year
+                for item in state.of_kind(FilterKind.YEAR)
+                if (year := _as_int(item.value)) is not None
+            ),
+        )
+
+    def _score_bound(self) -> float | None:
+        """The minimum MAL score, out of a filter spelled ``7-10``."""
+        value = self.filter_state.first_value(FilterKind.SCORE)
+        if not value:
+            return None
+        return _as_float(value.split("-", 1)[0])
+
+    def _episode_bounds(self) -> tuple[int | None, int | None]:
+        """The episode band, out of a filter spelled ``12-24``, ``12-`` or ``-24``."""
+        value = self.filter_state.first_value(FilterKind.EPISODES)
+        if not value or "-" not in value:
+            return None, None
+        low, _, high = value.partition("-")
+        return _as_int(low), _as_int(high)
 
     def _sort_mode(self) -> RecommendationSortMode:
         return RecommendationSortMode(self.sort_combo.currentData())
 
     def _has_active_filters(self) -> bool:
-        filters = self._filters()
-        return any(
-            value is not None
-            for value in (
-                filters.genre,
-                filters.minimum_mal_score,
-                filters.status,
-                filters.minimum_episodes,
-                filters.maximum_episodes,
-            )
-        )
+        """Whether anything is narrowing the feed.
+
+        Profiles are excluded on purpose: a group profile widens the pool the
+        backend ranks from, it does not hide anything, so "no matches - clear
+        your filters" would be the wrong advice when the only pill on screen
+        is a friend's name.
+        """
+        return self._filters().is_active
 
     def _schedule_rebuild(self) -> None:
         """Coalesce rebuild requests into one pass on the next event turn.
@@ -1472,6 +1931,7 @@ class RecommendationExplorerPage(QWidget):
         card.cover_requested.connect(
             lambda url, selected_key=key: self._request_cover(selected_key, url)
         )
+        card.metadata_filter_requested.connect(self._on_metadata_filter_requested)
         return card
 
     def _set_empty_icon(self, name: str) -> None:
@@ -1630,7 +2090,7 @@ class RecommendationExplorerPage(QWidget):
         for row, model in enumerate(self._visible_models):
             key = self._key_by_model[id(model)]
             values = (
-                str(model.rank) if model.rank is not None else "—",
+                str(model.rank) if model.rank is not None else "N/A",
                 model.display_title,
                 f"{model.personal_match:.1f}%" if model.personal_match_available else "Not available",
                 f"{model.mal_score:.2f}" if model.mal_score is not None else "Not rated",

@@ -116,6 +116,11 @@ class ThemeManager:
         # SVG renderer has no cascade, so the colour is substituted into the
         # placeholder's source text before it is rendered.
         self.application.setProperty("resolvedCoverMark", colours["border_strong"])
+        # A QLabel pixmap does not read the stylesheet's ``color``, so an icon
+        # that has to be drawn in the fault colour - the Compare surface's
+        # error states - needs the value handed to the renderer. Published
+        # here with the rest so it follows the gradient themes too.
+        self.application.setProperty("resolvedDanger", colours["danger_text"])
         # CHANGE [LINK]: rich text takes its anchor colour from
         # ``QPalette::Link``, never from a stylesheet ``color``. The sheet
         # declared ``QLabel#wizardApiLink { color: $accent_soft; }`` and that

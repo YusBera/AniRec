@@ -7,13 +7,16 @@ from AniRec.gui_main import create_application
 from AniRec.metadata import MINIMUM_WINDOW_HEIGHT, MINIMUM_WINDOW_WIDTH
 
 
-def test_main_window_exposes_three_surfaces():
-    """The dashboard, genre analysis and pipeline pages are no longer destinations.
+def test_main_window_exposes_the_product_surfaces():
+    """The shell exposes the focused product surfaces, in reading order.
 
     A first time user was previously shown six navigation entries, one of which
     rendered a seven step dependency chain as a flat list of buttons. Those
     views still exist: the first two are composed into Discover, and the steps
-    sit behind the developer tools switch in Settings.
+    sit behind the developer tools switch in Settings. Profile and Compare are
+    deliberate destinations rather than a return to the old utility-page
+    sprawl, and they are ordered by whose taste they are about - yours, then
+    somebody else's.
     """
     create_application([])
     window = MainWindow()
@@ -21,9 +24,11 @@ def test_main_window_exposes_three_surfaces():
     assert [definition.label for definition in PAGE_DEFINITIONS] == [
         "Discover",
         "My Library",
+        "Profile",
+        "Compare",
         "Settings",
     ]
-    assert window.page_stack.count() == 3
+    assert window.page_stack.count() == len(PAGE_DEFINITIONS)
     assert window.current_page_id is PageId.DISCOVER
     assert window.navigation_buttons[PageId.DISCOVER].isChecked()
     window.close()
@@ -75,7 +80,7 @@ def test_the_rail_reports_connection_state_with_a_lamp():
     window = MainWindow()
 
     assert window.system_readout._values["MAL"].text() == "OFFLINE"
-    assert window.system_readout._lamps["MAL"].state == "off"
+    assert window.system_readout._lamps["MAL"].state == "warn"
 
     window._profile_name = "yusuf"
     window._mal_connected = True

@@ -840,6 +840,556 @@ QLabel#bundlePanelLegend {
 QWidget#bundleUnfold { background: transparent; }
 
 /* ==========================================================================
+   FILTERS: PILLS, TAGS, TYPEAHEAD
+
+   None of this is a rounded chip. The application is a front panel, so an
+   active filter is a stencilled tag strip - caption in the machine face, the
+   value beside it, a hard dismiss box on the end - which is the object the
+   collection tabs and the rail readouts already are.
+
+   Each kind gets a colour, and the colour is a border and a caption tint
+   rather than a fill: eight solid chips in six colours is a bag of sweets,
+   and it is the values that should be read, not the categories. Every colour
+   is a role the palette already defines, so the row follows light, dark, OLED
+   and any gradient without a second palette.
+   ========================================================================== */
+QWidget#filterPillBar, QWidget#filterPillRow { background: transparent; }
+QFrame#filterPill {
+    background: #0A120E;
+    border: 1px solid #2E4636;
+    border-radius: 0;
+}
+QFrame#filterPill:hover { background: #101A14; border-color: #748676; }
+/* Focus is the signal colour here as everywhere else, so a keyboard user can
+   see which of eight filters they are about to remove. */
+QFrame#filterPill:focus { border: 1px solid #5FBFB5; }
+QLabel#filterPillCaption {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 1px; background: transparent;
+}
+QLabel#filterPillValue {
+    color: #C6D4C2; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 600; background: transparent;
+}
+/* The caption carries the kind. Genre uses the cool blue/aqua signal family;
+   studio uses the brass/orange accent family. The same mapping is used in
+   both contribution rails, so a category never changes meaning by surface. */
+QFrame#filterPill[filterKind="genre"] { border-color: #2F6B66; }
+QFrame#filterPill[filterKind="genre"] QLabel#filterPillCaption { color: #5FBFB5; }
+QFrame#filterPill[filterKind="studio"] { border-color: #241B0C; }
+QFrame#filterPill[filterKind="studio"] QLabel#filterPillCaption { color: #E9C275; }
+QFrame#filterPill[filterKind="year"] QLabel#filterPillCaption { color: #849686; }
+QFrame#filterPill[filterKind="score"] QLabel#filterPillCaption { color: #D9A441; }
+QFrame#filterPill[filterKind="status"] QLabel#filterPillCaption { color: #849686; }
+QFrame#filterPill[filterKind="episodes"] QLabel#filterPillCaption { color: #849686; }
+QFrame#filterPill[filterKind="profile"] { border-color: #2F6B66; }
+QFrame#filterPill[filterKind="profile"] QLabel#filterPillCaption { color: #8FCFC7; }
+/* A profile that is still loading recedes; one that failed takes the danger
+   border. Neither is a colour-only signal: the lamp, the accessible name and
+   the tooltip all carry the same fact in words. */
+QFrame#filterPill[pillState="loading"] { border-color: #2F6B66; }
+QFrame#filterPill[pillState="loading"] QLabel#filterPillValue { color: #849686; }
+QFrame#filterPill[pillState="error"] {
+    background: #241110; border-color: #7A3E28;
+}
+QFrame#filterPill[pillState="error"] QLabel#filterPillCaption,
+QFrame#filterPill[pillState="error"] QLabel#filterPillValue { color: #D98363; }
+QPushButton#filterPillDismiss {
+    background: transparent; border: none; border-radius: 0;
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 9.0pt;
+    font-weight: 700; padding: 0; min-height: 18px; text-align: center;
+}
+QPushButton#filterPillDismiss:hover { background: #241110; color: #D98363; }
+QPushButton#filterPillDismiss:focus { border: 1px solid #5FBFB5; background: transparent; }
+QPushButton#filterPillRetry, QPushButton#filterPillClear {
+    font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt; font-weight: 700;
+    letter-spacing: 1px; padding: 4px 6px; min-height: 16px;
+}
+
+/* Card metadata that filters. Compact by construction: no fill, a hairline
+   box, and the same size the genre sentence it replaced was set at, so the
+   card reads as metadata and not as a toolbar. Rows of these are laid into
+   exactly the height the old wrapped label reserved. */
+QPushButton#metadataTag, QPushButton#metadataTagOverflow {
+    background: transparent;
+    border: 1px solid #1E2E24;
+    border-radius: 0;
+    color: #849686;
+    font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt; font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 0px 5px; min-height: 12px; text-align: center;
+}
+QPushButton#metadataTag[tagKind="genre"] {
+    border-color: #2F6B66; color: #5FBFB5;
+}
+QPushButton#metadataTag[tagKind="studio"] {
+    border-color: #241B0C; color: #E9C275;
+}
+QPushButton#metadataTag[tagKind="genre"]:hover {
+    background: #0F2523; border-color: #2F6B66; color: #5FBFB5;
+}
+QPushButton#metadataTag[tagKind="studio"]:hover {
+    background: #241B0C; border-color: #D9A441; color: #E9C275;
+}
+/* CHANGE [LINK]: the tag a hovered rail block belongs to. Written after the
+   tagKind rules so it wins on equal specificity, and it lights the tag in
+   that tag's own family rather than one shared highlight colour - a genre
+   stays in the saved/blue family, a studio stays brass, so the link is read
+   as "this one" rather than as a new kind of state. */
+QPushButton#metadataTag[tagKind="genre"][linked="true"] {
+    background: #0F2523; border-color: #5FBFB5; color: #DCE8D8;
+}
+QPushButton#metadataTag[tagKind="studio"][linked="true"] {
+    background: #241B0C; border-color: #E9C275; color: #DCE8D8;
+}
+/* Hovering a contributor that is not one of these tags - the community term,
+   or pooled minor tags - recedes the whole strip. Silence would read the same
+   as hovering nothing; receding says "not from here". */
+QPushButton#metadataTag[dimmed="true"] {
+    border-color: #16221B; color: #47564A; background: transparent;
+}
+/* Keyboard reach has to be visible, or the tab order runs through controls
+   nobody can see they are on. */
+QPushButton#metadataTag:focus, QPushButton#metadataTagOverflow:focus {
+    border: 1px solid #5FBFB5; color: #5FBFB5;
+}
+QPushButton#metadataTagOverflow { color: #748676; border-color: #16221B; }
+QPushButton#metadataTagOverflow:hover { border-color: #2E4636; color: #C6D4C2; }
+QWidget#metadataTagStrip { background: transparent; }
+
+/* The genre and studio search, and the list it drops. The list is a child
+   widget rather than a popup window, so it is styled as part of the panel it
+   belongs to instead of as a floating menu. */
+QWidget#metadataTypeahead, QWidget#profileInput { background: transparent; }
+QLabel#filterControlLabel {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 600; letter-spacing: 1px;
+}
+QLineEdit#metadataTypeaheadInput, QLineEdit#profileInputField {
+    font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
+}
+QListWidget#metadataSuggestionList {
+    background: #101A14; border: 1px solid #2E4636;
+    border-radius: 0; padding: 2px;
+    font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+}
+QListWidget#metadataSuggestionList::item {
+    padding: 4px 8px; border-radius: 0; color: #C6D4C2;
+}
+QListWidget#metadataSuggestionList::item:hover { background: #0A120E; }
+/* The highlighted row is where Enter would land, so it takes the signal
+   colour rather than the accent: choosing a suggestion is machine assistance,
+   not a statement about the user's taste. */
+QListWidget#metadataSuggestionList::item:selected {
+    background: #17332F; color: #5FBFB5;
+}
+QLabel#metadataSuggestionEmpty, QLabel#profileInputMessage {
+    color: #849686; font-size: 7.4pt; padding: 3px 0;
+}
+QLabel#profileInputMessage[tone="error"] { color: #D98363; }
+QLabel#profileInputMessage[tone="warn"] { color: #D9A441; }
+QPushButton#profileInputAdd {
+    font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt; font-weight: 700;
+    letter-spacing: 1px; border-radius: 0;
+}
+QFrame#discoverFilterWorkbench {
+    background: transparent; border: none;
+    border-top: 1px solid #16221B; border-radius: 0;
+}
+/* Group mode is stated once, in the readout vocabulary, rather than by a
+   toggle the user has to find and a second colour scheme for the feed. */
+QLabel#groupModeBanner {
+    background: #0E1F21; border: 1px solid #2F6B66; border-radius: 0;
+    color: #8FCFC7; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 1px; padding: 5px 10px;
+}
+QLabel#groupModeBanner[tone="warn"] {
+    background: #241B0C; border-color: #6E5421; color: #D9A441;
+}
+QLabel#groupModeBanner[tone="error"] {
+    background: #241110; border-color: #7A3E28; color: #D98363;
+}
+
+/* ==========================================================================
+   COMPARE
+
+   The compatibility surface is the same machine as the feed. It borrows the
+   rack legend from the score inspector, the readout pairs from the navigation
+   rail, and the card from Discover. Nothing here is a KPI tile: a match score
+   is one large number in the accent, on the panel, with its supporting counts
+   in a row of readouts beside it - not four rounded cards with drop shadows.
+   ========================================================================== */
+QWidget#page-compare { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #070C09, stop:1 #0A120E); }
+QFrame#compareSelector {
+    background: #0C1410; border: 1px solid #1E2E24; border-radius: 0;
+}
+QLabel#compareChannel {
+    color: #E9C275; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 7.4pt;
+    font-weight: 800; letter-spacing: 2px;
+}
+QLabel#compareHint { color: #849686; font-size: 8.3pt; }
+QLineEdit#compareUsernameInput { font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; }
+QPushButton#compareSubmit {
+    font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt; font-weight: 700;
+    letter-spacing: 1.5px; border-radius: 0; min-height: 20px;
+}
+QComboBox#compareFriendPicker { font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; }
+QLabel#compareFriendsNotice { color: #849686; font-size: 7.4pt; }
+QLabel#compareInputMessage { color: #D98363; font-size: 7.4pt; }
+QFrame#compatibilityHeader {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0C1410, stop:0.55 #101A14, stop:1 #16221B); border: 1px solid #1E2E24; border-radius: 0;
+}
+QLabel#compatibilityLegend {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#compatibilityUsername {
+    color: #DCE8D8; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 11.7pt;
+    font-weight: 800;
+}
+/* One number, in the accent, at the size the score inspector uses for the
+   same fact. Amber because a match is about the user; a ring around it would
+   be a dashboard borrowing from a different product. */
+QLabel#compatibilityScore {
+    color: #D9A441; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 21.2pt;
+    font-weight: 700;
+}
+QLabel#compatibilityScoreCaption, QLabel#compatibilityStatKey {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#compatibilityMatchLabel {
+    color: #E9C275; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
+    font-weight: 700; letter-spacing: 1px;
+}
+QLabel#compatibilityStatValue {
+    color: #C6D4C2; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 10.3pt;
+    font-weight: 700;
+}
+QLabel#compatibilitySampleStamp {
+    background: #241B0C; border: 1px solid #6E5421; border-radius: 0;
+    color: #D9A441; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 1px; padding: 3px 8px;
+}
+QFrame#comparisonSection { background: transparent; border: none; }
+QLabel#comparisonSectionTitle {
+    color: #DCE8D8; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 10.3pt;
+    font-weight: 800;
+}
+QLabel#comparisonSectionDescription { color: #849686; font-size: 7.4pt; }
+QLabel#comparisonSectionCount {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    letter-spacing: 1px;
+}
+QLabel#comparisonSectionEmpty {
+    background: transparent; border: 1px dashed #1E2E24; border-radius: 0;
+    color: #849686; font-size: 8.3pt; padding: 14px 16px;
+}
+QFrame#compareStatePanel { background: transparent; border: none; }
+QLabel#compareStateTitle {
+    color: #DCE8D8; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 14.4pt;
+    font-weight: 800;
+}
+QLabel#compareStateMessage { color: #849686; font-size: 9.0pt; }
+QLabel#compareStateIcon {
+    background: transparent; color: #2E4636;
+    border: 1px solid #2E4636; border-radius: 0;
+}
+/* A failure and an absence must not look the same. An empty result keeps the
+   neutral outline above; a fault takes the danger role. */
+QFrame#compareStatePanel[stateTone="error"] QLabel#compareStateIcon {
+    color: #D98363; border-color: #7A3E28;
+}
+QFrame#compareStatePanel[stateTone="error"] QLabel#compareStateTitle {
+    color: #D98363;
+}
+
+/* Two people's scores on one card. Four fields in the machine face - not a
+   pair of coloured deltas, which is a price ticker. The size of a
+   disagreement is carried by the strip's border, in three bands, because
+   ranking disagreements to one decimal place is not what anyone is here for. */
+QFrame#comparisonScoreStrip {
+    background: #0A120E; border: 1px solid #1E2E24; border-radius: 0;
+}
+QFrame#comparisonScoreStrip[agreement="close"] { border-color: #2F6B66; }
+QFrame#comparisonScoreStrip[agreement="apart"] { border-color: #2E4636; }
+QFrame#comparisonScoreStrip[agreement="opposed"] { border-color: #D9A441; }
+QLabel#comparisonScoreCaption {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 1px; background: transparent;
+}
+QLabel#comparisonScoreValue {
+    color: #C6D4C2; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
+    font-weight: 700; background: transparent;
+}
+/* Yours in amber, theirs in cyan: the application's whole colour argument,
+   applied to the one place where "mine" and "someone else's" sit side by
+   side. The gap and the community figure stay neutral. */
+QLabel#comparisonScoreValue[field="you"] { color: #D9A441; }
+QLabel#comparisonScoreValue[field="them"] { color: #5FBFB5; }
+QLabel#comparisonScoreValue[field="mal"] { color: #748676; }
+QFrame#comparisonScoreStrip[agreement="opposed"] QLabel#comparisonScoreValue[field="gap"] {
+    color: #E9C275;
+}
+
+
+/* ==========================================================================
+   PROFILE
+
+   Eleven readouts about one reader, drawn as one panel with eleven legends
+   rather than as eleven widgets. Everything here is already in the sheet
+   above it: the section legend is Compare's section title, the figures are
+   the rail's readout pairs, the empty note is the feed's dashed note, and
+   the anime row is the list row's geometry with two scores in place of a
+   reason. Nothing on this surface has a radius, a shadow, or a gradient
+   laid over data.
+
+   The colour argument is the application's and is applied strictly: brass is
+   the reader's own score, aqua is the community's, and the status palette is
+   reserved for the direction of a disagreement. Nothing is carried by colour
+   alone - every delta is signed, and every direction is also a word.
+   ========================================================================== */
+QWidget#page-profile { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #070C09, stop:1 #0A120E); }
+QScrollArea#profileScroll, QWidget#profileContainer { background: transparent; }
+QLabel#profileChannel {
+    color: #E9C275; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 7.4pt;
+    font-weight: 800; letter-spacing: 2px;
+}
+QLabel#profileHint { color: #849686; font-size: 8.3pt; }
+
+/* ---- header ---- */
+QFrame#profileHeader {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0C1410, stop:0.55 #101A14, stop:1 #16221B); border: 1px solid #1E2E24; border-radius: 0;
+}
+/* Square, hairlined, and the same size whether it holds artwork or two
+   letters, so a profile with no avatar is not a different-shaped header. */
+QLabel#profileAvatar {
+    background: #0A120E; border: 1px solid #2E4636;
+    border-radius: 0; color: #748676;
+    font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 11.7pt; font-weight: 800;
+    letter-spacing: 1px;
+}
+QLabel#profileLegend {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileUsername {
+    color: #DCE8D8; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 11.7pt;
+    font-weight: 800;
+}
+QLabel#profileMemberSince {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    letter-spacing: 1px;
+}
+QLabel#profileSampleStamp {
+    background: #241B0C; border: 1px solid #6E5421; border-radius: 0;
+    color: #D9A441; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 1px; padding: 3px 8px;
+}
+
+/* ---- the readout pair, which is most of this page ---- */
+QLabel#profileReadoutKey {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileReadoutValue {
+    color: #C6D4C2; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 9.0pt; font-weight: 700;
+}
+QLabel#profileReadoutValue[readoutSize="lg"] { font-size: 11.7pt; }
+QLabel#profileReadoutValue[tone="you"] { color: #D9A441; }
+QLabel#profileReadoutValue[tone="community"] { color: #5FBFB5; }
+QLabel#profileReadoutValue[tone="against"] { color: #D98363; }
+
+/* ---- section frame ---- */
+QFrame#profileSection { background: transparent; border: none; }
+QLabel#profileSectionTitle {
+    color: #DCE8D8; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 10.3pt;
+    font-weight: 800;
+}
+QLabel#profileSectionDescription { color: #849686; font-size: 7.4pt; }
+QLabel#profileSectionBadge {
+    background: #0A120E; border: 1px solid #1E2E24; border-radius: 0;
+    color: #E9C275; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 1px; padding: 2px 8px;
+}
+/* An absence, not a fault: the dashed note the feed uses for empty sections. */
+QLabel#profileSectionEmpty, QLabel#profileEmptyNote {
+    background: transparent; border: 1px dashed #1E2E24; border-radius: 0;
+    color: #849686; font-size: 8.3pt; padding: 12px 14px;
+}
+QFrame#profileSectionError {
+    background: #241110; border: 1px solid #7A3E28; border-radius: 0;
+}
+QLabel#profileSectionErrorText {
+    color: #D98363; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
+    font-weight: 700; letter-spacing: 1px;
+}
+QPushButton#profileSectionRetry {
+    font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt; font-weight: 700;
+    letter-spacing: 1.5px; border-radius: 0; min-height: 18px;
+}
+/* Every container and every painted instrument on this surface is
+   transparent, and it has to be said out loud. The sheet opens with
+   QWidget { background-color: #070C09 }, which Qt applies to any plain QWidget a
+   stylesheet touches - so an unnamed layout holder inside a panel paints the
+   page background as a dark rectangle across it. That is what put boxes
+   behind the score readouts on the highlight plates. */
+QWidget#profileSkeleton, QWidget#profileBarRail, QWidget#profileCellBank,
+QWidget#profilePolarityScale, QWidget#profileTimelinePlot,
+QWidget#profileBlock, QWidget#profileReflow, QWidget#profileSectionBody,
+QWidget#profileFingerprint, QWidget#profileHistogram,
+QWidget#profileVerdictColumn, QWidget#profileGenreDNA, QWidget#profileStudioDNA,
+QWidget#profileEras, QWidget#profileHabits, QWidget#profileTimeline,
+QStackedWidget#profileSectionStack, QStackedWidget#profileContentStack {
+    background: transparent;
+}
+
+/* ---- taste fingerprint ---- */
+QFrame#profileFingerprintModule {
+    background: #0C1410; border: 1px solid #1E2E24; border-radius: 0;
+}
+QLabel#profileFingerprintCaption {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileFingerprintValue {
+    color: #DCE8D8; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 14.4pt;
+    font-weight: 700;
+}
+/* Brass only where the figure is a statement about the reader themselves. */
+QFrame#profileFingerprintModule[tone="you"] QLabel#profileFingerprintValue {
+    color: #D9A441;
+}
+QLabel#profileFingerprintLabel {
+    color: #E9C275; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 1px;
+}
+QLabel#profileFingerprintDetail { color: #849686; font-size: 7.4pt; }
+QLabel#profileScaleEnd {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    letter-spacing: 1px;
+}
+
+/* ---- rating distribution ---- */
+QLabel#profileHistogramScore {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
+    font-weight: 700;
+}
+QLabel#profileHistogramCount {
+    color: #C6D4C2; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
+}
+
+/* ---- one anime, two opinions ---- */
+QFrame#profileVerdictRow {
+    background: transparent; border: none;
+    border-bottom: 1px solid #16221B;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+}
+QFrame#profileVerdictRow:hover { background: #0C1410; }
+QFrame#profileVerdictRow[direction="above"] { border-left-color: #2A6244; }
+QFrame#profileVerdictRow[direction="below"] { border-left-color: #7A3E28; }
+QLabel#profileVerdictTitle { color: #DCE8D8; font-size: 8.3pt; }
+QLabel#profileVerdictMeta {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    letter-spacing: 1px;
+}
+QLabel#profileVerdictCover { background: #040806; border-radius: 0; }
+QLabel#profileVerdictCaption {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 1px;
+}
+QLabel#profileVerdictValue {
+    color: #C6D4C2; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt; font-weight: 700;
+}
+/* Yours in brass, theirs in aqua - the application's whole colour argument,
+   in the one place on this page where mine and everyone else's sit together. */
+QLabel#profileVerdictValue[field="you"] { color: #D9A441; }
+QLabel#profileVerdictValue[field="community"] { color: #5FBFB5; }
+QLabel#profileVerdictValue[field="gap"] { color: #748676; }
+QFrame#profileVerdictRow[direction="above"] QLabel#profileVerdictValue[field="gap"] {
+    color: #6FCF99;
+}
+QFrame#profileVerdictRow[direction="below"] QLabel#profileVerdictValue[field="gap"] {
+    color: #D98363;
+}
+
+/* ---- the one title a section singles out ---- */
+QFrame#profileHighlight {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #0C1410, stop:0.55 #101A14, stop:1 #16221B); border: 1px solid #2E4636; border-radius: 0;
+}
+QFrame#profileHighlight[tone="you"] { border-color: #D9A441; }
+QFrame#profileHighlight[tone="against"] { border-color: #7A3E28; }
+QLabel#profileHighlightLegend {
+    color: #E9C275; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+QFrame#profileHighlight[tone="against"] QLabel#profileHighlightLegend {
+    color: #D98363;
+}
+QLabel#profileColumnHeading {
+    color: #849686; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+
+/* ---- genre and studio ---- */
+QLabel#profileVerdictLegend {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileVerdictName {
+    color: #DCE8D8; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 10.3pt;
+    font-weight: 800;
+}
+QLabel#profileVerdictDetail {
+    color: #849686; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    letter-spacing: 1px;
+}
+/* A selectable row, marked the way the navigation rail marks a destination:
+   a reserved edge that fills, never a border that appears and shifts text. */
+QFrame#profileGenreRow {
+    background: transparent; border: none;
+    border-left: 2px solid transparent; border-radius: 0;
+}
+QFrame#profileGenreRow:hover { background: #0C1410; }
+QFrame#profileGenreRow:focus { border-left-color: #5FBFB5; background: #0C1410; }
+QFrame#profileGenreRow[selected="true"] {
+    background: #0C1410; border-left-color: #D9A441;
+}
+QLabel#profileGenreName { color: #C6D4C2; font-size: 8.3pt; }
+QFrame#profileGenreRow[selected="true"] QLabel#profileGenreName {
+    color: #DCE8D8; font-weight: 600;
+}
+QLabel#profileGenreValue {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
+}
+QLabel#profileGenreValue[field="average"] { color: #E9C275; }
+QFrame#profileGenreDrill {
+    background: #0A120E; border: 1px solid #1E2E24; border-radius: 0;
+}
+QLabel#profileTitleName { color: #849686; font-size: 8.3pt; }
+QLabel#profileTitleScore {
+    color: #D9A441; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt; font-weight: 700;
+}
+
+/* ---- eras, habits, timeline ---- */
+QLabel#profileEraLabel {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
+    letter-spacing: 1px;
+}
+QLabel#profileEraValue {
+    color: #C6D4C2; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
+}
+QLabel#profileEraValue[field="average"] { color: #E9C275; }
+QLabel#profileRewatchNote {
+    color: #849686; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+QLabel#profileAxisTick {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+}
+
+/* ==========================================================================
    DISABLED STATE - and it must stay the last block in this file.
 
    Qt follows CSS2 specificity, where QPushButton:disabled and

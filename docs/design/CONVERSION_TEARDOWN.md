@@ -148,7 +148,6 @@ today and is the one doing the conversion work.
 ### Where it lives
 
 - Source: `docs/landing/index.html` — one file, no build step, no bundler.
-- Published preview: https://claude.ai/code/artifact/d3bc1a71-dbad-4416-ad6b-c8888a4bc9c0
 - To host it from this repo, enable GitHub Pages on `main` with `/docs` as the source; the
   page is already at the `landing/` path and needs no configuration.
 

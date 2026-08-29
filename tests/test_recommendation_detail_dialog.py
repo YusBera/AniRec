@@ -64,7 +64,7 @@ def test_detail_dialog_renders_all_metadata_reason_and_scored_contributions():
     assert dialog.episodes_label.text() == "Episodes: 28 episodes"
     assert dialog.status_label.text() == "Status: Finished Airing"
     assert dialog.year_label.text() == "Airing year: 2023"
-    assert dialog.dates_label.text() == "Aired: 2023-09-29 — 2024-03-22"
+    assert dialog.dates_label.text() == "Aired: 2023-09-29 to 2024-03-22"
     assert dialog.synopsis_label.text().startswith("An elf mage")
     assert dialog.reason_label.text().startswith("Matches your interest")
     assert dialog.contributions_label.text() == "Fantasy: +52.25\nDrama: +21.50"

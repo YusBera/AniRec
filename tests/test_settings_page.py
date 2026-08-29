@@ -262,7 +262,7 @@ def test_data_actions_confirm_exact_scope_reset_ui_and_preserve_outside_sentinel
     assert page.delete_data_scope(DataDeletionScope.CACHE)
     assert not (cache / "general.bin").exists()
     assert (covers / "cover.img").exists()
-    assert confirmed[-1].target == cache
+    assert confirmed[-1].target == cache.resolve()
     assert page.delete_data_scope(DataDeletionScope.COVERS)
     assert not covers.exists()
 

@@ -1,0 +1,481 @@
+{
+  "_note": "A recorded compatibility response in the shape specified by BACKEND_REQUIREMENTS.md. Bundled so the Compare surface can be seen and reviewed before a backend produces one. Nothing here is computed by the interface: it is parsed exactly as a live response would be.",
+  "friends": [
+    {
+      "username": "NeoBalls_",
+      "profile_url": "https://myanimelist.net/profile/NeoBalls_"
+    },
+    {
+      "username": "kotomi",
+      "profile_url": "https://myanimelist.net/profile/kotomi"
+    },
+    {
+      "username": "an_extremely_long_sample_username_for_layout",
+      "profile_url": null
+    }
+  ],
+  "comparisons": [
+    {
+      "friend": {
+        "username": "NeoBalls_",
+        "match_score": 78,
+        "match_label": "Strong overlap",
+        "total_anime": 412,
+        "shared_anime": 96,
+        "both_rated": 74,
+        "profile_url": "https://myanimelist.net/profile/NeoBalls_"
+      },
+      "sections": [
+        {
+          "id": "most-different",
+          "title": "Most different ratings",
+          "description": "Where the two of you disagree the most.",
+          "empty_message": "No major rating differences found.",
+          "entries": [
+            {
+              "anime": {
+                "mal_id": 30,
+                "title": "Neon Genesis Evangelion",
+                "english_title": "Neon Genesis Evangelion",
+                "genres": [
+                  "Avant Garde",
+                  "Drama",
+                  "Psychological",
+                  "Sci-Fi"
+                ],
+                "studios": [
+                  "Gainax"
+                ],
+                "mean_score": 8.35,
+                "episodes": 26,
+                "year": 1995,
+                "status": "finished_airing",
+                "media_type": "tv",
+                "synopsis": "Teenage pilots are conscripted to defend humanity in giant biomechanical machines.",
+                "mal_url": "https://myanimelist.net/anime/30"
+              },
+              "scores": {
+                "your_score": 9,
+                "friend_score": 3,
+                "difference": 6,
+                "mal_score": 8.35
+              }
+            },
+            {
+              "anime": {
+                "mal_id": 21,
+                "title": "One Piece",
+                "english_title": "One Piece",
+                "genres": [
+                  "Action",
+                  "Adventure",
+                  "Fantasy"
+                ],
+                "studios": [
+                  "Toei Animation"
+                ],
+                "mean_score": 8.72,
+                "episodes": 1100,
+                "year": 1999,
+                "status": "currently_airing",
+                "media_type": "tv",
+                "synopsis": "A crew of pirates searches for the world's greatest treasure.",
+                "mal_url": "https://myanimelist.net/anime/21"
+              },
+              "scores": {
+                "your_score": 4,
+                "friend_score": 9,
+                "difference": -5,
+                "mal_score": 8.72
+              }
+            },
+            {
+              "anime": {
+                "mal_id": 199,
+                "title": "Sen to Chihiro no Kamikakushi",
+                "english_title": "Spirited Away",
+                "genres": [
+                  "Adventure",
+                  "Award Winning",
+                  "Supernatural"
+                ],
+                "studios": [
+                  "Studio Ghibli"
+                ],
+                "mean_score": 8.77,
+                "episodes": 1,
+                "year": 2001,
+                "status": "finished_airing",
+                "media_type": "movie",
+                "synopsis": "A girl wanders into a world of spirits and must work to free her parents.",
+                "mal_url": "https://myanimelist.net/anime/199"
+              },
+              "scores": {
+                "your_score": 10,
+                "friend_score": 6,
+                "difference": 4,
+                "mal_score": 8.77
+              }
+            }
+          ]
+        },
+        {
+          "id": "both-love",
+          "title": "You both love this",
+          "description": "Rated highly by both of you.",
+          "empty_message": "No shared favourites found.",
+          "entries": [
+            {
+              "anime": {
+                "mal_id": 9253,
+                "title": "Steins;Gate",
+                "english_title": "Steins;Gate",
+                "genres": [
+                  "Drama",
+                  "Sci-Fi",
+                  "Suspense",
+                  "Psychological"
+                ],
+                "studios": [
+                  "White Fox"
+                ],
+                "mean_score": 9.07,
+                "episodes": 24,
+                "year": 2011,
+                "status": "finished_airing",
+                "media_type": "tv",
+                "synopsis": "A self-styled mad scientist discovers a way to send messages into the past.",
+                "mal_url": "https://myanimelist.net/anime/9253"
+              },
+              "scores": {
+                "your_score": 10,
+                "friend_score": 10,
+                "difference": 0,
+                "mal_score": 9.07
+              }
+            },
+            {
+              "anime": {
+                "mal_id": 19,
+                "title": "Monster",
+                "english_title": "Monster",
+                "genres": [
+                  "Drama",
+                  "Mystery",
+                  "Psychological",
+                  "Suspense"
+                ],
+                "studios": [
+                  "Madhouse"
+                ],
+                "mean_score": 8.87,
+                "episodes": 74,
+                "year": 2004,
+                "status": "finished_airing",
+                "media_type": "tv",
+                "synopsis": "A surgeon hunts the man whose life he once saved.",
+                "mal_url": "https://myanimelist.net/anime/19"
+              },
+              "scores": {
+                "your_score": 9,
+                "friend_score": 10,
+                "difference": -1,
+                "mal_score": 8.87
+              }
+            }
+          ]
+        },
+        {
+          "id": "from-their-list",
+          "title": "You might like from their list",
+          "description": "On their list, not yours, and close to your taste.",
+          "empty_message": "No recommendations available from this profile.",
+          "entries": [
+            {
+              "anime": {
+                "mal_id": 4181,
+                "title": "Clannad: After Story",
+                "english_title": "Clannad: After Story",
+                "genres": [
+                  "Drama",
+                  "Romance",
+                  "Supernatural"
+                ],
+                "studios": [
+                  "Kyoto Animation"
+                ],
+                "mean_score": 8.93,
+                "episodes": 24,
+                "year": 2008,
+                "status": "finished_airing",
+                "media_type": "tv",
+                "synopsis": "The continuation of a story about family, loss, and growing up.",
+                "mal_url": "https://myanimelist.net/anime/4181"
+              },
+              "scores": {
+                "your_score": null,
+                "friend_score": 9,
+                "difference": null,
+                "mal_score": 8.93
+              },
+              "match_score": 88.5
+            },
+            {
+              "anime": {
+                "mal_id": 1535,
+                "title": "Death Note",
+                "english_title": "Death Note",
+                "genres": [
+                  "Supernatural",
+                  "Suspense",
+                  "Psychological",
+                  "Thriller"
+                ],
+                "studios": [
+                  "Madhouse"
+                ],
+                "mean_score": 8.62,
+                "episodes": 37,
+                "year": 2006,
+                "status": "finished_airing",
+                "media_type": "tv",
+                "synopsis": "A high school student discovers a notebook that kills anyone whose name is written in it.",
+                "mal_url": "https://myanimelist.net/anime/1535"
+              },
+              "scores": {
+                "your_score": null,
+                "friend_score": 8,
+                "difference": null,
+                "mal_score": 8.62
+              },
+              "match_score": 84.0
+            }
+          ]
+        },
+        {
+          "id": "against-the-crowd",
+          "title": "You both disagree with MAL",
+          "description": "Titles you and they rate well away from the community average.",
+          "empty_message": "Nothing where you both part company with the community.",
+          "entries": [
+            {
+              "anime": {
+                "mal_id": 32281,
+                "title": "Kimi no Na wa.",
+                "english_title": "Your Name.",
+                "genres": [
+                  "Award Winning",
+                  "Drama",
+                  "Supernatural",
+                  "Romance"
+                ],
+                "studios": [
+                  "CoMix Wave Films"
+                ],
+                "mean_score": 8.83,
+                "episodes": 1,
+                "year": 2016,
+                "status": "finished_airing",
+                "media_type": "movie",
+                "synopsis": "Two teenagers discover they are inexplicably swapping bodies.",
+                "mal_url": "https://myanimelist.net/anime/32281"
+              },
+              "scores": {
+                "your_score": 5,
+                "friend_score": 5,
+                "difference": 0,
+                "mal_score": 8.83
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "friend": {
+        "username": "kotomi",
+        "match_score": 34,
+        "match_label": "Little in common",
+        "total_anime": 58,
+        "shared_anime": 6,
+        "both_rated": 3,
+        "profile_url": "https://myanimelist.net/profile/kotomi"
+      },
+      "sections": [
+        {
+          "id": "most-different",
+          "title": "Most different ratings",
+          "description": "Where the two of you disagree the most.",
+          "empty_message": "No major rating differences found.",
+          "entries": [
+            {
+              "anime": {
+                "mal_id": 21,
+                "title": "One Piece",
+                "english_title": "One Piece",
+                "genres": [
+                  "Action",
+                  "Adventure",
+                  "Fantasy"
+                ],
+                "studios": [
+                  "Toei Animation"
+                ],
+                "mean_score": 8.72,
+                "episodes": 1100,
+                "year": 1999,
+                "status": "currently_airing",
+                "media_type": "tv",
+                "synopsis": "A crew of pirates searches for the world's greatest treasure.",
+                "mal_url": "https://myanimelist.net/anime/21"
+              },
+              "scores": {
+                "your_score": 4,
+                "friend_score": 10,
+                "difference": -6,
+                "mal_score": 8.72
+              }
+            }
+          ]
+        },
+        {
+          "id": "both-love",
+          "title": "You both love this",
+          "description": "Rated highly by both of you.",
+          "empty_message": "No shared favourites found.",
+          "entries": []
+        },
+        {
+          "id": "from-their-list",
+          "title": "You might like from their list",
+          "description": "On their list, not yours, and close to your taste.",
+          "empty_message": "No recommendations available from this profile.",
+          "entries": [
+            {
+              "anime": {
+                "mal_id": 4181,
+                "title": "Clannad: After Story",
+                "english_title": "Clannad: After Story",
+                "genres": [
+                  "Drama",
+                  "Romance",
+                  "Supernatural"
+                ],
+                "studios": [
+                  "Kyoto Animation"
+                ],
+                "mean_score": 8.93,
+                "episodes": 24,
+                "year": 2008,
+                "status": "finished_airing",
+                "media_type": "tv",
+                "synopsis": "The continuation of a story about family, loss, and growing up.",
+                "mal_url": "https://myanimelist.net/anime/4181"
+              },
+              "scores": {
+                "your_score": null,
+                "friend_score": 10,
+                "difference": null,
+                "mal_score": 8.93
+              },
+              "match_score": 71.2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "friend": {
+        "username": "an_extremely_long_sample_username_for_layout",
+        "match_score": 51,
+        "match_label": "Some overlap",
+        "total_anime": 1274,
+        "shared_anime": 21,
+        "both_rated": 12,
+        "profile_url": null
+      },
+      "sections": [
+        {
+          "id": "most-different",
+          "title": "Most different ratings",
+          "description": "Where the two of you disagree the most.",
+          "empty_message": "No major rating differences found.",
+          "entries": [
+            {
+              "anime": {
+                "mal_id": 199,
+                "title": "Sen to Chihiro no Kamikakushi",
+                "english_title": "Spirited Away",
+                "genres": [
+                  "Adventure",
+                  "Award Winning",
+                  "Supernatural"
+                ],
+                "studios": [
+                  "Studio Ghibli"
+                ],
+                "mean_score": 8.77,
+                "episodes": 1,
+                "year": 2001,
+                "status": "finished_airing",
+                "media_type": "movie",
+                "synopsis": "A girl wanders into a world of spirits and must work to free her parents.",
+                "mal_url": "https://myanimelist.net/anime/199"
+              },
+              "scores": {
+                "your_score": 10,
+                "friend_score": 4,
+                "difference": 6,
+                "mal_score": 8.77
+              }
+            }
+          ]
+        },
+        {
+          "id": "both-love",
+          "title": "You both love this",
+          "description": "Rated highly by both of you.",
+          "empty_message": "No shared favourites found.",
+          "entries": [
+            {
+              "anime": {
+                "mal_id": 9253,
+                "title": "Steins;Gate",
+                "english_title": "Steins;Gate",
+                "genres": [
+                  "Drama",
+                  "Sci-Fi",
+                  "Suspense",
+                  "Psychological"
+                ],
+                "studios": [
+                  "White Fox"
+                ],
+                "mean_score": 9.07,
+                "episodes": 24,
+                "year": 2011,
+                "status": "finished_airing",
+                "media_type": "tv",
+                "synopsis": "A self-styled mad scientist discovers a way to send messages into the past.",
+                "mal_url": "https://myanimelist.net/anime/9253"
+              },
+              "scores": {
+                "your_score": 9,
+                "friend_score": 9,
+                "difference": 0,
+                "mal_score": 9.07
+              }
+            }
+          ]
+        },
+        {
+          "id": "from-their-list",
+          "title": "You might like from their list",
+          "description": "On their list, not yours, and close to your taste.",
+          "empty_message": "No recommendations available from this profile.",
+          "entries": []
+        }
+      ]
+    }
+  ]
+}

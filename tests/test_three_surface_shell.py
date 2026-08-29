@@ -1,4 +1,4 @@
-"""The restructured shell: three surfaces, hidden tooling, and demo mode."""
+"""The restructured shell: focused surfaces, hidden tooling, and demo mode."""
 
 from __future__ import annotations
 
@@ -24,10 +24,12 @@ def window():
 # ---------------------------------------------------------------------------
 
 
-def test_navigation_offers_only_three_destinations(window):
+def test_navigation_offers_only_product_destinations(window):
     assert set(window.navigation_buttons) == {
         PageId.DISCOVER,
         PageId.LIBRARY,
+        PageId.PROFILE,
+        PageId.COMPARE,
         PageId.SETTINGS,
     }
 
@@ -84,7 +86,7 @@ def test_progress_is_reported_where_the_user_is_looking(window):
     """
     window._report_activity("Your recommendation feed has been refreshed.")
 
-    assert "refreshed" in window.discover_page.status_label.text()
+    assert "refreshed" in window.discover_page.message_label.text()
 
 
 def test_the_refresh_button_shows_that_work_is_under_way(window):

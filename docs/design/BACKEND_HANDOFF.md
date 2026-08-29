@@ -1,4 +1,4 @@
-# AniRec 1.3.0 — backend and release handoff
+# Backend handoff — open items from the 1.3.0 frontend work
 
 Written 2026-08-26 during the frontend score-inspector redesign. No backend,
 service, scoring, API, persistence, or release code was changed as part of this

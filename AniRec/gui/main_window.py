@@ -67,6 +67,7 @@ from ..services import (
     DataManagementService,
     OnboardingService,
     ProfileService,
+    ProfileStatisticsService,
     RecommendationStateService,
     ResultService,
     SampleDataService,
@@ -76,7 +77,23 @@ from ..services import (
 )
 from .advanced_operations_page import AdvancedOperationsPage
 from .about_page import AboutPage
+from .compare_page import ComparePage
+from .compatibility import (
+    CompatibilityUnavailable,
+    SampleCompatibilityProvider,
+    UnavailableCompatibilityProvider,
+    UnavailableReason,
+)
 from .discover_page import DiscoverPage
+from .profile_lookup import ProfileLookupService
+from .profile_page import ProfilePage
+from .taste_profile import (
+    LocalTasteProfileProvider,
+    SampleTasteProfileProvider,
+    TasteProfileProvider,
+    TasteProfileUnavailable,
+    UnavailableTasteProfileProvider,
+)
 from .home_page import ACTION_GENERATE, ACTION_SYNC, HomePage
 from .genre_analysis_page import GenreAnalysisPage
 from .instrument_widgets import (
@@ -101,7 +118,7 @@ from .scaling import set_gui_scale
 from .settings_page import SettingsPage
 from .system_log import SystemLog
 from .setup_wizard import SetupWizard
-from .texts import UI_TEXT, WIZARD_TEXT
+from .texts import COMPARE_TEXT, FILTER_TEXT, UI_TEXT, WIZARD_TEXT
 from .theme import ThemeManager
 from .workers import (
     MoreRecommendationsWorker,
@@ -116,6 +133,16 @@ from .workers import (
 class PageId(str, Enum):
     DISCOVER = "discover"
     LIBRARY = "library"
+    # CHANGE [PROFILE]: a surface about the reader rather than about the
+    # catalogue. It sits between the library it is derived from and the
+    # comparison it makes sense of: you read your own taste, then you read
+    # somebody else's against it.
+    PROFILE = "profile"
+    # CHANGE [COMPARE]: a fourth surface, and the first one that is about
+    # somebody else. It sits after the two that are about the user's own
+    # library and before Settings, which is where the rail already puts the
+    # things you configure rather than the things you read.
+    COMPARE = "compare"
     SETTINGS = "settings"
 
 
@@ -132,8 +159,20 @@ class PageDefinition:
 PAGE_DEFINITIONS = (
     PageDefinition(PageId.DISCOVER, UI_TEXT.pages[0].label, UI_TEXT.pages[0].description),
     PageDefinition(PageId.LIBRARY, UI_TEXT.pages[1].label, UI_TEXT.pages[1].description),
-    PageDefinition(PageId.SETTINGS, UI_TEXT.pages[2].label, UI_TEXT.pages[2].description),
+    PageDefinition(PageId.PROFILE, UI_TEXT.pages[2].label, UI_TEXT.pages[2].description),
+    PageDefinition(PageId.COMPARE, UI_TEXT.pages[3].label, UI_TEXT.pages[3].description),
+    PageDefinition(PageId.SETTINGS, UI_TEXT.pages[4].label, UI_TEXT.pages[4].description),
 )
+
+# TODO [ICON]: temporary. Every rail row is drawn from ``nav-<page>.svg`` and
+# there is no ``nav-profile.svg`` yet - the icon set is being drawn separately.
+# Until it lands the row borrows the existing profile mark, which is the right
+# subject at the wrong weight; delete this map when the asset arrives.
+NAV_ICON_OVERRIDES = {PageId.PROFILE: "profile"}
+
+
+def nav_icon_name(page_id: PageId) -> str:
+    return NAV_ICON_OVERRIDES.get(page_id, f"nav-{page_id.value}")
 
 # Collections shown on each surface.
 DISCOVER_STATES = ("all",)
@@ -289,6 +328,7 @@ class MainWindow(QMainWindow):
         token_store: TokenStore | None = None,
         data_management_service: DataManagementService | None = None,
         theme_manager: ThemeManager | None = None,
+        taste_profile_provider: TasteProfileProvider | None = None,
     ) -> None:
         super().__init__()
         self.profile_service = profile_service
@@ -307,6 +347,22 @@ class MainWindow(QMainWindow):
         self.setup_wizard: SetupWizard | None = None
         self.sample_data_service = SampleDataService()
         self.demo_mode = False
+        # CHANGE [COMPARE]: what ships wired up is the provider that refuses,
+        # with a reason. Nothing on the Compare surface invents a match score,
+        # and the surface says so rather than showing an empty page that looks
+        # like a fault. The recorded sample is offered from that state, and is
+        # stamped when it is shown.
+        self.compatibility_provider = UnavailableCompatibilityProvider()
+        self.sample_compatibility_provider = SampleCompatibilityProvider()
+        # The local provider reads only the synchronized MAL snapshots. It has
+        # no dependency on candidate generation or recommendation ranking.
+        # A bare test shell still gets the explicit refusing provider.
+        self.taste_profile_provider = taste_profile_provider or (
+            LocalTasteProfileProvider(ProfileStatisticsService(profile_service))
+            if profile_service is not None
+            else UnavailableTasteProfileProvider()
+        )
+        self.sample_taste_profile_provider = SampleTasteProfileProvider()
         # Mirrored state for the rail's system readout. Kept here rather
         # than interrogated from widgets so the panel cannot disagree
         # with what the window believes.
@@ -323,6 +379,16 @@ class MainWindow(QMainWindow):
         self.page_indexes: dict[PageId, int] = {}
         self.page_widgets: dict[PageId, QWidget] = {}
         self.worker_controller = WorkerController(self)
+        # One lookup for both surfaces, with one session cache in front of it,
+        # so the same username typed on Discover and on Compare costs one
+        # request and cannot produce two different verdicts.
+        self.profile_lookup = ProfileLookupService(
+            worker_controller=self.worker_controller,
+            profile_service=profile_service,
+            settings_service=self.settings_service,
+            parent=self,
+        )
+        self.profile_lookup.resolved.connect(self._on_profile_lookup_resolved)
         self.operation_dialogs: dict[str, OperationProgressDialog] = {}
         self.error_dialogs: dict[str, ErrorDialog] = {}
         self._last_more_count = 5
@@ -478,6 +544,7 @@ class MainWindow(QMainWindow):
         if stats:
             self._log("engine", f"taste vector restored · {len(stats)} genres")
         self.advanced_operations_page.set_profile(profile)
+        self._refresh_compare_context()
         self.settings_page.set_context(profile)
         settings = self.settings_service.load()
         mal_connected = bool(profile and settings.client_id)
@@ -502,6 +569,168 @@ class MainWindow(QMainWindow):
             if profile
             else "Connect a MyAnimeList profile first.",
         )
+
+    # ---- group recommendation profiles -----------------------------------
+
+    def _resolve_group_profile(self, username: str) -> None:
+        """Look one added username up, and answer the pill when it lands.
+
+        Every profile is its own request. Five added at once become five
+        operations that start together and finish independently, so a slow
+        list never holds up the others and a failure is scoped to its own
+        pill.
+        """
+        result = self.profile_lookup.lookup(username)
+        if result is not None:
+            self._apply_profile_result(result)
+
+    def _retry_group_profile(self, username: str) -> None:
+        # Without forgetting the previous answer a retry would be served the
+        # failure that is already on screen, which is not a retry.
+        self.profile_lookup.forget(username)
+        self._resolve_group_profile(username)
+
+    def _on_profile_lookup_resolved(self, result) -> None:
+        self._apply_profile_result(result)
+
+    def _apply_profile_result(self, result) -> None:
+        page = getattr(self, "recommendations_page", None)
+        if page is None:
+            return
+        if result.ok:
+            page.set_profile_resolved(result.username, result.username)
+            self._log("uplink", f"profile resolved · {result.username}")
+        else:
+            page.set_profile_failed(result.username, result.message)
+            self._log("uplink", f"profile refused · {result.username}")
+        compare = getattr(self, "compare_page", None)
+        if compare is not None and compare.is_loading:
+            self._continue_comparison(result)
+
+    def _on_discover_filters_changed(self, parameters) -> None:
+        """Report what the feed is being asked for, and what cannot be honoured.
+
+        The genre, studio, year and score filters are applied to the records
+        already loaded, which is what the feed has always done. Ranking for
+        several profiles at once is not something the frontend can do or
+        should: it needs the scoring engine to blend several taste vectors,
+        and that does not exist. So the profiles are collected, reported, and
+        the surface says plainly that the results below are still the user's
+        own until a backend answers.
+        """
+        profiles = parameters.get("profile") or []
+        page = self.recommendations_page
+        if not profiles:
+            page.set_group_notice("")
+            return
+        page.set_group_notice(FILTER_TEXT.group_pending)
+
+    # ---- compare ---------------------------------------------------------
+
+    def _start_comparison(self, username: str) -> None:
+        """Ask the provider for one comparison and draw whatever comes back."""
+        page = self.compare_page
+        page.show_loading(username)
+        try:
+            report = self.compatibility_provider.compare(username)
+        except CompatibilityUnavailable as error:
+            page.show_unavailable(error, offer_sample=True)
+            return
+        page.show_report(report)
+        page.request_visible_covers()
+
+    def _show_sample_comparison(self) -> None:
+        """Draw the bundled example, stamped as one.
+
+        Offered from the "not built yet" state so the surface can be judged
+        before the capability exists - the same bargain the sample library
+        already makes for the feed, and marked the same way.
+        """
+        page = self.compare_page
+        username = page.username_input.text().strip()
+        if not username:
+            friends = ()
+            try:
+                friends = self.sample_compatibility_provider.friends()
+            except CompatibilityUnavailable:
+                pass
+            if not friends:
+                return
+            page.set_friends(friends)
+            username = friends[0].username
+        try:
+            report = self.sample_compatibility_provider.compare(username)
+        except CompatibilityUnavailable as error:
+            page.show_unavailable(error)
+            return
+        page.show_report(report)
+        page.request_visible_covers()
+
+    # ---- profile ---------------------------------------------------------
+
+    def _load_taste_profile(self) -> None:
+        """Ask the provider for this reader's profile and draw what comes back."""
+        page = self.profile_page
+        page.show_loading()
+        try:
+            profile = self.taste_profile_provider.taste_profile()
+        except TasteProfileUnavailable as error:
+            page.show_unavailable(error, offer_sample=True)
+            return
+        page.show_profile(profile)
+        page.request_visible_covers()
+
+    def _show_sample_taste_profile(self) -> None:
+        """Draw the bundled example, stamped as one.
+
+        Offered from the "not built yet" state, exactly as Compare offers its
+        sample comparison, so the surface can be judged before the capability
+        exists without any figure on it claiming to be the reader's own.
+        """
+        page = self.profile_page
+        try:
+            profile = self.sample_taste_profile_provider.taste_profile()
+        except TasteProfileUnavailable as error:
+            page.show_unavailable(error)
+            return
+        page.show_profile(profile)
+        page.request_visible_covers()
+
+    def _filter_discover_by_metadata(self, kind, value: str) -> None:
+        """A genre or studio pressed on the Profile page.
+
+        Goes to the same filter state a card's tag goes to, and then to the
+        surface that state belongs to: pressing "Isekai" on a panel that has
+        just told you it is your weakest genre is a request to go and look at
+        the ones you have not watched.
+        """
+        self.recommendations_page.filter_state.add_value(kind, str(value))
+        self.navigate_to(PageId.DISCOVER)
+
+    def _continue_comparison(self, _result) -> None:
+        """Placeholder for the live path once a provider exists.
+
+        The lookup resolving is what would let a real provider start work. It
+        is not wired to one today because there is nothing to start, and
+        pretending otherwise would leave the surface spinning forever.
+        """
+        return
+
+    def _refresh_compare_context(self) -> None:
+        """Tell Compare who "you" are, and what its friends list can be.
+
+        Both facts move with the active profile: the friends list is that
+        account's, and comparing a list with itself is only refusable once the
+        surface knows which list is yours.
+        """
+        page = getattr(self, "compare_page", None)
+        if page is None:
+            return
+        page.set_own_username(self.active_profile.username if self.active_profile else None)
+        try:
+            page.set_friends(self.compatibility_provider.friends())
+        except CompatibilityUnavailable as error:
+            page.set_friends_unavailable(error.reason)
 
     def _build_shell(self) -> QWidget:
         shell = QWidget()
@@ -563,7 +792,7 @@ class MainWindow(QMainWindow):
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setAccessibleName(f"Open {definition.label} page")
             button.setToolTip(definition.description)
-            button.setIcon(themed_ui_icon(f"nav-{definition.page_id.value}"))
+            button.setIcon(themed_ui_icon(nav_icon_name(definition.page_id)))
             button.clicked.connect(
                 lambda checked=False, page_id=definition.page_id: self.navigate_to(page_id)
             )
@@ -701,6 +930,18 @@ class MainWindow(QMainWindow):
                 )
                 self.recommendations_page.set_visible_states(DISCOVER_STATES)
                 self.recommendations_page.set_compact_header(True)
+                # Only Discover. My Library files what has already been
+                # decided, and another person's taste has no bearing on it.
+                self.recommendations_page.set_group_profiles_enabled(True)
+                self.recommendations_page.profile_requested.connect(
+                    self._resolve_group_profile
+                )
+                self.recommendations_page.profile_retry_requested.connect(
+                    self._retry_group_profile
+                )
+                self.recommendations_page.filters_changed.connect(
+                    self._on_discover_filters_changed
+                )
                 page = DiscoverPage(self.recommendations_page)
                 page.refresh_requested.connect(self.recommendations_requested.emit)
                 self.discover_page = page
@@ -712,6 +953,19 @@ class MainWindow(QMainWindow):
                 self.library_page.set_visible_states(LIBRARY_STATES)
                 self.library_page.set_compact_header(True)
                 page = self.library_page
+            elif definition.page_id is PageId.PROFILE:
+                page = ProfilePage()
+                page.retry_requested.connect(self._load_taste_profile)
+                page.sample_requested.connect(self._show_sample_taste_profile)
+                page.metadata_filter_requested.connect(
+                    self._filter_discover_by_metadata
+                )
+                self.profile_page = page
+            elif definition.page_id is PageId.COMPARE:
+                page = ComparePage()
+                page.compare_requested.connect(self._start_comparison)
+                page.sample_requested.connect(self._show_sample_comparison)
+                self.compare_page = page
             elif definition.page_id is PageId.SETTINGS:
                 page = SettingsPage(
                     settings_service=self.settings_service,
@@ -958,6 +1212,9 @@ class MainWindow(QMainWindow):
                 gradient_end=settings.gradient_end,
             )
         self._retint_icons()
+        profile_page = getattr(self, "profile_page", None)
+        if profile_page is not None:
+            profile_page.apply_scale()
         self._log(
             "render",
             f"{settings.theme} palette bound · x{settings.gui_scale:.2f}",
@@ -1014,8 +1271,16 @@ class MainWindow(QMainWindow):
         for definition in PAGE_DEFINITIONS:
             button = self.navigation_buttons.get(definition.page_id)
             if button is not None:
-                button.setIcon(themed_ui_icon(f"nav-{definition.page_id.value}"))
-        for page in (self.discover_page, *self._recommendation_views()):
+                button.setIcon(themed_ui_icon(nav_icon_name(definition.page_id)))
+        # CHANGE [PROFILE]: Compare and Profile both paint state marks from
+        # the icon set, and Compare was not in this list, so its empty-state
+        # glyph kept the previous palette's tint until the page was rebuilt.
+        for page in (
+            self.discover_page,
+            self.compare_page,
+            self.profile_page,
+            *self._recommendation_views(),
+        ):
             retint = getattr(page, "retint_icons", None)
             if callable(retint):
                 retint()
@@ -1075,7 +1340,7 @@ class MainWindow(QMainWindow):
         if operation_key.startswith("sync:"):
             completed = result.user_stats.get("completed_count", 0)
             self._report_activity(
-                f"MAL data updated — {completed} completed titles synced.",
+                f"MAL data updated: {completed} completed titles synced.",
                 tone="success",
             )
         elif operation_key.startswith("more-recommendations:"):
@@ -1167,6 +1432,8 @@ class MainWindow(QMainWindow):
         for page_id, button in self.navigation_buttons.items():
             button.setChecked(page_id is resolved_page_id)
         self._move_nav_marker(resolved_page_id)
+        if resolved_page_id is PageId.PROFILE and changed:
+            self._load_taste_profile()
         if changed:
             self._mark_page_change()
 

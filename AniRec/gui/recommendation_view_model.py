@@ -12,6 +12,7 @@ from ..models import Recommendation
 NOT_AVAILABLE = "Not available"
 NOT_RATED = "Not rated"
 NO_GENRES = "Genres not available"
+NO_STUDIOS = "Studio not available"
 NO_SYNOPSIS = "No synopsis is available."
 
 
@@ -68,6 +69,13 @@ class RecommendationViewModel:
     mal_score_text: str
     genres: tuple[str, ...]
     genres_text: str
+    # CHANGE [FILTER]: carried so the card can show, and the search box can
+    # offer, who actually made a title. ``Anime.studios`` has been populated
+    # from MyAnimeList and persisted since the field was added to the domain
+    # model; the presentation layer simply never asked for it, so the one
+    # piece of metadata a viewer most often filters by was invisible.
+    studios: tuple[str, ...]
+    studios_text: str
     episodes: int | None
     episodes_text: str
     status: str
@@ -96,6 +104,7 @@ class RecommendationViewModel:
         personal_match = raw_personal_match or 0.0
         mal_score = _finite_number(anime.mean_score)
         genres = tuple(text for item in anime.genres if (text := _clean_text(item)))
+        studios = tuple(text for item in anime.studios if (text := _clean_text(item)))
         alternatives = tuple(
             text for item in anime.alternative_titles if (text := _clean_text(item))
         )
@@ -126,6 +135,8 @@ class RecommendationViewModel:
             ),
             genres=genres,
             genres_text=" · ".join(genres) if genres else NO_GENRES,
+            studios=studios,
+            studios_text=" · ".join(studios) if studios else NO_STUDIOS,
             episodes=anime.episodes,
             episodes_text=(
                 f"{anime.episodes} episode" if anime.episodes == 1 else f"{anime.episodes} episodes"

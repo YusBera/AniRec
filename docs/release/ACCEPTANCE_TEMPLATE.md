@@ -1,15 +1,32 @@
-# AniRec 1.3.0 second-computer user acceptance
+# Second-computer user acceptance
 
 Do not include a Client ID, Client Secret, authorization code, token, username, anime history, profile data, or unredacted log content.
 
 ## Test environment
 
+- Version under test:
 - Tester:
 - Date and timezone:
 - Windows edition/version/build:
 - Architecture:
 - Package ZIP SHA-256:
 - `verify_windows_acceptance.ps1` result: `PASS` / `FAIL`
+
+## How to start
+
+1. Extract the complete ZIP to a normal user-writable folder.
+2. Open PowerShell in the extracted package root.
+3. Run:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .erify_windows_acceptance.ps1 -Launch
+   ```
+
+4. Confirm the preflight is `PASS`, then complete every row below.
+
+Rows below cover the current release. When a release adds or removes a
+user-visible behaviour, edit this table in the same change — do not fork a
+per-version copy of this file.
 
 ## Interactive acceptance matrix
 
@@ -49,3 +66,7 @@ Record `PASS`, `FAIL`, or `BLOCKED` for each row.
 - Overall result: `PASS` / `FAIL` / `BLOCKED`
 - Blocking issues:
 - Follow-up required:
+
+Return only this completed Markdown file, and screenshots with personal
+information removed. Do not return `ACCEPTANCE_STATIC_RESULTS.txt` if it
+contains a Windows account name or extraction path you would rather not share.

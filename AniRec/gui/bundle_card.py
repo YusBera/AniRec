@@ -18,7 +18,7 @@ Geometry that is load-bearing, and why:
 - **Three covers and a count, or four covers at exactly four.** Three plus a
   "+1" is worse than showing all four, so the count starts at five.
 
-See ``docs/BUNDLE_HANDOFF.md`` for the parts of this that are still blocked on
+See ``docs/design/BUNDLE_HANDOFF.md`` for the parts of this that are still blocked on
 data rather than on layout.
 """
 

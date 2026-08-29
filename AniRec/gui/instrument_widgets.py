@@ -33,6 +33,15 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QFrame, QSlider, QWidget
 
+from .contribution_visuals import (
+    SemanticContribution,
+    contribution_colour,
+    contribution_summary,
+    proportional_segment_widths,
+    semantic_contributions,
+    snap_pixel,
+    snapped_segment_edges,
+)
 from .scaling import scaled
 
 
@@ -41,6 +50,42 @@ def _application_colour(property_name: str, fallback: str) -> QColor:
     value = application.property(property_name) if application is not None else None
     colour = QColor(str(value or fallback))
     return colour if colour.isValid() else QColor(fallback)
+
+
+# How far a calibration mark is pushed away from whatever sits under it.
+GRADUATION_MIX = 0.42
+
+
+def relative_luminance(colour: QColor) -> float:
+    return (
+        0.2126 * colour.redF()
+        + 0.7152 * colour.greenF()
+        + 0.0722 * colour.blueF()
+    )
+
+
+def blend_opaque(base: QColor, toward: QColor, amount: float) -> QColor:
+    """An opaque mix of two colours."""
+    ratio = max(0.0, min(1.0, float(amount)))
+    return QColor(
+        round(base.red() + (toward.red() - base.red()) * ratio),
+        round(base.green() + (toward.green() - base.green()) * ratio),
+        round(base.blue() + (toward.blue() - base.blue()) * ratio),
+    )
+
+
+def calibration_mark(under: QColor, amount: float = GRADUATION_MIX) -> QColor:
+    """A mark guaranteed to separate from the colour it is drawn on.
+
+    A single fixed mark colour cannot work here. The rail is painted from a
+    derived palette, so a contributor can land at any luminance, and a fixed
+    mid-tone will sooner or later coincide with one - measured at 0.003
+    contrast on the gradient theme, which is a mark that exists in the buffer
+    and not on the glass. Pushing away from the local background instead
+    keeps every mark legible whatever the palette does.
+    """
+    target = QColor(0, 0, 0) if relative_luminance(under) > 0.45 else QColor(255, 255, 255)
+    return blend_opaque(under, target, amount)
 
 
 class InstrumentPanel(QFrame):
@@ -107,11 +152,12 @@ class SteppedSlider(QSlider):
 
 
 class ScoreTrack(QWidget):
-    """Paint a score as the sum of its supplied contribution values.
+    """Paint a score-length rail divided by its supplied contributors.
 
-    Segment widths use the values exactly as supplied: ``16.5`` occupies 16.5%
-    of the available 0-100 rail.  Negative values remain visible in the text
-    rows but do not pretend to be positive width on this one-direction track.
+    The calibrated match determines total filled length. Positive raw terms
+    divide that length proportionally; their exact values remain in the text
+    rows and accessible description. Negative terms do not pretend to be
+    positive width on this one-direction track.
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -121,6 +167,7 @@ class ScoreTrack(QWidget):
         self.setMinimumHeight(30)
         self.setMaximumHeight(34)
         self._contributions: tuple[tuple[str, float], ...] = ()
+        self._semantic_contributions: tuple[SemanticContribution, ...] = ()
         self._score = 0.0
         self._reveal = 1.0
         self._animation = QVariantAnimation(self)
@@ -134,21 +181,21 @@ class ScoreTrack(QWidget):
     def contributions(self) -> tuple[tuple[str, float], ...]:
         return self._contributions
 
-    def set_data(self, contributions, score: float) -> None:
-        cleaned = []
-        for name, value in contributions or ():
-            try:
-                number = float(value)
-            except (TypeError, ValueError):
-                continue
-            if math.isfinite(number):
-                cleaned.append((str(name), number))
-        self._contributions = tuple(cleaned)
+    def set_data(self, contributions, score: float, *, genres=(), studios=()) -> None:
+        self._semantic_contributions = semantic_contributions(
+            contributions, genres=genres, studios=studios
+        )
+        self._contributions = tuple(
+            (item.name, item.value) for item in self._semantic_contributions
+        )
         try:
             candidate = float(score)
         except (TypeError, ValueError):
             candidate = 0.0
         self._score = candidate if math.isfinite(candidate) else 0.0
+        summary = contribution_summary(self._semantic_contributions)
+        self.setToolTip(f"Score contributors: {summary}")
+        self.setAccessibleDescription(summary)
         self._reveal = 1.0
         self.update()
 
@@ -170,47 +217,113 @@ class ScoreTrack(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        rail_left = snap_pixel(rect.left())
+        rail_top = snap_pixel(rect.top())
+        rail_width = max(1, snap_pixel(rect.width()))
+        rail_height = max(1, snap_pixel(rect.height()))
+        rail_rect = QRect(rail_left, rail_top, rail_width, rail_height)
 
         well = _application_colour("resolvedWell", "#06100C")
         border = _application_colour("resolvedBorder", "#23372C")
         accent = _application_colour("resolvedAccent", "#C6A15B")
         signal = _application_colour("resolvedSignal", "#6FC6C0")
-        painter.fillRect(rect, well)
+        text = _application_colour("resolvedText", "#E9E5D6")
+        neutral = _application_colour("resolvedTextSubtle", "#7C8C80")
+        painter.fillRect(rail_rect, well)
 
-        contributions = self._contributions
-        if not contributions and self._score > 0:
-            contributions = (("Personal match", self._score),)
+        available = rail_width
+        positive = tuple(
+            item for item in self._semantic_contributions if item.value > 0
+        )
+        filled = snap_pixel(
+            available
+            * max(0.0, min(self._score, 100.0))
+            / 100.0
+            * self._reveal
+        )
+        if not positive and self._score > 0:
+            painter.fillRect(
+                QRect(rail_left, rail_top, filled, rail_height), accent
+            )
 
-        x = rect.left()
-        available = rect.width()
-        for index, (name, value) in enumerate(contributions):
-            if value <= 0 or x >= rect.right():
+        widths = proportional_segment_widths(positive, filled)
+        edges = snapped_segment_edges(widths, start=rail_left)
+        for index, item in enumerate(positive):
+            segment_left = edges[index]
+            segment_right = edges[index + 1]
+            width = segment_right - segment_left
+            if width <= 0:
                 continue
-            width = available * min(value, 100.0) / 100.0 * self._reveal
-            width = min(width, rect.right() - x)
-            lowered = name.casefold()
-            if "community" in lowered or "viewer" in lowered:
-                colour = QColor(signal)
-            else:
-                colour = QColor(accent).darker(100 + min(index, 3) * 12)
-            painter.fillRect(QRectF(x, rect.top(), width, rect.height()), colour)
-            x += width
+            colour = contribution_colour(
+                item,
+                genre=signal,
+                studio=accent,
+                community=neutral,
+                other=neutral.darker(112),
+            )
+            painter.fillRect(
+                QRect(segment_left, rail_top, width, rail_height), colour
+            )
 
-        tick = QColor(border)
-        tick.setAlpha(185)
-        painter.setPen(QPen(tick, 1))
-        for index in range(11):
-            x_tick = rect.left() + rect.width() * index / 10
-            painter.drawLine(int(x_tick), int(rect.top()), int(x_tick), int(rect.bottom()))
+        # CHANGE [GRID]: the mark was the border colour at alpha 185, which
+        # gave it no guaranteed relationship to whatever it lands on. Measured
+        # across the four themes at a 63% fill, marks past the fill point fell
+        # to 0.045 contrast in light and 0.028 in gradient - present in the
+        # buffer, invisible on the glass, so the scale appeared to stop
+        # partway along the rail. A fixed mid-tone was no better: it collided
+        # with a derived contributor colour on the gradient theme at 0.003.
+        #
+        # Each mark is therefore derived from the pixel under it.
+        def colour_under(x: int) -> QColor:
+            if x >= rail_left + filled:
+                return well
+            for index, item in enumerate(positive):
+                if edges[index] <= x < edges[index + 1]:
+                    return contribution_colour(
+                        item,
+                        genre=signal,
+                        studio=accent,
+                        community=neutral,
+                        other=neutral.darker(112),
+                    )
+            return accent
 
-        # The rail is a contribution sum; this hairline is the final displayed
-        # score.  They normally coincide.  If the service sends a calibrated
-        # score that does not reconcile with the raw contributors, the UI is
-        # honest about that difference instead of stretching a segment.
-        score_x = rect.left() + rect.width() * max(0.0, min(self._score, 100.0)) / 100.0
-        score_marker = QColor(signal).lighter(118)
-        painter.fillRect(QRectF(score_x - 1, rect.top(), 2, rect.height()), score_marker)
-        painter.drawRect(rect)
+        # Contributor edges are already visible as colour transitions. Keep
+        # all actual strokes on the one regular ten-percent calibration grid.
+        divider_positions = {
+            rail_left + snap_pixel(rail_width * index / 10)
+            for index in range(1, 10)
+        }
+        for x_tick in sorted(divider_positions):
+            painter.setPen(QPen(calibration_mark(colour_under(x_tick)), 1))
+            painter.drawLine(
+                x_tick,
+                rail_top,
+                x_tick,
+                rail_top + rail_height - 1,
+            )
+
+        # The bright one-pixel hairline marks the final displayed score. Raw
+        # contributor values remain exact in the adjacent text breakdown.
+        score_x = min(
+            rail_left + rail_width - 1,
+            rail_left
+            + snap_pixel(
+                rail_width * max(0.0, min(self._score, 100.0)) / 100.0
+            ),
+        )
+        score_marker = QColor(text)
+        painter.setPen(QPen(score_marker, 1))
+        painter.drawLine(
+            score_x,
+            rail_top,
+            score_x,
+            rail_top + rail_height - 1,
+        )
+        painter.setPen(QPen(border, 1))
+        painter.drawRect(
+            QRect(rail_left, rail_top, rail_width - 1, rail_height - 1)
+        )
         painter.end()
 
 

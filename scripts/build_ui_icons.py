@@ -13,7 +13,7 @@ Declaring the geometry in one place makes the shared rules - stroke weight, cap
 and join style, the safe area - impossible to apply inconsistently, and makes a
 change to any of them a one-line edit rather than forty.
 
-Geometry rules, from docs/ICON_HANDOFF.md
+Geometry rules, from docs/design/ICON_HANDOFF.md
 -----------------------------------------
 * 24x24 viewBox, transparent, safe area 3..21.
 * stroke 2, ``butt`` caps, ``miter`` joins. Nothing in this interface is round
@@ -194,6 +194,15 @@ ICONS["nav-discover"] = stroke_icon(
 ICONS["nav-library"] = stroke_icon(
     '<rect x="3" y="4" width="18" height="16"/>\n'
     '<path d="M8 8v9M12 8v9M16 8v9"/>'
+)
+# Two lists side by side in one chassis, with the rows that line up marked
+# across the middle. The other three nav marks are a panel with something
+# inside it; this is the same panel holding two columns, because comparing is
+# what it does.
+ICONS["nav-compare"] = stroke_icon(
+    '<rect x="3" y="4" width="18" height="16"/>\n'
+    '<path d="M12 4v16"/>\n'
+    '<path d="M6 9h3M6 13h3M15 9h3M15 15h3"/>'
 )
 # Vertical faders: the same control family as the filter, on the other axis.
 ICONS["nav-settings"] = stroke_icon(

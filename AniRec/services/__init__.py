@@ -20,6 +20,11 @@ from .recommendation_state_service import (
     RecommendationStateService,
 )
 from .taste_feedback_service import TasteFeedbackService
+from .taste_profile_service import (
+    ProfileStatisticsService,
+    ProfileStatisticsUnavailable,
+    ProfileStatisticsUnavailableReason,
+)
 from .result_service import ResultService
 from .sample_data_service import SampleDataService
 from .settings_service import SettingsService
@@ -43,6 +48,9 @@ __all__ = [
     "RecommendationLocalState",
     "RecommendationStateService",
     "TasteFeedbackService",
+    "ProfileStatisticsService",
+    "ProfileStatisticsUnavailable",
+    "ProfileStatisticsUnavailableReason",
     "ResultService",
     "SampleDataService",
     "SettingsService",

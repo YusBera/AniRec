@@ -904,7 +904,7 @@ class SetupWizard(QDialog):
     def _update_navigation(self) -> None:
         step = self.current_step
         self.step_indicator.setText(
-            f"Step {int(step) + 1} of {len(WizardStep)} — {STEP_LABELS[step]}"
+            f"Step {int(step) + 1} of {len(WizardStep)} | {STEP_LABELS[step]}"
         )
         self.back_button.setEnabled(step > WizardStep.WELCOME)
         # CHANGE [HIERARCHY]: the forward action carries the accent from the

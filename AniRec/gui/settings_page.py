@@ -656,7 +656,7 @@ class SettingsPage(QWidget):
         self.client_id_input.setText(settings.client_id or "")
         self.client_secret_input.clear()
         self.client_secret_input.setPlaceholderText(
-            "Saved securely — leave blank to keep" if self._saved_secret else ""
+            "Saved securely. Leave blank to keep." if self._saved_secret else ""
         )
         self.redirect_uri_input.setText(settings.redirect_uri)
         # CHANGE [BUG2]: restore the saved GUI scale before anything is sized.
@@ -761,7 +761,7 @@ class SettingsPage(QWidget):
         self._saved_secret = settings.client_secret
         self.client_secret_input.clear()
         self.client_secret_input.setPlaceholderText(
-            "Saved securely — leave blank to keep" if self._saved_secret else ""
+            "Saved securely. Leave blank to keep." if self._saved_secret else ""
         )
         self._set_status(
             "Settings saved and applied."

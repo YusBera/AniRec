@@ -34,8 +34,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .cover_art import rounded_cover
+from .cover_art import CoverLabel, rounded_cover
+from .discover_filters import FilterKind
 from .instrument_widgets import keep_crisp
+from .metadata_tags import MetadataTagStrip
 from .design_tokens import RADIUS, SPACE
 from .match_badge import (
     BADGE_BOTTOM_INSET,
@@ -290,6 +292,12 @@ class ClampedLabel(QLabel):
 
 
 class RecommendationCard(QFrame):
+    # CHANGE [FILTER]: the card reports what was clicked; it does not decide
+    # what happens next. Filtering belongs to one state object shared by every
+    # entry point, so a genre clicked here and the same genre chosen from the
+    # search box are one value rather than two code paths that agree by
+    # inspection.
+    metadata_filter_requested = Signal(object, str)
     cover_requested = Signal(str)
     details_requested = Signal(object)
     selection_requested = Signal(object)
@@ -304,10 +312,18 @@ class RecommendationCard(QFrame):
         parent: QWidget | None = None,
         *,
         mal_opener: Callable[[QUrl], bool] = QDesktopServices.openUrl,
+        comparison=None,
     ) -> None:
         super().__init__(parent)
         self.model = model
         self._mal_opener = mal_opener
+        # CHANGE [COMPARE]: the comparison surface shows the same object -
+        # a poster, a title, its metadata - plus two people's opinions of it.
+        # That is a variant of this card, not a second card: writing a
+        # lookalike would mean maintaining the cover fitting, the line
+        # budgets, the eliding and the match plate in two places, and they
+        # would drift the first time one of them changed.
+        self.comparison = comparison
         self.setObjectName("recommendationCard")
         self.setProperty("recommendationCard", True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -335,7 +351,7 @@ class RecommendationCard(QFrame):
         # and three of them pushed the feedback buttons past the point where
         # the review loop still fits the default window.
         layout.setSpacing(scaled(SPACE['sm']))
-        self.cover_label = QLabel()
+        self.cover_label = CoverLabel()
         self.cover_label.setObjectName("recommendationCover")
         # Artwork is never rastered; see keep_crisp.
         keep_crisp(self.cover_label)
@@ -364,7 +380,13 @@ class RecommendationCard(QFrame):
             self.match_badge = MatchBadge(model.personal_match, self.cover_label)
             self._make_detail_target(self.match_badge)
             self.match_badge.set_contributions(
-                getattr(model, "genre_contributions", ())
+                getattr(model, "genre_contributions", ()),
+                genres=getattr(model, "genres", ()),
+                studios=getattr(model, "studios", ()),
+            )
+            # Hovering a block on the rail lights the tag that produced it.
+            self.match_badge.contributor_hovered.connect(
+                self._on_contributor_hovered
             )
             self._position_badge()
 
@@ -400,10 +422,20 @@ class RecommendationCard(QFrame):
             clamped=True,
         )
         self.meta_label.setWordWrap(True)
+        # CHANGE [FILTER]: the genre line becomes a strip of real controls.
+        # The label stays, hidden, because it is what the height reservation
+        # is measured from and because anything reading the card's contents
+        # still finds the whole list as text.
         self.genres_label = self._label(
             model.genres_text, "recommendationGenres", clamped=True
         )
         self.genres_label.setWordWrap(True)
+        self.tag_strip = MetadataTagStrip(self)
+        self.tag_strip.tag_activated.connect(self.metadata_filter_requested.emit)
+        self.tag_strip.overflow_activated.connect(
+            lambda _values: self.details_requested.emit(self.model)
+        )
+        self._apply_tags()
         self.reason_label = self._label(
             model.reason, "recommendationReason", clamped=True
         )
@@ -423,6 +455,10 @@ class RecommendationCard(QFrame):
         self._reserve_lines(self.meta_label, META_LINES)
         self._reserve_lines(self.genres_label, GENRE_LINES)
         self._reserve_lines(self.reason_label, REASON_LINES)
+        # The strip takes exactly the height the genre line used to occupy, so
+        # turning a sentence into controls costs the grid nothing.
+        self.tag_strip.reserve_height(self.genres_label.height())
+        self.genres_label.setVisible(False)
         # CHANGE [BUG7]: the single-line labels were cut off mid-word at the
         # card edge with no ellipsis, which reads as text running into the
         # border rather than as text that continues elsewhere.
@@ -507,12 +543,18 @@ class RecommendationCard(QFrame):
         # recommendation is actually about. Genres lead now; the external
         # score joins the other metadata below them.
         for widget in (
-            self.genres_label,
+            self.tag_strip,
             self.meta_label,
             self.mal_score_label,
             self.reason_label,
         ):
             layout.addWidget(widget)
+        # CHANGE [COMPARE]: two people's scores, in the readout vocabulary the
+        # rail and the score bench already use, and only on a card that has
+        # them. A feed card is not given an empty comparison row.
+        self.comparison_strip = self._build_comparison_strip()
+        if self.comparison_strip is not None:
+            layout.addWidget(self.comparison_strip)
         # CHANGE [BUG7]: collect the slack from equalised heights in one
         # place. Without this Qt shares the extra pixels out between the
         # stretchable labels, so identical cards still disagreed about where
@@ -547,6 +589,94 @@ class RecommendationCard(QFrame):
             utility_row.addWidget(button)
         layout.addLayout(utility_row)
 
+    def _on_contributor_hovered(self, name: str) -> None:
+        """Link the rail to the tag strip.
+
+        The rail says how much each term contributed; the strip says which
+        terms exist. Neither says which block is which, and a colour key
+        would need a legend the card has no room for. Lighting the tag while
+        its block is under the pointer answers it without adding anything to
+        the resting state.
+        """
+        strip = getattr(self, "tag_strip", None)
+        if strip is not None:
+            strip.highlight(name)
+
+    def _apply_tags(self) -> None:
+        """Fill the strip: the studio first, then the genres.
+
+        Studio leads because it is the stronger handle. "Another one by Kyoto
+        Animation" narrows a catalogue far further than "another drama", and
+        putting it first means it survives the narrow card, where it is the
+        tail of a long genre list that collapses into the counter.
+
+        Only the first studio is offered. Co-productions list three or four
+        and none of them is the answer to "who made this"; the rest stay
+        reachable in the breakdown.
+        """
+        values = []
+        studios = getattr(self.model, "studios", ()) or ()
+        if studios:
+            values.append((FilterKind.STUDIO, studios[0]))
+        values.extend((FilterKind.GENRE, genre) for genre in self.model.genres)
+        self.tag_strip.set_values(values)
+
+    def _build_comparison_strip(self) -> QWidget | None:
+        """The two scores and the gap, or nothing at all.
+
+        Four fields in the machine face on one line: yours, theirs, the
+        difference, and what everyone else thinks. Deliberately not a pair of
+        coloured deltas - a red and a green number beside each other is a
+        price ticker, and this is two people disagreeing about a cartoon. The
+        gap carries a band ("close", "apart", "opposed") that the stylesheet
+        renders as a border tone, so the strength of a disagreement is visible
+        without the interface shouting about it.
+        """
+        scores = self.comparison
+        if scores is None:
+            return None
+        strip = QFrame(self)
+        strip.setObjectName("comparisonScoreStrip")
+        strip.setProperty("agreement", scores.agreement)
+        row = QHBoxLayout(strip)
+        row.setContentsMargins(
+            scaled(SPACE["sm"]), scaled(SPACE["xs"]),
+            scaled(SPACE["sm"]), scaled(SPACE["xs"]),
+        )
+        row.setSpacing(scaled(SPACE["sm"]))
+        self.comparison_fields: dict[str, QLabel] = {}
+        fields = (
+            ("YOU", scores.your_score_text, "Your score"),
+            ("THEM", scores.friend_score_text, "Their score"),
+            ("GAP", scores.difference_text, "Difference between the two scores"),
+            ("MAL", scores.mal_score_text, "MyAnimeList community score"),
+        )
+        for index, (caption, value, description) in enumerate(fields):
+            if index:
+                divider = QFrame(strip)
+                divider.setObjectName("stripDivider")
+                divider.setFixedWidth(1)
+                divider.setFixedHeight(scaled(12))
+                row.addWidget(divider)
+            cell = QVBoxLayout()
+            cell.setContentsMargins(0, 0, 0, 0)
+            cell.setSpacing(0)
+            caption_label = QLabel(caption, strip)
+            caption_label.setObjectName("comparisonScoreCaption")
+            value_label = QLabel(value, strip)
+            value_label.setObjectName("comparisonScoreValue")
+            value_label.setProperty("field", caption.casefold())
+            # The caption is two or three letters; the sentence a screen
+            # reader needs is not, and it is not the reader's job to expand
+            # "GAP" into what it means.
+            value_label.setAccessibleName(f"{description}: {value}")
+            cell.addWidget(caption_label)
+            cell.addWidget(value_label)
+            row.addLayout(cell)
+            self.comparison_fields[caption.casefold()] = value_label
+        row.addStretch(1)
+        return strip
+
     def apply_scale(self) -> None:
         """Re-apply every fixed dimension for the current GUI scale.
 
@@ -578,6 +708,7 @@ class RecommendationCard(QFrame):
         self._reserve_lines(self.meta_label, META_LINES)
         self._reserve_lines(self.genres_label, GENRE_LINES)
         self._reserve_lines(self.reason_label, REASON_LINES)
+        self.tag_strip.reserve_height(self.genres_label.height())
         self._rescale_cover()
         self._position_badge()
 
@@ -639,6 +770,13 @@ class RecommendationCard(QFrame):
         label.setText(original)
         height = single + max(0, lines - 1) * label.fontMetrics().lineSpacing()
         label.setFixedHeight(height)
+        # Top-align inside the reservation. Qt centres by default, so a
+        # one-line title in a box reserved for two sat half a line lower than
+        # a two-line title beside it - the boxes aligned perfectly and the
+        # words in them did not.
+        label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+        )
 
     def _label(
         self,
@@ -844,6 +982,9 @@ class RecommendationCard(QFrame):
         # already shrunken image and the portraits looked soft. The original is
         # cached and each display size is derived from it.
         self._source_cover = source
+        # A real arrival, so dissolve into it. Re-fits after a resize or a
+        # scale change go through _show_cover without arming anything.
+        self.cover_label.arm_fade()
         self._show_cover(source)
         if self.model.cover_url:
             MEMORY_COVER_CACHE.put(self.model.cover_url, source)

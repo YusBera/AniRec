@@ -1,0 +1,236 @@
+{
+  "_note": "A recorded taste-profile response in the shape taste_profile.py parses. Bundled so the Profile surface can be seen and reviewed before a backend produces one. Nothing here is computed by the interface: catalogue facts are public MyAnimeList metadata, and every figure attributed to the reader is illustrative sample output, not a real account.",
+  "identity": {
+    "username": "anirec_sample",
+    "avatar_url": null,
+    "member_since": "2017",
+    "profile_url": null,
+    "completed": 312,
+    "episodes": 4829,
+    "days_watched": 81.4,
+    "mean_score": 7.42
+  },
+  "fingerprint": [
+    {
+      "id": "community-sync",
+      "caption": "COMMUNITY SYNC",
+      "value_text": "72%",
+      "label": "MOSTLY ALIGNED",
+      "detail": "Your score lands within a point of the community on 7 titles in 10.",
+      "position": 0.72,
+      "readout": "cells"
+    },
+    {
+      "id": "rating-bias",
+      "caption": "RATING BIAS",
+      "value_text": "-0.43",
+      "label": "HARSH",
+      "detail": "You rate a little under the community average.",
+      "position": 0.36,
+      "scale_low": "HARSH",
+      "scale_high": "GENEROUS",
+      "readout": "scale",
+      "tone": "you"
+    },
+    {
+      "id": "contrarian",
+      "caption": "CONTRARIAN",
+      "value_text": "31%",
+      "label": "OFTEN APART",
+      "detail": "Disagrees with consensus by two points or more on a third of your list.",
+      "position": 0.31,
+      "readout": "cells"
+    },
+    {
+      "id": "completion",
+      "caption": "COMPLETION",
+      "value_text": "87%",
+      "label": "FINISHES",
+      "detail": "Of everything you started, 87 percent reached the last episode.",
+      "position": 0.87,
+      "readout": "cells",
+      "tone": "you"
+    },
+    {
+      "id": "mainstream",
+      "caption": "MAINSTREAM",
+      "value_text": "63%",
+      "label": "POPULAR-LEANING",
+      "detail": "Most of your list sits inside the community's two thousand best known.",
+      "position": 0.63,
+      "scale_low": "OBSCURE",
+      "scale_high": "MAINSTREAM",
+      "readout": "scale"
+    }
+  ],
+  "rating_distribution": {
+    "buckets": [
+      {"score": 10, "count": 34},
+      {"score": 9, "count": 47},
+      {"score": 8, "count": 68},
+      {"score": 7, "count": 58},
+      {"score": 6, "count": 31},
+      {"score": 5, "count": 19},
+      {"score": 4, "count": 12},
+      {"score": 3, "count": 7},
+      {"score": 2, "count": 3},
+      {"score": 1, "count": 0}
+    ]
+  },
+  "hot_takes": {
+    "higher": [
+      {"title": "Kotoura-san", "mal_id": 16099, "your_score": 9.0, "community_score": 6.7, "delta": 2.3, "year": 2013},
+      {"title": "Gakkougurashi!", "mal_id": 28121, "your_score": 9.0, "community_score": 7.4, "delta": 1.6, "year": 2015},
+      {"title": "Sakurasou no Pet na Kanojo", "mal_id": 13759, "your_score": 9.0, "community_score": 7.9, "delta": 1.1, "year": 2012},
+      {"title": "Kaiba", "mal_id": 3701, "your_score": 9.0, "community_score": 8.0, "delta": 1.0, "year": 2008},
+      {"title": "Kuuchuu Buranko", "mal_id": 6512, "your_score": 8.0, "community_score": 7.4, "delta": 0.6, "year": 2009}
+    ],
+    "lower": [
+      {"title": "Kimi no Na wa.", "mal_id": 32281, "your_score": 4.0, "community_score": 8.6, "delta": -4.6, "year": 2016},
+      {"title": "Tokyo Ghoul:re", "mal_id": 36511, "your_score": 3.0, "community_score": 6.4, "delta": -3.4, "year": 2018},
+      {"title": "Sword Art Online II", "mal_id": 21881, "your_score": 4.0, "community_score": 6.7, "delta": -2.7, "year": 2014},
+      {"title": "Boku no Hero Academia 4th Season", "mal_id": 38408, "your_score": 5.0, "community_score": 7.7, "delta": -2.7, "year": 2019},
+      {"title": "Darling in the FranXX", "mal_id": 35849, "your_score": 5.0, "community_score": 7.2, "delta": -2.2, "year": 2018}
+    ]
+  },
+  "hype_killers": {
+    "count": 17,
+    "entries": [
+      {"title": "Koe no Katachi", "mal_id": 28851, "your_score": 5.0, "community_score": 8.93, "delta": -3.93, "ranked_position": 51},
+      {"title": "Shingeki no Kyojin Season 3 Part 2", "mal_id": 38524, "your_score": 5.0, "community_score": 9.05, "delta": -4.05, "ranked_position": 3},
+      {"title": "Kimi no Na wa.", "mal_id": 32281, "your_score": 4.0, "community_score": 8.61, "delta": -4.61, "ranked_position": 87},
+      {"title": "Boku no Hero Academia", "mal_id": 31964, "your_score": 5.0, "community_score": 7.86, "delta": -2.86, "ranked_position": 412}
+    ],
+    "biggest": {
+      "title": "Tengen Toppa Gurren Lagann",
+      "mal_id": 2001,
+      "your_score": 3.0,
+      "community_score": 8.71,
+      "delta": -5.71,
+      "ranked_position": 12
+    }
+  },
+  "hidden_gems": {
+    "rate_text": "14%",
+    "entries": [
+      {"title": "Shouwa Genroku Rakugo Shinjuu", "mal_id": 31757, "your_score": 10.0, "community_score": 8.6, "popularity_rank": 1408},
+      {"title": "Sonny Boy", "mal_id": 47778, "your_score": 9.0, "community_score": 7.2, "popularity_rank": 2960},
+      {"title": "Kuuchuu Buranko", "mal_id": 6512, "your_score": 9.0, "community_score": 7.4, "popularity_rank": 2184},
+      {"title": "Tatami Galaxy", "mal_id": 7785, "your_score": 9.0, "community_score": 8.5, "popularity_rank": 1031}
+    ],
+    "deepest": {
+      "title": "Nihon Chinbotsu 2020",
+      "mal_id": 40899,
+      "your_score": 9.0,
+      "community_score": 5.9,
+      "popularity_rank": 4872
+    }
+  },
+  "genres": {
+    "readings": [
+      {"name": "Drama", "watched": 63, "share": 0.20, "average": 8.02, "spread": 1.8, "titles": [
+        {"title": "Shouwa Genroku Rakugo Shinjuu", "your_score": 10.0},
+        {"title": "Clannad: After Story", "your_score": 9.0},
+        {"title": "Monster", "your_score": 10.0},
+        {"title": "Kimi no Na wa.", "your_score": 4.0}
+      ]},
+      {"name": "Action", "watched": 55, "share": 0.18, "average": 6.94, "spread": 2.0, "titles": [
+        {"title": "Fullmetal Alchemist: Brotherhood", "your_score": 8.0},
+        {"title": "Boku no Hero Academia", "your_score": 5.0},
+        {"title": "Tengen Toppa Gurren Lagann", "your_score": 3.0}
+      ]},
+      {"name": "Sci-Fi", "watched": 48, "share": 0.15, "average": 7.86, "spread": 1.5, "titles": [
+        {"title": "Steins;Gate", "your_score": 9.0},
+        {"title": "Neon Genesis Evangelion", "your_score": 9.0},
+        {"title": "Sonny Boy", "your_score": 9.0},
+        {"title": "Darling in the FranXX", "your_score": 5.0}
+      ]},
+      {"name": "Psychological", "watched": 41, "share": 0.13, "average": 8.41, "spread": 1.2, "titles": [
+        {"title": "Monster", "your_score": 10.0},
+        {"title": "Perfect Blue", "your_score": 9.0},
+        {"title": "Kaiba", "your_score": 9.0},
+        {"title": "Death Note", "your_score": 8.0}
+      ]},
+      {"name": "Slice of Life", "watched": 37, "share": 0.12, "average": 7.51, "spread": 1.4, "titles": [
+        {"title": "Tatami Galaxy", "your_score": 9.0},
+        {"title": "Kotoura-san", "your_score": 9.0},
+        {"title": "Barakamon", "your_score": 7.0}
+      ]},
+      {"name": "Romance", "watched": 34, "share": 0.11, "average": 7.10, "spread": 2.9, "titles": [
+        {"title": "Sakurasou no Pet na Kanojo", "your_score": 9.0},
+        {"title": "Toradora!", "your_score": 8.0},
+        {"title": "Kimi no Na wa.", "your_score": 4.0}
+      ]},
+      {"name": "Isekai", "watched": 34, "share": 0.11, "average": 5.80, "spread": 1.6, "titles": [
+        {"title": "Re:Zero kara Hajimeru Isekai Seikatsu", "your_score": 6.0},
+        {"title": "Sword Art Online II", "your_score": 4.0},
+        {"title": "Tate no Yuusha no Nariagari", "your_score": 5.0}
+      ]},
+      {"name": "Thriller", "watched": 22, "share": 0.07, "average": 7.95, "spread": 1.1, "titles": [
+        {"title": "Gakkougurashi!", "your_score": 9.0},
+        {"title": "Death Note", "your_score": 8.0}
+      ]}
+    ],
+    "best_match": {"name": "Psychological", "watched": 41, "average": 8.41},
+    "weakness": {"name": "Isekai", "watched": 34, "average": 5.80},
+    "divisive": {"name": "Romance", "watched": 34, "average": 7.10, "spread": 2.9, "detail": "WIDE SCORE RANGE"}
+  },
+  "studios": {
+    "most_watched": {"name": "Shaft", "watched": 27, "average": 7.62},
+    "most_trusted": {"name": "Kyoto Animation", "watched": 19, "average": 8.42},
+    "nemesis": {"name": "Studio Pierrot", "watched": 14, "average": 5.10},
+    "readings": [
+      {"name": "Shaft", "watched": 27, "average": 7.62},
+      {"name": "Kyoto Animation", "watched": 19, "average": 8.42},
+      {"name": "Madhouse", "watched": 18, "average": 8.10},
+      {"name": "Bones", "watched": 16, "average": 7.30},
+      {"name": "Studio Pierrot", "watched": 14, "average": 5.10},
+      {"name": "Studio Ghibli", "watched": 12, "average": 8.25},
+      {"name": "White Fox", "watched": 9, "average": 8.00},
+      {"name": "Trigger", "watched": 8, "average": 6.75}
+    ]
+  },
+  "eras": {
+    "buckets": [
+      {"label": "1995-1999", "watched": 14, "average": 7.80},
+      {"label": "2000-2004", "watched": 27, "average": 7.95},
+      {"label": "2005-2009", "watched": 41, "average": 7.88},
+      {"label": "2010-2014", "watched": 78, "average": 8.13},
+      {"label": "2015-2019", "watched": 92, "average": 7.21},
+      {"label": "2020-2026", "watched": 60, "average": 7.05}
+    ],
+    "golden": {"label": "2010-2014", "average": 8.13, "watched": 78},
+    "seasons": [
+      {"name": "WINTER", "average": 7.10, "watched": 61},
+      {"name": "SPRING", "average": 7.80, "watched": 84},
+      {"name": "SUMMER", "average": 7.40, "watched": 70},
+      {"name": "FALL", "average": 8.00, "watched": 97}
+    ],
+    "season_of_choice": "FALL"
+  },
+  "habits": {
+    "readings": [
+      {"id": "completion", "caption": "COMPLETION", "value_text": "87%", "position": 0.87},
+      {"id": "drop", "caption": "DROP RATE", "value_text": "6%", "position": 0.06},
+      {"id": "on-hold", "caption": "ON HOLD", "value_text": "3%", "position": 0.03},
+      {"id": "rewatch", "caption": "REWATCH RATE", "value_text": "11%", "position": 0.11},
+      {"id": "finish", "caption": "FINISH WHAT YOU START", "value_text": "89%", "position": 0.89}
+    ],
+    "most_rewatched": {"title": "Steins;Gate", "mal_id": 9253, "watches": 6}
+  },
+  "timeline": {
+    "points": [
+      {"year": 2017, "average": 7.90, "rated": 24},
+      {"year": 2018, "average": 7.50, "rated": 38},
+      {"year": 2019, "average": 7.20, "rated": 41},
+      {"year": 2020, "average": 7.40, "rated": 52},
+      {"year": 2021, "average": 7.10, "rated": 44},
+      {"year": 2022, "average": 7.00, "rated": 36},
+      {"year": 2023, "average": 7.20, "rated": 29},
+      {"year": 2024, "average": 6.90, "rated": 21},
+      {"year": 2025, "average": 7.10, "rated": 15}
+    ],
+    "trend": "GETTING HARSHER",
+    "trend_detail": "Down 0.8 since 2017."
+  }
+}

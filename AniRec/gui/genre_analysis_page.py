@@ -127,7 +127,7 @@ class GenreAnalysisPage(QWidget):
             layout = QVBoxLayout(card)
             caption = QLabel(label)
             caption.setObjectName("dashboardMetricLabel")
-            value = QLabel("—")
+            value = QLabel("N/A")
             value.setObjectName("dashboardMetricValue")
             value.setWordWrap(True)
             self.metric_values[key] = value

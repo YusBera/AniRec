@@ -2,14 +2,13 @@
 
 Addresses: FEAT2 (per-anime match), BUG2 (it scales with the GUI scale).
 
-A square telemetry plate replaces the old circular/pill language. A cell rail
-carries the proportion and a mono readout carries the exact percentage, the
+A square telemetry plate replaces the old circular/pill language. A calibrated
+contribution rail carries the proportion and a mono readout carries the exact percentage, the
 same pairing the scoring bench uses on the landing artifact.
 
-The rail is a meter, not an icon: cells are lit from a continuous value, so
-the final cell is partially lit and 91%, 92% and 95% are visibly different.
-The previous ten-cell version rounded to the nearest tenth and drew all
-three identically.
+The rail is a meter, not an icon: contributor blocks use their continuous
+values, so 91%, 92% and 95% remain visibly different. Ten-percent hairlines
+give it the same calibrated instrument language as the expanded score track.
 
 The score is the one the ranker already produces, so nothing is stubbed: it is
 a real, explainable figure whose parts are listed in the card's breakdown. When
@@ -19,7 +18,7 @@ keeps working unchanged.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QRectF, Qt, QVariantAnimation
+from PySide6.QtCore import QEasingCurve, QRect, QRectF, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -30,6 +29,15 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QWidget
 
+from .contribution_visuals import (
+    SemanticContribution,
+    contribution_colour,
+    contribution_summary,
+    proportional_segment_widths,
+    semantic_contributions,
+    snap_pixel,
+    snapped_segment_edges,
+)
 from .design_tokens import FONT_STACK_MONO
 from .scaling import scaled
 
@@ -47,7 +55,7 @@ BAR_HEIGHT = 38
 PLATE_PADDING = 7.0
 # The readout's point size as a share of the plate height, so the number
 # grows with the GUI scale without a second constant to keep in step.
-READOUT_RATIO = 0.36
+READOUT_RATIO = 0.27
 
 # The vignette's alpha ramp, top of the plate to bottom.
 # CHANGE [VIGNETTE]: the old ramp reached full black at 34% of the plate and
@@ -67,7 +75,9 @@ SCRIM_RAMP = (
 READOUT_HALO_ALPHA = 205
 READOUT_HALO_SPREAD = 2
 
-RAIL_HEIGHT = 4.0
+RAIL_HEIGHT = 8.0
+RAIL_BOTTOM_GAP = 3.0
+READOUT_RAIL_GAP = 1.0
 # How much a hovered cell grows, and the share its neighbours take. The
 # falloff is what makes dragging along the rail feel continuous instead
 # of like stepping between separate buttons.
@@ -103,9 +113,60 @@ BAR_SIDE_INSET = 0
 # Kept for callers that still import the old name.
 BADGE_DIAMETER = BAR_HEIGHT
 
+# How far a seam is pushed from the block on its left. Lower than a
+# calibration mark: a boundary between two lit blocks needs to be seen,
+# not announced.
+SEAM_MIX = 0.55
+
+# How much a hovered block brightens. Raised from 16: at that value the
+# response was there in the buffer but below the threshold where a
+# reader notices the bar answered them.
+HOVER_LIFT = 24
+
+
+# How far a calibration mark is pushed away from whatever sits under it.
+GRADUATION_MIX = 0.42
+
+
+def relative_luminance(colour: QColor) -> float:
+    return (
+        0.2126 * colour.redF()
+        + 0.7152 * colour.greenF()
+        + 0.0722 * colour.blueF()
+    )
+
+
+def blend_opaque(base: QColor, toward: QColor, amount: float) -> QColor:
+    """An opaque mix of two colours."""
+    ratio = max(0.0, min(1.0, float(amount)))
+    return QColor(
+        round(base.red() + (toward.red() - base.red()) * ratio),
+        round(base.green() + (toward.green() - base.green()) * ratio),
+        round(base.blue() + (toward.blue() - base.blue()) * ratio),
+    )
+
+
+def calibration_mark(under: QColor, amount: float = GRADUATION_MIX) -> QColor:
+    """A mark guaranteed to separate from the colour it is drawn on.
+
+    A single fixed mark colour cannot work here. The rail is painted from a
+    derived palette, so a contributor can land at any luminance, and a fixed
+    mid-tone will sooner or later coincide with one - measured at 0.003
+    contrast on the gradient theme, which is a mark that exists in the buffer
+    and not on the glass. Pushing away from the local background instead
+    keeps every mark legible whatever the palette does.
+    """
+    target = QColor(0, 0, 0) if relative_luminance(under) > 0.45 else QColor(255, 255, 255)
+    return blend_opaque(under, target, amount)
+
 
 class MatchBadge(QWidget):
     """A compact, square-ended match telemetry plate."""
+
+    # The contributor under the pointer, or "" when the pointer is elsewhere.
+    # The card uses it to light the matching tag, so the rail can be read as
+    # "which of these tags produced this" rather than only "how much".
+    contributor_hovered = Signal(str)
 
     def __init__(self, percentage: float, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -116,6 +177,7 @@ class MatchBadge(QWidget):
         self._signal = QColor("#6FC6C0")
         self._text = QColor("#FFFFFF")
         self._contributions: tuple[tuple[str, float], ...] = ()
+        self._semantic_contributions: tuple[SemanticContribution, ...] = ()
         self._hover_cell = -1
         self._hover_strength = 0.0
         # Where the readout landed on the last paint, so a probe can check it
@@ -151,42 +213,66 @@ class MatchBadge(QWidget):
             self._signal = QColor(signal)
         self.update()
 
-    def set_contributions(self, contributions) -> None:
+    def set_contributions(self, contributions, *, genres=(), studios=()) -> None:
         """Colour the rail by what actually produced the score.
 
-        The detail view already splits a match into its parts; the rail on the
-        card was a single flat colour saying only "this much". Given the same
-        terms it can say which of them, in the same language: warm bands for
-        the genres you rate highly, the signal colour for the community term
-        that came from other people rather than from you.
+        Genre terms use the interface's blue signal family and studios use its
+        brass/orange accent family, matching their filter tags.  The tooltip
+        repeats those categories in words so colour is never the only cue.
         """
-        cleaned = []
-        for name, value in contributions or ():
-            try:
-                number = float(value)
-            except (TypeError, ValueError):
-                continue
-            if number == number and number > 0:  # finite and positive
-                cleaned.append((str(name), number))
-        self._contributions = tuple(cleaned)
+        self._semantic_contributions = tuple(
+            item
+            for item in semantic_contributions(
+                contributions, genres=genres, studios=studios
+            )
+            if item.value > 0
+        )
+        self._contributions = tuple(
+            (item.name, item.value) for item in self._semantic_contributions
+        )
+        summary = contribution_summary(self._semantic_contributions)
+        self.setToolTip(f"Score contributors: {summary}")
+        self.setAccessibleDescription(summary)
         self.update()
 
     # ---- hover -----------------------------------------------------------
 
-    def _cell_geometry(self):
-        """Left edge, width and count of the rail's cells."""
-        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        left = rect.left() + PLATE_PADDING
-        width = max(1.0, (rect.right() - PLATE_PADDING) - left)
-        step = float(scaled(CELL_PITCH))
-        gap = float(max(1, scaled(CELL_GAP)))
-        return left, width, step, max(1.0, step - gap)
+    def _segment_bounds(self):
+        """Pixel spans of each contributor, in draw order.
 
-    def _cell_at(self, x: float) -> int:
-        left, width, step, _ = self._cell_geometry()
-        if x < left or x > left + width:
-            return -1
-        return int((x - left) // step)
+        Returned in the same coordinates the painter uses so hit-testing and
+        drawing cannot drift apart.
+        """
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        rail_left = snap_pixel(rect.left() + PLATE_PADDING)
+        rail_width = max(
+            1, snap_pixel(max(1.0, (rect.right() - PLATE_PADDING) - (rect.left() + PLATE_PADDING)))
+        )
+        filled = snap_pixel(
+            rail_width * max(0.0, min(100.0, self._percentage)) / 100.0
+        )
+        visuals = self._semantic_contributions
+        if not visuals:
+            return []
+        widths = proportional_segment_widths(visuals, filled)
+        edges = snapped_segment_edges(widths, start=rail_left)
+        return [
+            (edges[i], edges[i + 1], visuals[i])
+            for i in range(len(visuals))
+            if edges[i + 1] > edges[i]
+        ]
+
+    def _segment_at(self, x: float) -> int:
+        for index, (left, right, _item) in enumerate(self._segment_bounds()):
+            if left <= x < right:
+                return index
+        return -1
+
+    def contributor_name(self, index: int) -> str:
+        bounds = self._segment_bounds()
+        if 0 <= index < len(bounds):
+            return bounds[index][2].name
+        return ""
 
     def _on_hover_value(self, value) -> None:
         self._hover_strength = max(0.0, min(1.0, float(value)))
@@ -199,15 +285,20 @@ class MatchBadge(QWidget):
         self._hover_anim.start()
 
     def mouseMoveEvent(self, event) -> None:
-        cell = self._cell_at(event.position().x())
-        if cell != self._hover_cell:
-            self._hover_cell = cell
+        segment = self._segment_at(event.position().x())
+        if segment != self._hover_cell:
+            self._hover_cell = segment
+            self.contributor_hovered.emit(self.contributor_name(segment))
             self.update()
-        if cell >= 0 and self._hover_strength < 1.0:
+        if segment >= 0 and self._hover_strength < 1.0:
             self._animate_hover(1.0)
+        elif segment < 0 and self._hover_strength > 0.0:
+            self._animate_hover(0.0)
         event.ignore()
 
     def leaveEvent(self, event) -> None:
+        if self._hover_cell != -1:
+            self.contributor_hovered.emit("")
         self._hover_cell = -1
         self._animate_hover(0.0)
         super().leaveEvent(event)
@@ -215,22 +306,6 @@ class MatchBadge(QWidget):
     def mousePressEvent(self, event) -> None:
         # The plate listens for hover only; clicks belong to the card.
         event.ignore()
-
-    def _cell_colour(self, offset: float, width: float) -> QColor:
-        """Which contribution owns the rail position at ``offset``."""
-        if not self._contributions:
-            return QColor(self._fill)
-        position = offset / width * 100.0
-        running = 0.0
-        for index, (name, value) in enumerate(self._contributions):
-            running += value
-            if position <= running:
-                lowered = name.casefold()
-                if "community" in lowered or "viewer" in lowered:
-                    return QColor(self._signal)
-                shade = QColor(self._fill)
-                return shade.darker(100 + min(index, 3) * 14)
-        return QColor(self._fill)
 
     @property
     def percentage(self) -> float:
@@ -242,7 +317,6 @@ class MatchBadge(QWidget):
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
 
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        on_track = QColor(self._text)
 
         # CHANGE [SCRIM]: the fade now covers the whole plate, and it runs to
         # a vignette weighted to the bottom edge, and nothing more.
@@ -287,7 +361,9 @@ class MatchBadge(QWidget):
         # number relative to the plate and left it in the same place relative
         # to the artwork, 14px up from the bottom either way. The gap above
         # the rail is what actually held it there, so that is what went.
-        readout_bottom = rect.bottom() - RAIL_HEIGHT - 1.0
+        readout_bottom = (
+            rect.bottom() - RAIL_HEIGHT - RAIL_BOTTOM_GAP - READOUT_RAIL_GAP
+        )
         text_rect = QRectF(
             rect.left() + PLATE_PADDING,
             readout_bottom - readout_height,
@@ -343,16 +419,11 @@ class MatchBadge(QWidget):
         painter.setPen(QPen(self._fill))
         painter.drawText(text_rect, alignment, label)
 
-        # CHANGE [RESOLUTION]: the rail used ten cells and lit
-        # ``round(percentage / 10)`` of them, so 91%, 92% and 95% drew exactly
-        # the same picture - a proportion display that could not show the
-        # differences it existed to show.
-        #
-        # It is drawn the way the landing artifact draws it instead: one solid
-        # fill at the true width, with a uniform grid of gaps punched across
-        # the whole rail afterwards. The cells line up because they come from
-        # one rhythm rather than being divided per segment, and the fill keeps
-        # sub-cell precision.
+        # The cover uses the same continuous contribution channel as the
+        # expanded score track. Category blocks are joined by one-pixel seams;
+        # sparse quarter graduations sit over them. This reads like one
+        # calibrated instrument instead of a row of decorative phone-style
+        # cells, while preserving exact sub-percent fill width.
         rail_left = rect.left() + PLATE_PADDING
         rail_right = rect.right() - PLATE_PADDING
         rail_width = max(1.0, rail_right - rail_left)
@@ -360,54 +431,144 @@ class MatchBadge(QWidget):
         # plate is flush to the artwork now, so this is the rail's real
         # distance from the bottom of the picture rather than from the top of
         # a six-pixel margin.
-        rail_y = rect.bottom() - RAIL_HEIGHT - 4
+        rail_y = rect.bottom() - RAIL_HEIGHT - RAIL_BOTTOM_GAP
 
-        inactive = QColor(on_track)
-        inactive.setAlpha(60)
+        # The empty range is an opaque instrument well. A translucent pale
+        # track inherited too much of the cover beneath it and could look
+        # identical to neutral contributors on busy or dark artwork.
+        inactive = QColor(self._track)
+        inactive.setAlpha(max(210, inactive.alpha()))
 
-        filled = rail_width * max(0.0, min(100.0, self._percentage)) / 100.0
-        step = float(scaled(CELL_PITCH))
-        gap = float(max(1, scaled(CELL_GAP)))
-        cell_width = max(1.0, step - gap)
+        rail_left_px = snap_pixel(rail_left)
+        rail_top_px = snap_pixel(rail_y)
+        rail_width_px = max(1, snap_pixel(rail_width))
+        rail_height_px = max(1, snap_pixel(RAIL_HEIGHT))
+        filled_width_px = snap_pixel(
+            rail_width_px * max(0.0, min(100.0, self._percentage)) / 100.0
+        )
+        rail_rect = QRect(
+            rail_left_px, rail_top_px, rail_width_px, rail_height_px
+        )
+        painter.fillRect(rail_rect, inactive)
 
-        # Each cell is drawn once, and the last lit one is lit only as far as
-        # the value reaches into it. Overpainting gaps on top of a solid fill
-        # was the obvious alternative, but the plate's track is deliberately
-        # translucent so the artwork shows through, which would have left the
-        # gaps tinted instead of clear.
+        visuals = self._semantic_contributions
+        if not visuals and filled_width_px > 0:
+            painter.fillRect(
+                QRect(
+                    rail_left_px,
+                    rail_top_px,
+                    filled_width_px,
+                    rail_height_px,
+                ),
+                self._fill,
+            )
+        widths = proportional_segment_widths(visuals, filled_width_px)
+        edges = snapped_segment_edges(widths, start=rail_left_px)
+
+        def colour_at(x: int) -> QColor:
+            """The contributor colour covering a rail pixel."""
+            for i, entry in enumerate(visuals):
+                if edges[i] <= x < edges[i + 1]:
+                    return contribution_colour(
+                        entry,
+                        genre=self._signal,
+                        studio=self._fill,
+                        community=QColor(self._text).darker(118),
+                        other=QColor(self._text).darker(145),
+                    )
+            return inactive
+        for index, item in enumerate(visuals):
+            segment_left = edges[index]
+            segment_right = edges[index + 1]
+            segment_width = segment_right - segment_left
+            if segment_width <= 0:
+                continue
+            colour = contribution_colour(
+                item,
+                genre=self._signal,
+                studio=self._fill,
+                # Community is often the largest term. It must remain visibly
+                # filled rather than disappearing into the empty black well.
+                community=QColor(self._text).darker(118),
+                other=QColor(self._text).darker(145),
+            )
+            hover_offset = self._hover_cell * float(scaled(CELL_PITCH))
+            if (
+                self._hover_cell >= 0
+                and segment_left - rail_left_px
+                <= hover_offset
+                <= segment_right - rail_left_px
+                and self._hover_strength > 0.0
+            ):
+                colour = colour.lighter(100 + round(HOVER_LIFT * self._hover_strength))
+            painter.fillRect(
+                QRect(
+                    segment_left,
+                    rail_top_px,
+                    segment_width,
+                    rail_height_px,
+                ),
+                colour,
+            )
+
+        # CHANGE [NO-GRID]: the quarter marks are gone. They encoded 25/50/75
+        # on a rail that prints its own exact percentage two centimetres away,
+        # so they measured nothing the reader did not already have, and three
+        # abstract strokes crossing five coloured blocks read as clutter. The
+        # contributors are now separated by a gap instead, which says the same
+        # thing the marks were trying to say - where one term ends and the
+        # next begins - without adding a second visual language to the rail.
+
+        # CHANGE [SEAM]: the blocks are separated by a drawn division rather
+        # than by an empty gap. A gap shows the well between contributors,
+        # which breaks the bar into pieces and costs the reader the sense of
+        # one continuous measurement; a seam marks the same boundary while the
+        # rail stays whole.
         #
-        # A hovered cell lifts, and its immediate neighbours lift by half, so
-        # running the pointer along the rail reads as one continuous movement
-        # rather than a row of separate switches.
-        index = 0
-        offset = 0.0
-        while offset < rail_width - 0.5:
-            width = min(cell_width, rail_width - offset)
-            lift = 0.0
-            if self._hover_cell >= 0 and self._hover_strength > 0.0:
-                distance = abs(index - self._hover_cell)
-                if distance == 0:
-                    lift = CELL_LIFT
-                elif distance == 1:
-                    lift = CELL_LIFT * NEIGHBOUR_SHARE
-                elif distance == 2:
-                    lift = CELL_LIFT * NEIGHBOUR_SHARE * 0.4
-                lift *= self._hover_strength
+        # Exactly one seam per internal boundary, deduplicated by snapped x:
+        # drawing both sides of a narrow contributor is what produced the
+        # heavy 2-4px clusters this rail had before.
+        seam_positions = sorted({
+            edges[index] for index in range(1, len(visuals))
+            if edges[index] > rail_left_px
+            and edges[index] < rail_left_px + filled_width_px
+        })
+        for seam_x in seam_positions:
+            under = colour_at(max(rail_left_px, seam_x - 1))
+            painter.setPen(QPen(calibration_mark(under, SEAM_MIX), 1))
+            painter.drawLine(
+                seam_x,
+                rail_top_px,
+                seam_x,
+                rail_top_px + rail_height_px - 1,
+            )
 
-            height = RAIL_HEIGHT + lift
-            top = rail_y + RAIL_HEIGHT - height  # grows upward from the baseline
-            painter.fillRect(QRectF(rail_left + offset, top, width, height), inactive)
+        border = QColor(self._text)
+        border.setAlpha(82)
+        painter.setPen(QPen(border, 1))
+        painter.drawRect(
+            QRect(
+                rail_left_px,
+                rail_top_px,
+                rail_width_px - 1,
+                rail_height_px - 1,
+            )
+        )
 
-            lit = max(0.0, min(width, filled - offset))
-            if lit > 0.0:
-                colour = self._cell_colour(offset + lit / 2.0, rail_width)
-                if lift > 0.0:
-                    colour = colour.lighter(100 + int(28 * lift / CELL_LIFT))
-                painter.fillRect(
-                    QRectF(rail_left + offset, top, lit, height), colour
-                )
-            offset += step
-            index += 1
+        if filled_width_px > 0:
+            marker = QColor(self._text)
+            marker.setAlpha(220)
+            marker_x = min(
+                rail_left_px + rail_width_px - 1,
+                rail_left_px + filled_width_px,
+            )
+            painter.setPen(QPen(marker, 1))
+            painter.drawLine(
+                marker_x,
+                rail_top_px,
+                marker_x,
+                rail_top_px + rail_height_px - 1,
+            )
         painter.end()
 
 
