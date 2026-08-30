@@ -1267,8 +1267,49 @@ QLabel#profileReadoutValue[tone="you"] { color: $accent; }
 QLabel#profileReadoutValue[tone="community"] { color: $focus; }
 QLabel#profileReadoutValue[tone="against"] { color: $danger_text; }
 
+/* ---- the verdict, which is now what this page opens with ---- */
+QFrame#profileVerdict {
+    background: $gradient_hero; border: 1px solid $border_strong;
+    border-radius: ${radius_lg}px;
+}
+QLabel#profileVerdictName {
+    color: $text_strong; font-family: $font_display; font-size: $font_4xl;
+    font-weight: 800; letter-spacing: -0.5px;
+}
+QLabel#profileVerdictSentence {
+    color: $text; font-size: $font_lg;
+}
+/* The figures behind the claim, deliberately quiet. Amber on this page means
+   "yours"; if the headline and its own supporting arithmetic both shout,
+   neither one is the headline. */
+QLabel#profileVerdictEvidence {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    letter-spacing: 1px;
+}
+
+/* ---- the derived facts ---- */
+QWidget#profileUnlisted { background: transparent; }
+QLabel#profileUnlistedLine {
+    color: $text; font-size: $font_sm;
+    border-left: 2px solid $focus; padding: 2px 0 2px 12px;
+}
+
 /* ---- section frame ---- */
-QFrame#profileSection { background: transparent; border: none; }
+QFrame#profileSection {
+    background: $surface; border: 1px solid $border;
+    border-radius: ${radius_lg}px; padding: 12px 14px;
+}
+/* The legend is the fold handle, so it reads as pressable without becoming
+   a button-shaped object in a page made of panels. */
+QPushButton#profileSectionTitle {
+    background: transparent; border: none; padding: 0; text-align: left;
+    color: $text_strong; font-family: $font_display; font-size: $font_lg;
+    font-weight: 800;
+}
+QPushButton#profileSectionTitle:hover { color: $accent_soft; }
+QPushButton#profileSectionTitle:focus {
+    color: $accent_soft; border: 1px solid $focus; padding: 1px 3px;
+}
 QLabel#profileSectionTitle {
     color: $text_strong; font-family: $font_display; font-size: $font_lg;
     font-weight: 800;

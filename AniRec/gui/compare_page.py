@@ -650,6 +650,7 @@ class ComparePage(QWidget):
         # A real answer, even an empty one, means the feature exists: undo any
         # hiding a previous BACKEND_MISSING refusal applied.
         self.friends_block.setVisible(True)
+        self._resync_idle_message()
         self.friends_picker.blockSignals(True)
         self.friends_picker.clear()
         self.friends_picker.addItem(COMPARE_TEXT.friends_placeholder, None)
@@ -687,6 +688,7 @@ class ComparePage(QWidget):
         # picker stays and only goes quiet.
         implemented = reason is not UnavailableReason.BACKEND_MISSING
         self.friends_block.setVisible(implemented)
+        self._resync_idle_message()
         self.set_friends_notice(
             COMPARE_TEXT.friends_private
             if reason is UnavailableReason.FRIENDS_PRIVATE
@@ -703,11 +705,33 @@ class ComparePage(QWidget):
     def is_loading(self) -> bool:
         return bool(self._loading_username)
 
+    def _resync_idle_message(self) -> None:
+        """Rewrite the invitation if it is on screen when the picker changes.
+
+        Friends availability is learned after the surface has already drawn
+        its idle state, so without this the first thing a reader sees is the
+        sentence written for the other case.
+        """
+        if self.content_stack.currentIndex() != self.state_index:
+            return
+        if self.state_panel.title_label.text() != COMPARE_TEXT.idle_title:
+            return
+        self.state_panel.message_label.setText(self._idle_message)
+
+    @property
+    def _idle_message(self) -> str:
+        """The invitation, phrased for the controls actually on screen."""
+        return (
+            COMPARE_TEXT.idle_message
+            if self.friends_block.isVisibleTo(self)
+            else COMPARE_TEXT.idle_message_no_friends
+        )
+
     def show_idle(self) -> None:
         self._loading_username = ""
         self._set_busy(False)
         self.state_panel.show_state(
-            COMPARE_TEXT.idle_title, COMPARE_TEXT.idle_message, icon="profile"
+            COMPARE_TEXT.idle_title, self._idle_message, icon="profile"
         )
         self.content_stack.setCurrentIndex(self.state_index)
 

@@ -607,6 +607,146 @@ class TasteProfile:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# The verdict
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Archetype:
+    """A name for the way this reader differs, and the figures behind it.
+
+    The Profile surface used to open with five equal readings and leave the
+    reader to work out which one was about them. This picks the one that
+    actually is, so the page can lead with a sentence somebody would repeat
+    rather than a dashboard nobody asked for.
+    """
+
+    archetype_id: str
+    name: str
+    sentence: str
+    evidence: tuple[str, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.name)
+
+
+# What each reading looks like for an ordinary reader, and how far from that
+# counts as a lot. Deviation is measured against these rather than against the
+# midpoint of the rail, because the rails are not centred on typical: almost
+# everyone finishes most of what they start, so 0.87 completion is unremarkable
+# while 0.31 contrarian is not. Comparing raw distance from 0.5 would call
+# every reader a finisher.
+_TYPICAL = {
+    "community-sync": (0.60, 0.20),
+    "rating-bias": (0.50, 0.20),
+    "contrarian": (0.20, 0.15),
+    "completion": (0.75, 0.18),
+    "mainstream": (0.65, 0.20),
+}
+
+# One name per direction of travel. Deliberately none of them insulting: this
+# is shown to a person about themselves, and "you have bad taste" is not an
+# insight however well the arithmetic supports it. The high/low pairs are
+# both flattering because both are genuinely interesting - agreeing with
+# everyone is a real trait, not a failure to have opinions.
+_ARCHETYPES = {
+    ("contrarian", "high"): (
+        "the outlier",
+        "When everyone agrees on something, you are the one checking.",
+    ),
+    ("contrarian", "low"): (
+        "the level head",
+        "You and the consensus almost never fall out. When you disagree, it means something.",
+    ),
+    ("rating-bias", "low"): (
+        "the hard marker",
+        "You spend your high scores carefully. A 9 from you is worth more than a 9 from most people.",
+    ),
+    ("rating-bias", "high"): (
+        "the enthusiast",
+        "You rate generously. You would rather enjoy something than be right about it.",
+    ),
+    ("mainstream", "low"): (
+        "the deep diver",
+        "Most of your list sits outside what everybody else has seen.",
+    ),
+    ("mainstream", "high"): (
+        "the mainliner",
+        "You watch what the medium is actually talking about, and you keep up.",
+    ),
+    ("completion", "high"): (
+        "the finisher",
+        "You see things through. Once you start a series it is going on the completed pile.",
+    ),
+    ("completion", "low"): (
+        "the sampler",
+        "You try a lot and commit to little. Your list is a survey, not a shelf.",
+    ),
+    ("community-sync", "high"): (
+        "the barometer",
+        "Your scores track everybody else's closely enough to predict them.",
+    ),
+    ("community-sync", "low"): (
+        "the wildcard",
+        "Your scores go their own way. Knowing the community average tells you little about yours.",
+    ),
+}
+
+# Ties broken in this order, so the same profile always reads the same way.
+_PRIORITY = ("contrarian", "mainstream", "rating-bias", "community-sync", "completion")
+
+
+def archetype_for(profile: "TasteProfile") -> Archetype | None:
+    """Name the single way this reader most differs from an ordinary one.
+
+    Returns ``None`` when nothing is far enough from typical to be worth
+    saying. A page that insists on a headline for a perfectly ordinary reader
+    is inventing a personality, which is the opposite of the point.
+    """
+    scored: list[tuple[float, int, FingerprintReading]] = []
+    for reading in profile.fingerprint:
+        baseline = _TYPICAL.get(reading.reading_id)
+        if baseline is None or reading.position is None:
+            continue
+        typical, spread = baseline
+        if spread <= 0:
+            continue
+        deviation = (float(reading.position) - typical) / spread
+        try:
+            rank = _PRIORITY.index(reading.reading_id)
+        except ValueError:
+            rank = len(_PRIORITY)
+        scored.append((abs(deviation), -rank, reading))
+
+    if not scored:
+        return None
+    strength, _rank, reading = max(scored, key=lambda item: (item[0], item[1]))
+    # Below this the reader is simply unremarkable on every axis, and saying
+    # so plainly beats promoting noise to a personality.
+    if strength < 0.45:
+        return None
+
+    typical, spread = _TYPICAL[reading.reading_id]
+    direction = "high" if float(reading.position) >= typical else "low"
+    named = _ARCHETYPES.get((reading.reading_id, direction))
+    if named is None:
+        return None
+    name, sentence = named
+
+    evidence = tuple(
+        f"{item.value_text} {item.caption.lower()}"
+        for item in profile.fingerprint
+        if item.value_text and item.value_text != DASH
+    )
+    return Archetype(
+        archetype_id=f"{reading.reading_id}-{direction}",
+        name=name,
+        sentence=sentence,
+        evidence=evidence,
+    )
+
+
 class TasteProfileProvider(Protocol):
     """The whole of what the Profile surface asks for.
 

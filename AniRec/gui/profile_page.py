@@ -62,6 +62,7 @@ from .taste_profile import (
     TasteProfile,
     TasteProfileUnavailable,
     TitleVerdict,
+    archetype_for,
     count_text,
 )
 from .texts import PROFILE_TEXT
@@ -133,6 +134,12 @@ VERDICT_COVER_HEIGHT = 60
 # the grid drops to fewer columns.
 FINGERPRINT_MIN_WIDTH = 216
 COLUMN_MIN_WIDTH = 320
+
+# CHANGE [INSTRUMENT-GRID]: wide enough that a ten-row histogram still reads,
+# narrow enough that a 1600px window fits three across and a laptop fits two.
+# The old full-width sections gave every chart the one proportion that suits
+# none of them.
+INSTRUMENT_MIN_WIDTH = 420
 
 
 class ReflowGrid(QWidget):
@@ -270,8 +277,17 @@ class ProfileSection(QFrame):
 
         heading = QHBoxLayout()
         heading.setSpacing(scaled(SPACE["sm"]))
-        self.title_label = QLabel(title)
+        # CHANGE [INSTRUMENT-GRID]: the legend is a control now. Eleven
+        # sections at full page width put every chart in a short, very wide
+        # box - the worst possible shape for a bar chart - and made the page
+        # a scroll rather than a panel. They fold, and they sit two or three
+        # to a row, so each one is a squarer widget with a bigger graph in it.
+        self.title_label = QPushButton(title)
         self.title_label.setObjectName("profileSectionTitle")
+        self.title_label.setCheckable(True)
+        self.title_label.setChecked(True)
+        self.title_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.title_label.toggled.connect(self.set_expanded)
         heading.addWidget(self.title_label)
         self.badge_label = QLabel("")
         self.badge_label.setObjectName("profileSectionBadge")
@@ -316,6 +332,23 @@ class ProfileSection(QFrame):
 
         layout.addWidget(self.stack)
         self.show_loading()
+
+    def set_expanded(self, expanded: bool) -> None:
+        """Fold the body away, leaving the legend as the handle."""
+        expanded = bool(expanded)
+        if self.title_label.isChecked() != expanded:
+            self.title_label.setChecked(expanded)
+        self.stack.setVisible(expanded)
+        description = getattr(self, "description_label", None)
+        if description is not None:
+            description.setVisible(expanded)
+        self.title_label.setAccessibleDescription(
+            "Expanded" if expanded else "Collapsed"
+        )
+
+    @property
+    def is_expanded(self) -> bool:
+        return self.stack.isVisibleTo(self)
 
     def _build_error(self, title: str) -> QWidget:
         panel = QFrame()
@@ -507,6 +540,153 @@ class ProfileHeader(InstrumentPanel):
                 max(scaled(80), self.username_label.width()),
             )
         )
+
+
+class VerdictHero(InstrumentPanel):
+    """The page's opening statement: what kind of reader this is.
+
+    CHANGE [READOUT-LEAD]: the surface used to begin with five equally
+    weighted readings and leave the reader to work out which one was about
+    them. Five numbers of equal size say "here is a dashboard"; one sentence
+    says "here is you". The readings are not gone - they are the quiet line
+    underneath, and the full instrument is further down the page.
+
+    The figure line is deliberately the muted role rather than the accent.
+    Amber on this page means "yours", and if the headline and its supporting
+    arithmetic both shout, neither is the headline.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("profileVerdict")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(
+            scaled(SPACE["xl"]), scaled(SPACE["lg"]),
+            scaled(SPACE["xl"]), scaled(SPACE["lg"]),
+        )
+        layout.setSpacing(scaled(SPACE["xs"]))
+
+        self.legend_label = QLabel(PROFILE_TEXT.verdict_legend)
+        self.legend_label.setObjectName("profileLegend")
+        layout.addWidget(self.legend_label)
+
+        self.name_label = QLabel("")
+        self.name_label.setObjectName("profileVerdictName")
+        self.name_label.setWordWrap(True)
+        layout.addWidget(self.name_label)
+
+        self.sentence_label = QLabel("")
+        self.sentence_label.setObjectName("profileVerdictSentence")
+        self.sentence_label.setWordWrap(True)
+        layout.addWidget(self.sentence_label)
+
+        layout.addSpacing(scaled(SPACE["xs"]))
+        self.evidence_label = QLabel("")
+        self.evidence_label.setObjectName("profileVerdictEvidence")
+        self.evidence_label.setWordWrap(True)
+        layout.addWidget(self.evidence_label)
+
+    def set_archetype(self, archetype) -> None:
+        """Draw the reading, or say plainly that there is not one."""
+        if archetype:
+            name, sentence = archetype.name, archetype.sentence
+            evidence = archetype.evidence
+        else:
+            name = PROFILE_TEXT.verdict_plain_name
+            sentence = PROFILE_TEXT.verdict_plain_sentence
+            evidence = ()
+        self.name_label.setText(f"{PROFILE_TEXT.verdict_prefix} {name}.")
+        self.sentence_label.setText(sentence)
+        self.evidence_label.setText("   ".join(evidence))
+        self.evidence_label.setVisible(bool(evidence))
+        self.setAccessibleName(f"{self.name_label.text()} {sentence}")
+
+
+class UnlistedFacts(QWidget):
+    """The derived facts, named for the fact that they are derived.
+
+    Every line here comes out of comparing this reader's scores against
+    everyone else's, which is exactly why none of it appears on a
+    MyAnimeList profile page. Saying so in the heading is the point: the
+    value is not the arithmetic, it is that nobody else did the arithmetic.
+
+    Lines are sentences rather than readout pairs. A nemesis studio is a
+    thing you tell somebody, not a metric you monitor.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("profileUnlisted")
+        self.layout_ = QVBoxLayout(self)
+        self.layout_.setContentsMargins(0, 0, 0, 0)
+        self.layout_.setSpacing(scaled(SPACE["sm"]))
+        self._labels: list[QLabel] = []
+
+    def set_profile(self, profile) -> None:
+        for label in self._labels:
+            label.setParent(None)
+            label.deleteLater()
+        self._labels = []
+        for sentence in unlisted_sentences(profile):
+            label = QLabel(sentence)
+            label.setObjectName("profileUnlistedLine")
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            self.layout_.addWidget(label)
+            self._labels.append(label)
+
+    @property
+    def sentences(self) -> tuple[str, ...]:
+        return tuple(label.text() for label in self._labels)
+
+
+def unlisted_sentences(profile) -> tuple[str, ...]:
+    """Compose the derived-only facts, skipping whatever is not there.
+
+    Kept as a free function so the wording can be tested without a widget,
+    and so a provider that answers with half a profile produces a shorter
+    list rather than a column of "N/A".
+    """
+    lines: list[str] = []
+
+    nemesis = getattr(profile.studios, "nemesis", None)
+    if nemesis is not None and nemesis.name:
+        lines.append(
+            PROFILE_TEXT.unlisted_nemesis.format(
+                name=nemesis.name,
+                watched=nemesis.watched_text,
+                average=nemesis.average_text,
+            )
+        )
+    trusted = getattr(profile.studios, "most_trusted", None)
+    if trusted is not None and trusted.name:
+        lines.append(
+            PROFILE_TEXT.unlisted_trusted.format(
+                name=trusted.name, average=trusted.average_text
+            )
+        )
+    divisive = getattr(profile.genres, "divisive", None)
+    if divisive is not None and divisive.name:
+        lines.append(PROFILE_TEXT.unlisted_divisive.format(name=divisive.name))
+    golden = getattr(profile.eras, "golden", None)
+    if golden is not None and golden.label:
+        lines.append(
+            PROFILE_TEXT.unlisted_golden.format(
+                label=golden.label, average=golden.average_text
+            )
+        )
+    season = getattr(profile.eras, "season_of_choice", "")
+    if season:
+        lines.append(PROFILE_TEXT.unlisted_season.format(season=season.title()))
+    gems = getattr(profile.hidden_gems, "rate_text", "")
+    if gems and gems != DASH:
+        lines.append(PROFILE_TEXT.unlisted_gems.format(rate=gems))
+    hype = getattr(profile.hype_killers, "count", None)
+    if hype:
+        lines.append(PROFILE_TEXT.unlisted_hype.format(count=hype))
+    return tuple(lines)
 
 
 class FingerprintModule(QFrame):
@@ -709,6 +889,12 @@ class VerdictRow(QFrame):
         *,
         show_cover: bool = False,
         rank_field: str = "",
+        # CHANGE [RECEIPTS]: a rewatch note is a title and a count, with no
+        # two opinions to set against each other. Drawn through the standard
+        # row it produced "YOU N/A  MAL N/A" - two empty columns reserved for
+        # a comparison that does not exist here. The caller says what figure
+        # this row is actually about.
+        figures: tuple[tuple[str, str, str], ...] | None = None,
     ) -> None:
         super().__init__(parent)
         self.verdict = verdict
@@ -755,27 +941,45 @@ class VerdictRow(QFrame):
         identity.addStretch(1)
         layout.addLayout(identity, 1)
 
-        figures = QHBoxLayout()
-        figures.setSpacing(scaled(SPACE["lg"]))
-        figures.addWidget(
-            self._figure(PROFILE_TEXT.you, verdict.your_score_text, "you")
-        )
-        figures.addWidget(
-            self._figure(
-                PROFILE_TEXT.community, verdict.community_score_text, "community"
+        figure_row = QHBoxLayout()
+        figure_row.setSpacing(scaled(SPACE["lg"]))
+        custom_figures = figures is not None
+        if figures is None:
+            figures = (
+                (PROFILE_TEXT.you, verdict.your_score_text, "you"),
+                (PROFILE_TEXT.community, verdict.community_score_text, "community"),
             )
-        )
-        if verdict.delta is not None:
-            figures.addWidget(
-                self._figure(PROFILE_TEXT.delta, verdict.delta_text, "gap")
-            )
-        layout.addLayout(figures)
+            if verdict.delta is not None:
+                figures += ((PROFILE_TEXT.delta, verdict.delta_text, "gap"),)
+        # Kept so the spoken version and anything checking this row can be
+        # built from exactly what was drawn.
+        self.figures = tuple(figures)
+        for caption, value, tone in self.figures:
+            figure_row.addWidget(self._figure(caption, value, tone))
+        layout.addLayout(figure_row)
 
-        self.setAccessibleName(
-            f"{verdict.title}. You {verdict.your_score_text}, "
-            f"community {verdict.community_score_text}, "
-            f"{self._direction_words(verdict)}"
-        )
+        # The spoken version has to carry the figures that were actually
+        # drawn. Built from the same tuple for that reason: a row that shows
+        # "TIMES 6x" and announces "You N/A, community N/A" has moved the
+        # defect rather than fixed it.
+        if custom_figures:
+            spoken = ", ".join(
+                f"{caption.lower()} {value}" for caption, value, _tone in self.figures
+            )
+            self.setAccessibleName(f"{verdict.title}. {spoken}")
+        else:
+            # CHANGE [SPOKEN-GAP]: the gap column was drawn and never spoken.
+            # A sighted reader got "-5.7"; a screen reader got "below
+            # community", which is the direction without the size - and the
+            # size is the whole point of a section about disagreement.
+            gap = (
+                f" by {verdict.delta_text}" if verdict.delta is not None else ""
+            )
+            self.setAccessibleName(
+                f"{verdict.title}. You {verdict.your_score_text}, "
+                f"community {verdict.community_score_text}, "
+                f"{self._direction_words(verdict)}{gap}"
+            )
         self._title_text = verdict.title
 
     @staticmethod
@@ -885,6 +1089,7 @@ class HighlightPanel(InstrumentPanel):
         *,
         rank_field: str = "rank",
         tone: str = "",
+        figures: tuple[tuple[str, str, str], ...] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("profileHighlight")
@@ -901,7 +1106,10 @@ class HighlightPanel(InstrumentPanel):
         layout.addWidget(legend_label)
 
         self.row = VerdictRow(
-            verdict, show_cover=bool(verdict.cover_url), rank_field=rank_field
+            verdict,
+            show_cover=bool(verdict.cover_url),
+            rank_field=rank_field,
+            figures=figures,
         )
         layout.addWidget(self.row)
         self.setAccessibleName(f"{legend.title()}: {self.row.accessibleName()}")
@@ -1640,6 +1848,42 @@ class ProfilePage(QWidget):
         self.header = ProfileHeader()
         self.container_layout.addWidget(self.header)
 
+        # The page's opening statement, then the named titles that prove it.
+        self.verdict = VerdictHero()
+        self.container_layout.addWidget(self.verdict)
+
+        self.receipts = ReflowGrid(COLUMN_MIN_WIDTH, spacing="lg")
+        self.container_layout.addWidget(self.receipts)
+
+        # The wink, as its own titled section rather than a fact buried in a
+        # chart. This is the part of the page that could not be screenshotted
+        # off MyAnimeList, so it is named for that.
+        self.unlisted = UnlistedFacts()
+        self._unlisted_section = ProfileSection(
+            "unlisted",
+            PROFILE_TEXT.unlisted_title,
+            PROFILE_TEXT.unlisted_description,
+            skeleton_rows=5,
+        )
+        self._unlisted_section.add_body(self.unlisted)
+        self.sections["unlisted"] = self._unlisted_section
+        self.container_layout.addWidget(self._unlisted_section)
+
+        # Everything below is the instrument: the same eleven readings, now
+        # folded shut and laid out as widgets rather than as a scroll.
+        instruments_title = QLabel(PROFILE_TEXT.instruments_title)
+        instruments_title.setObjectName("profileSectionTitle")
+        instruments_title.setProperty("staticLegend", True)
+        self.container_layout.addWidget(instruments_title)
+        instruments_hint = QLabel(PROFILE_TEXT.instruments_description)
+        instruments_hint.setObjectName("profileSectionDescription")
+        instruments_hint.setWordWrap(True)
+        self.container_layout.addWidget(instruments_hint)
+
+        self.instrument_grid = ReflowGrid(INSTRUMENT_MIN_WIDTH, spacing="lg")
+        self.container_layout.addWidget(self.instrument_grid)
+        self._instruments: list[ProfileSection] = []
+
         self.fingerprint = TasteFingerprint()
         self._add_section(
             "fingerprint",
@@ -1742,6 +1986,10 @@ class ProfilePage(QWidget):
             skeleton_rows=4,
         )
 
+        # Every instrument now exists; lay them into the reflowing grid in
+        # the order they were declared.
+        self.instrument_grid.set_widgets(self._instruments)
+
     def _add_section(
         self,
         section_id: str,
@@ -1757,7 +2005,10 @@ class ProfilePage(QWidget):
         section.add_body(body)
         section.retry_requested.connect(lambda _id: self.retry_requested.emit())
         self.sections[section_id] = section
-        self.container_layout.addWidget(section)
+        # Collapsed by default: the reader has already been told what they
+        # are, above. These are for the reader who wants to check the working.
+        section.set_expanded(False)
+        self._instruments.append(section)
         return section
 
     # ---- states ----------------------------------------------------------
@@ -1816,7 +2067,13 @@ class ProfilePage(QWidget):
         """
         self._profile = profile
         self.header.set_profile(profile)
+        # The reading first, and deliberately not inside a guarded section: a
+        # page whose entire purpose is to tell you what kind of reader you are
+        # should not be able to render without saying anything.
+        self.verdict.set_archetype(archetype_for(profile))
+        self._fill_receipts(profile)
 
+        self._fill("unlisted", lambda: self._fill_unlisted(profile))
         self._fill("fingerprint", lambda: self._fill_fingerprint(profile))
         self._fill("distribution", lambda: self._fill_distribution(profile))
         self._fill("hot-takes", lambda: self._fill_hot_takes(profile))
@@ -1843,6 +2100,40 @@ class ProfilePage(QWidget):
             section.show_empty()
             return
         section.show_content()
+
+    def _fill_receipts(self, profile: TasteProfile) -> None:
+        """Three named titles that make the verdict concrete.
+
+        A percentage is an assertion; a title you recognise is evidence.
+        Whichever of the three a profile cannot supply is left out rather
+        than drawn as an empty plate.
+        """
+        panels: list[QWidget] = []
+        biggest = getattr(profile.hype_killers, "biggest", None)
+        if biggest is not None:
+            panels.append(
+                HighlightPanel(PROFILE_TEXT.receipt_hype, biggest, tone="below")
+            )
+        deepest = getattr(profile.hidden_gems, "deepest", None)
+        if deepest is not None:
+            panels.append(
+                HighlightPanel(PROFILE_TEXT.receipt_gem, deepest, tone="above")
+            )
+        rewatch = getattr(profile.habits, "most_rewatched", None)
+        if rewatch is not None and rewatch.title:
+            panels.append(
+                HighlightPanel(
+                    PROFILE_TEXT.receipt_rewatch,
+                    TitleVerdict(title=rewatch.title, mal_id=rewatch.mal_id),
+                    figures=((PROFILE_TEXT.receipt_watches, rewatch.watches_text, "you"),),
+                )
+            )
+        self.receipts.set_widgets(panels)
+        self.receipts.setVisible(bool(panels))
+
+    def _fill_unlisted(self, profile: TasteProfile) -> bool:
+        self.unlisted.set_profile(profile)
+        return bool(self.unlisted.sentences)
 
     def _fill_fingerprint(self, profile: TasteProfile) -> bool:
         if not profile.fingerprint:

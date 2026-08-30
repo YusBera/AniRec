@@ -1222,8 +1222,49 @@ QLabel#profileReadoutValue[tone="you"] { color: #7A5D1C; }
 QLabel#profileReadoutValue[tone="community"] { color: #2C7C74; }
 QLabel#profileReadoutValue[tone="against"] { color: #96301F; }
 
+/* ---- the verdict, which is now what this page opens with ---- */
+QFrame#profileVerdict {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #FAFBF5, stop:0.55 #F4F5EA, stop:1 #F2EFDF); border: 1px solid #A8B4A0;
+    border-radius: 2px;
+}
+QLabel#profileVerdictName {
+    color: #0C1613; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 21.2pt;
+    font-weight: 800; letter-spacing: -0.5px;
+}
+QLabel#profileVerdictSentence {
+    color: #16241F; font-size: 10.3pt;
+}
+/* The figures behind the claim, deliberately quiet. Amber on this page means
+   "yours"; if the headline and its own supporting arithmetic both shout,
+   neither one is the headline. */
+QLabel#profileVerdictEvidence {
+    color: #5C6858; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    letter-spacing: 1px;
+}
+
+/* ---- the derived facts ---- */
+QWidget#profileUnlisted { background: transparent; }
+QLabel#profileUnlistedLine {
+    color: #16241F; font-size: 8.3pt;
+    border-left: 2px solid #2C7C74; padding: 2px 0 2px 12px;
+}
+
 /* ---- section frame ---- */
-QFrame#profileSection { background: transparent; border: none; }
+QFrame#profileSection {
+    background: #F4F6EF; border: 1px solid #C6CFBE;
+    border-radius: 2px; padding: 12px 14px;
+}
+/* The legend is the fold handle, so it reads as pressable without becoming
+   a button-shaped object in a page made of panels. */
+QPushButton#profileSectionTitle {
+    background: transparent; border: none; padding: 0; text-align: left;
+    color: #0C1613; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 10.3pt;
+    font-weight: 800;
+}
+QPushButton#profileSectionTitle:hover { color: #5E4813; }
+QPushButton#profileSectionTitle:focus {
+    color: #5E4813; border: 1px solid #2C7C74; padding: 1px 3px;
+}
 QLabel#profileSectionTitle {
     color: #0C1613; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 10.3pt;
     font-weight: 800;

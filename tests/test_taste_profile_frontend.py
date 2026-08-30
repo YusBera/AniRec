@@ -279,12 +279,24 @@ def test_a_genre_row_is_reachable_and_activated_from_the_keyboard(page, applicat
 
 
 def test_every_figure_on_a_verdict_row_is_named_for_a_screen_reader(page):
+    """Whatever figures a row draws, it says them.
+
+    CHANGE [RECEIPTS]: this used to assert the word "community" on every row,
+    which held only while every row was a comparison between two opinions.
+    The rewatch receipt is a title and a count, so it announces a count - the
+    property worth pinning is that the spoken version matches the drawn one,
+    not that one particular word is always present.
+    """
     rows = page.findChildren(VerdictRow)
     assert rows
     for row in rows:
         name = row.accessibleName()
         assert row.verdict.title in name
-        assert "community" in name
+        # Values, not captions: a comparison row abbreviates to "MAL" in the
+        # column and says "community" aloud, which is right in both places.
+        # What must never differ is the figure itself.
+        for _caption, value, _tone in row.figures:
+            assert value in name, (value, name)
 
 
 def test_genre_rows_and_bars_never_claim_more_than_the_widest_genre(page):

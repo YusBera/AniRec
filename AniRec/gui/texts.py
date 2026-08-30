@@ -441,9 +441,19 @@ class CompareTextCatalog:
 
     # ---- states ----
     idle_title: str = "Compare your taste"
+    # CHANGE [COPY-MATCHES-CONTROLS]: two versions, because the picker this
+    # sentence used to assume is not always on screen. When friends lists are
+    # unimplemented the control is hidden, and an empty state that opens with
+    # "Pick a friend" then sends the reader looking for something that is not
+    # there. Which one is shown is decided from the control's own visibility,
+    # so the copy cannot drift away from the interface again.
     idle_message: str = (
         "Pick a friend, or type any MyAnimeList username, to see where your "
         "ratings agree and where they do not."
+    )
+    idle_message_no_friends: str = (
+        "Type any MyAnimeList username to see where your ratings agree and "
+        "where they do not."
     )
     loading_title: str = "Reading {username}'s list"
     loading_message: str = "Fetching their ratings and lining them up with yours."
@@ -512,6 +522,48 @@ class ProfileTextCatalog:
     sample_stamp_tooltip: str = (
         "A bundled example profile. Connect MyAnimeList and generate "
         "recommendations to see your own figures here."
+    )
+
+    # ---- the verdict ----
+    # CHANGE [READOUT-LEAD]: the page used to open on five equal readings and
+    # leave the reader to work out which one was about them. It opens on the
+    # one that is, in a sentence somebody would repeat.
+    verdict_legend: str = "THE READING"
+    verdict_prefix: str = "You are"
+    # Shown when nothing about this reader is far enough from ordinary to
+    # name. Saying so is better than promoting noise to a personality.
+    verdict_plain_name: str = "hard to pin down"
+    verdict_plain_sentence: str = (
+        "Nothing in your scoring stands far enough out to give you a label. "
+        "That is its own kind of answer."
+    )
+
+    receipts_legend: str = "THE RECEIPTS"
+    receipt_hype: str = "BIGGEST HYPE KILL"
+    receipt_gem: str = "DEEPEST CUT"
+    receipt_rewatch: str = "MOST REWATCHED"
+    receipt_rewatch_detail: str = "{watches} times through"
+    receipt_watches: str = "TIMES"
+
+    # ---- the wink ----
+    # Named for what it is. Everything in it is derived rather than displayed,
+    # which is precisely why it cannot be read off a MyAnimeList profile.
+    unlisted_title: str = "NOT ON YOUR MAL PROFILE"
+    unlisted_description: str = (
+        "None of this is a number MyAnimeList shows you. It comes out of "
+        "comparing every score you have given against everyone else's."
+    )
+    unlisted_nemesis: str = "Your nemesis studio is {name} - {watched} watched, averaging {average}."
+    unlisted_trusted: str = "You trust {name} most, at {average} across everything of theirs you have seen."
+    unlisted_divisive: str = "{name} is your most divisive genre. You either love it or you do not."
+    unlisted_golden: str = "Your golden era is {label}, averaging {average}."
+    unlisted_season: str = "You rate {season} premieres higher than any other season."
+    unlisted_gems: str = "{rate} of your list is material almost nobody else has rated."
+    unlisted_hype: str = "You have rated {count} widely loved shows well below the crowd."
+
+    instruments_title: str = "THE INSTRUMENT"
+    instruments_description: str = (
+        "Every reading behind the above, in full. Open whichever you want."
     )
 
     # ---- header ----
