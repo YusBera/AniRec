@@ -110,7 +110,13 @@ class RecommendationRow(QFrame):
         self.facts_label = QLabel(_facts_line(model))
         self.facts_label.setObjectName("recommendationRowFacts")
         self.facts_label.setWordWrap(False)
-        self.facts_label.setVisible(bool(self.facts_label.text()))
+        # CHANGE [BUILD-QUIET]: only hidden when there is nothing to show.
+        # setVisible() on a child of a live parent forces a layout pass, and
+        # measured 24.7ms a call - the single most expensive line in this
+        # constructor. A label is visible by default, so the common path now
+        # makes no call at all.
+        if not self.facts_label.text():
+            self.facts_label.setVisible(False)
         text_column.addWidget(self.title_label)
         text_column.addWidget(self.facts_label)
         text_column.addWidget(self.reason_label)
@@ -139,7 +145,7 @@ class RecommendationRow(QFrame):
         self.like_button.setProperty("feedback", "liked")
         self.like_button.setCheckable(True)
         self.like_button.clicked.connect(lambda: self.liked_requested.emit(self.model))
-        self.dislike_button = QPushButton("Not for me")
+        self.dislike_button = QPushButton("Dislike")
         self.dislike_button.setObjectName("recommendationRowDislikeButton")
         self.dislike_button.setProperty("feedback", "disliked")
         self.dislike_button.setCheckable(True)
@@ -157,7 +163,15 @@ class RecommendationRow(QFrame):
     # -- cover ---------------------------------------------------------------
 
     def _show_placeholder(self) -> None:
-        placeholder = title_placeholder_pixmap(self.model.display_title)
+        # CHANGE [PLATE-SIZE]: at the size it is drawn, not at the source
+        # artwork's. Called without one this renders 440x660 and then scales
+        # the result down to a 56x84 thumbnail - measured at 20ms of drawText
+        # per row, a third of the entire cost of building a list row, to
+        # produce pixels that are immediately thrown away.
+        placeholder = title_placeholder_pixmap(
+            self.model.display_title,
+            (scaled(THUMBNAIL_SIZE), scaled(COVER_ROW_HEIGHT)),
+        )
         if placeholder.isNull():
             placeholder = cover_placeholder_pixmap()
         if placeholder.isNull():

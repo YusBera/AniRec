@@ -75,12 +75,21 @@ ICON_ACTION_SIZE = 32
 # 2:3 exactly (172*3 == 258*2). Trimmed a little from 176x264 to buy back the
 # height the extra spacing cost, so the review loop still fits the default
 # window with room to spare.
-COVER_WIDTH = 132
+# CHANGE [BIGGER-ART]: 132 -> 152, which is 228 * 2/3. Anime cover art is
+# 2:3 and these two constants have to move together; raising the height
+# alone would squash every poster, which is the mistake the note below the
+# height was written to prevent.
+COVER_WIDTH = 152
 # Trimmed from 156x234. The portrait was tall enough to push the reason
 # line and the whole action row past the bottom of the feed at the minimum
 # window size. Both dimensions come down together: anime cover art is 2:3,
 # and shrinking only the height would have squashed every poster.
-COVER_HEIGHT = 198
+# CHANGE [BIGGER-ART]: 198 -> 228. The portrait had been trimmed twice to
+# buy vertical room for a two-row action block; consolidating those rows
+# gives the room back, and it belongs to the artwork. Cover art is the
+# highest-information element on a card and was the smallest thing competing
+# for the space.
+COVER_HEIGHT = 228
 # CHANGE [ASPECT]: the height is the constant; the width follows the artwork.
 #
 # A fixed 2:3 frame has to do something with a cover that is not 2:3, and both
@@ -95,8 +104,12 @@ COVER_HEIGHT = 198
 # exist for the pathological source - a square promo, a wide banner - where
 # the artwork is contained and the backdrop fills the remainder, which is the
 # old behaviour kept as the exception rather than the rule.
-COVER_MIN_WIDTH = 108
-COVER_MAX_WIDTH = 176
+# CHANGE [BIGGER-ART]: scaled with the height, 198 -> 228. Real key art runs
+# roughly 0.64 to 0.71 wide-over-tall, so at 228 every genuine cover wants to
+# be between 146 and 162 across; these bounds stay wider than that, for the
+# pathological source the note above describes.
+COVER_MIN_WIDTH = 124
+COVER_MAX_WIDTH = 202
 
 # Matches the card's own corner radius so the portrait sits inside it rather
 # than cutting across it.
@@ -193,11 +206,20 @@ class ElidingLabel(QLabel):
             QStyle.PrimitiveElement.PE_Widget, option, painter, self
         )
         rect = self.contentsRect()
-        elided = self.fontMetrics().elidedText(
-            self.text(), Qt.TextElideMode.ElideRight, rect.width()
-        )
+        # CHANGE [SCROLL-COST]: the elision is cached against the inputs that
+        # decide it. Measured over one scroll of a 120-card feed this ran 520
+        # times, re-measuring the same string at the same width on every
+        # exposure - scrolling repaints a widget many times without changing
+        # anything about it. Recomputed only when the text, the width or the
+        # font actually differ.
+        key = (self.text(), rect.width(), self.font().key())
+        if getattr(self, "_elide_key", None) != key:
+            self._elide_key = key
+            self._elided = self.fontMetrics().elidedText(
+                self.text(), Qt.TextElideMode.ElideRight, rect.width()
+            )
         painter.setPen(self.palette().color(self.foregroundRole()))
-        painter.drawText(rect, int(self.alignment()), elided)
+        painter.drawText(rect, int(self.alignment()), self._elided)
         painter.end()
 
 
@@ -484,7 +506,12 @@ class RecommendationCard(QFrame):
         self.like_button.setProperty("feedback", "liked")
         self.like_button.setCheckable(True)
         self.like_button.clicked.connect(lambda: self.liked_requested.emit(self.model))
-        self.dislike_button = QPushButton("Not for me")
+        # CHANGE [ACTION-ROW]: "Not for me" was the longest label in the
+        # smallest box in the interface, and it bought nothing over the plain
+        # word - the softening read as hedging rather than as kindness. The
+        # width it frees is what lets Watch Later come up out of the second
+        # row and join the pair it belongs with.
+        self.dislike_button = QPushButton("Dislike")
         self.dislike_button.setObjectName("recommendationDislikeButton")
         self.dislike_button.setProperty("feedback", "disliked")
         self.dislike_button.setCheckable(True)
@@ -551,9 +578,38 @@ class RecommendationCard(QFrame):
         feedback_row.setHorizontalSpacing(scaled(SPACE['sm']))
         feedback_row.setColumnStretch(0, 1)
         feedback_row.setColumnStretch(1, 1)
-        for column, button in ((0, self.like_button), (1, self.dislike_button)):
+        feedback_row.setColumnStretch(2, 1)
+        # CHANGE [ACTION-ROW]: Watch Later joins the pair it belongs with.
+        # The three verdicts a reader has about a recommendation - yes, later,
+        # no - were split across two rows with unrelated controls between
+        # them, so the most likely answer of the three ("not now, but keep
+        # it") was also the furthest away. They read left to right in the
+        # order somebody actually decides.
+        # CHANGE [ICON-VERDICTS]: glyphs, not words. "Watch Later" needs 63px
+        # of text and a three-up row gives about 62px at the widest card and
+        # 32px at the narrowest, so the label could not fit at any size - it
+        # was shipping as "Later", which is the one of the three verdicts
+        # whose meaning the abbreviation actually damages.
+        #
+        # Three things keep this from being three unlabelled mystery boxes.
+        # Each carries its own colour, so like and dislike are not one control
+        # drawn twice. Each keeps a real accessible name and a tooltip, since
+        # a glyph with neither is invisible to a keyboard or a screen reader.
+        # And the checked state swaps to the filled variant of the same icon,
+        # so the state does not rest on colour alone.
+        for column, button, icon, tip in (
+            (0, self.like_button, "like", "Like this"),
+            (1, self.watch_later_button, "watch-later", "Save for later"),
+            (2, self.dislike_button, "dislike", "Not for you"),
+        ):
             self._make_grid_cell(button)
+            button.setProperty("verdictIcon", icon)
+            button.setText("")
+            button.setToolTip(tip)
+            if not button.accessibleName():
+                button.setAccessibleName(tip)
             feedback_row.addWidget(button, 0, column)
+        self._refresh_verdict_icons()
         layout.addLayout(feedback_row)
         # CHANGE [HIERARCHY]: the MyAnimeList score sat above the genres at
         # the same size, so a third party's average outranked the thing the
@@ -578,17 +634,18 @@ class RecommendationCard(QFrame):
         # each line sat. Pooling it here pins the action rows to the bottom of
         # every card and lets the text above align from the top.
         layout.addStretch(1)
-        # CHANGE [ACTIONS]: four labelled boxes stacked in two rows, each one
-        # a word in a rectangle, is a lot of furniture for actions nobody
-        # takes on most cards. Only Watch Later carries a state worth reading
-        # ("Later" / "Saved"), so it keeps its label. Details, MyAnimeList and
-        # Hide become square icon controls on the same line: one row instead
-        # of two, and the card stops looking like a form.
+        # CHANGE [ACTIONS]: Details, MyAnimeList and Hide are square icon
+        # controls rather than three more labelled boxes. They are the
+        # utilities, not the verdicts: the row above is what the card is
+        # asking, this row is what else you can do about it.
+        #
+        # CHANGE [ACTION-ROW]: Watch Later has left this row for the verdicts
+        # above, so the three glyphs are pushed to the trailing edge instead
+        # of hanging off the left where a label used to anchor them.
         utility_row = QHBoxLayout()
         utility_row.setContentsMargins(0, 0, 0, 0)
         utility_row.setSpacing(scaled(SPACE['xs']))
-        self._make_grid_cell(self.watch_later_button)
-        utility_row.addWidget(self.watch_later_button, 1)
+        utility_row.addStretch(1)
         for button, icon, tip in (
             (self.details_button, "details-inspector", "Open the full breakdown"),
             (self.mal_button, "external-mal", "Open on MyAnimeList"),
@@ -864,6 +921,32 @@ class RecommendationCard(QFrame):
             return
         self.cover_requested.emit(self.model.cover_url)
 
+    # Which palette role each verdict is drawn in. Like and dislike carry
+    # their own colour so the pair is not one control twice; Watch Later is
+    # deliberately neutral, because "keep this for now" is not a verdict and
+    # should not compete with the two that are.
+    _VERDICT_ROLES = {
+        "like": "resolvedSuccess",
+        "dislike": "resolvedDanger",
+        "watch-later": "resolvedTextSubtle",
+    }
+
+    def _refresh_verdict_icons(self) -> None:
+        """Draw each verdict in its own colour, filled when it is the answer.
+
+        The checked state swaps to the ``-active`` variant of the same glyph,
+        so which one is chosen does not rest on colour alone - the shape
+        changes too, which is what makes it readable without colour vision.
+        """
+        for button in (self.like_button, self.watch_later_button, self.dislike_button):
+            name = button.property("verdictIcon")
+            if not name:
+                continue
+            role = self._VERDICT_ROLES.get(name, "resolvedTextSubtle")
+            variant = f"{name}-active" if button.isChecked() else name
+            button.setIcon(themed_ui_icon(variant, role))
+            button.setToolTip(button.accessibleName())
+
     def set_selected(self, selected: bool) -> None:
         self.setProperty("selected", selected)
         self.style().unpolish(self)
@@ -884,22 +967,31 @@ class RecommendationCard(QFrame):
         hide_label = "Unhide this recommendation" if hidden else "Hide this recommendation"
         self.hide_button.setAccessibleName(hide_label)
         self._hide_tooltip = hide_label
-        self.watch_later_button.setText(
-            "Saved" if watch_later else "Later"
-        )
         self.watch_later_button.setChecked(watch_later)
         self.like_button.setChecked(liked)
         self.dislike_button.setChecked(disliked)
-        self.like_button.setText(
-            "Remove like" if liked else "Move to Liked" if disliked else "Like"
+        # CHANGE [ICON-VERDICTS]: what the labels used to say now lives in the
+        # accessible name, which is the only place a glyph can carry it. These
+        # are the strings a screen reader reads and the tooltip shows, so the
+        # state a word used to spell out is still stated, just not drawn.
+        self.watch_later_button.setAccessibleName(
+            "Remove from Watch Later" if watch_later else "Save for later"
         )
-        self.dislike_button.setText(
-            "Remove dislike"
+        self.like_button.setAccessibleName(
+            "Remove this like"
+            if liked
+            else "Move to Liked"
+            if disliked
+            else "Like this"
+        )
+        self.dislike_button.setAccessibleName(
+            "Remove this dislike"
             if disliked
             else "Move to Disliked"
             if liked
-            else "Not for me"
+            else "Not for you"
         )
+        self._refresh_verdict_icons()
         taste_state = "liked" if liked else "disliked" if disliked else "unreviewed"
         self.setProperty("tasteState", taste_state)
         self.style().unpolish(self)
@@ -1030,7 +1122,11 @@ class RecommendationCard(QFrame):
         # A plate carrying this title's own initials and hue, so a feed with
         # no artwork reads as eight distinct entries rather than as eight
         # copies of a missing image.
-        source = title_placeholder_pixmap(self.model.display_title)
+        # At the size it is drawn; see the note in recommendation_row.
+        source = title_placeholder_pixmap(
+            self.model.display_title,
+            (scaled(COVER_WIDTH), scaled(COVER_HEIGHT)),
+        )
         if source.isNull():
             source = cover_placeholder_pixmap()
         if source.isNull():

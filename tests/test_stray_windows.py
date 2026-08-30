@@ -26,6 +26,7 @@ assert the states that make the re-show possible, which is deterministic.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel
 
 from AniRec.gui import stray_window_guard
 from AniRec.gui.recommendation_page import (
@@ -143,6 +144,98 @@ def test_no_stray_windows_appear_while_a_feed_is_filtered(system_temp_dir):
 
     assert guard.sightings == [], "\n".join(str(s) for s in guard.sightings)
     page.close()
+
+
+def test_rows_and_cards_are_parented_the_moment_they_are_created(system_temp_dir):
+    """A feed widget must never exist, even briefly, without a parent.
+
+    A QWidget with no parent is a top-level window by definition, so building
+    a row cold and reparenting it afterwards makes Qt map a real frame for
+    every one of them: switching to the list view flashes dozens of empty
+    "AniRec" windows before the list appears. This is BUG1 in a place the
+    original fix did not reach, and it came back once while the rebuild cost
+    was being profiled - unparenting looks like an optimisation and is not
+    even that. It measured slower.
+
+    Checked on the builders, because the parent at construction is the only
+    moment that matters; a finished row has been adopted by its layout either
+    way.
+    """
+    application = create_application([])
+    page = _shown_page(system_temp_dir, RecommendationViewMode.LIST, application)
+    model = page.visible_models[0]
+
+    row = page._build_row("probe-row", model)
+    assert row.parent() is page.list_container, (
+        "_build_row returned a row with no parent. Qt maps that as a "
+        "top-level window before the layout adopts it."
+    )
+    assert not row.isWindow()
+
+    card = page._build_card("probe-card", model)
+    assert card.parent() is page.card_container
+    assert not card.isWindow()
+    page.close()
+
+
+def test_no_stray_windows_appear_while_switching_between_views(system_temp_dir):
+    """The symptom itself: rebuilding a view must open nothing.
+
+    The list is the one that regressed, because it is the only view that
+    builds a widget per model on every switch. Sixty rows produced sixty
+    stray windows.
+    """
+    application = create_application([])
+    guard = stray_window_guard.install(application, log=False)
+    page = _shown_page(system_temp_dir, RecommendationViewMode.CARDS, application)
+    guard.allow(page)
+    guard.sightings.clear()
+
+    for mode in (
+        RecommendationViewMode.LIST,
+        RecommendationViewMode.TABLE,
+        RecommendationViewMode.CARDS,
+        RecommendationViewMode.LIST,
+    ):
+        page.set_view_mode(mode)
+        for _ in range(3):
+            application.processEvents()
+
+    assert guard.sightings == [], "\n".join(str(s) for s in guard.sightings)
+    page.close()
+
+
+def test_a_fingerprint_module_parents_its_label_before_showing_it(system_temp_dir):
+    """The one constructor the original BUG1 sweep did not reach.
+
+    ``setVisible(True)`` on a label the layout has not adopted yet is
+    setVisible on a widget with no parent, and a parentless QWidget is a
+    top-level window - so opening Profile flashed one empty frame per
+    fingerprint reading. Checked on the module rather than on the finished
+    page, because the order inside the constructor is the only thing that
+    decides it.
+    """
+    from AniRec.gui.profile_page import FingerprintModule
+    from AniRec.gui.taste_profile import FingerprintReading
+
+    application = create_application([])
+    guard = stray_window_guard.install(application, log=False)
+    guard.sightings.clear()
+
+    module = FingerprintModule(
+        FingerprintReading(
+            "community-sync", "COMMUNITY SYNC", "72%", label="MOSTLY ALIGNED",
+            position=0.72,
+        )
+    )
+    guard.allow(module)
+    for _ in range(3):
+        application.processEvents()
+
+    assert guard.sightings == [], "\n".join(str(s) for s in guard.sightings)
+    for label in module.findChildren(QLabel):
+        assert label.parent() is not None
+        assert not label.isWindow()
 
 
 def test_the_guard_ignores_windows_that_are_meant_to_be_windows():

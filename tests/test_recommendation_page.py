@@ -268,8 +268,16 @@ def test_feedback_moves_cards_between_real_taste_folders_and_updates_live_counts
     page.library_tabs["liked"].click()
     application.processEvents()
     assert titles(page.visible_models) == ["Alpha"]
-    assert page._cards_by_key["mal:1"].like_button.text() == "Remove like"
-    assert page._cards_by_key["mal:1"].dislike_button.text() == "Move to Disliked"
+    # CHANGE [ICON-VERDICTS]: the verdict row is glyphs, so the state a label
+    # used to spell out lives in the accessible name - which is also the only
+    # place a screen reader could ever have read it from.
+    assert (
+        page._cards_by_key["mal:1"].like_button.accessibleName() == "Remove this like"
+    )
+    assert (
+        page._cards_by_key["mal:1"].dislike_button.accessibleName()
+        == "Move to Disliked"
+    )
     page._cards_by_key["mal:1"].dislike_button.click()
     application.processEvents()
     state = service.load("profile-a")
@@ -282,8 +290,11 @@ def test_feedback_moves_cards_between_real_taste_folders_and_updates_live_counts
     page.library_tabs["disliked"].click()
     application.processEvents()
     assert titles(page.visible_models) == ["Alpha"]
-    assert page._cards_by_key["mal:1"].like_button.text() == "Move to Liked"
-    assert page._cards_by_key["mal:1"].dislike_button.text() == "Remove dislike"
+    assert page._cards_by_key["mal:1"].like_button.accessibleName() == "Move to Liked"
+    assert (
+        page._cards_by_key["mal:1"].dislike_button.accessibleName()
+        == "Remove this dislike"
+    )
     page._cards_by_key["mal:1"].dislike_button.click()
     page.library_tabs["all"].click()
     application.processEvents()
@@ -346,7 +357,9 @@ def test_visible_library_tabs_allow_watch_later_to_be_reviewed_and_removed(
     assert titles(page.visible_models) == ["Alpha"]
     saved_card = page._cards_by_key["mal:1"]
     # Shortened for BUG2: the longer wording clipped at 75% GUI scale.
-    assert saved_card.watch_later_button.text() == "Saved"
+    assert (
+        saved_card.watch_later_button.accessibleName() == "Remove from Watch Later"
+    )
     assert saved_card.watch_later_button.isChecked()
     saved_card.watch_later_button.click()
     application.processEvents()

@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 
 from .cover_art import rounded_cover
 from .design_tokens import RADIUS, SPACE
-from .instrument_widgets import InstrumentPanel, ScoreTrack, Scanlines
+from .instrument_widgets import InstrumentPanel, ScoreTrack, Scanlines, keep_crisp
 from .recommendation_card import open_mal_url
 from .recommendation_view_model import RecommendationViewModel
 from .resources import cover_placeholder_pixmap, title_placeholder_pixmap
@@ -123,6 +123,12 @@ class RecommendationDetailDialog(QDialog):
         self.cover_label.setFixedSize(DETAIL_COVER_WIDTH, DETAIL_COVER_HEIGHT)
         self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.cover_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        # CHANGE [CRISP-ART]: the card, the row, the bundle stack and the
+        # profile all exempt their artwork from the raster; this one never
+        # did, so the biggest cover in the application - 300x450, the whole
+        # left half of the inspector - was the only one being drawn through
+        # a 1-in-3 dark line. Atmosphere over chrome, never over a photograph.
+        keep_crisp(self.cover_label)
         self._show_placeholder()
         hero.addWidget(self.cover_label, 0, Qt.AlignmentFlag.AlignTop)
 
@@ -241,7 +247,7 @@ class RecommendationDetailDialog(QDialog):
         self.like_button.clicked.connect(
             lambda: self.model is not None and self.liked_requested.emit(self.model)
         )
-        self.dislike_button = QPushButton("Not for me")
+        self.dislike_button = QPushButton("Dislike")
         self.dislike_button.setObjectName("recommendationDetailDislikeButton")
         self.dislike_button.setProperty("feedback", "disliked")
         self.dislike_button.setCheckable(True)
@@ -478,7 +484,7 @@ class RecommendationDetailDialog(QDialog):
             if disliked
             else "Move to Disliked"
             if liked
-            else "Not for me"
+            else "Dislike"
         )
         self.like_button.setEnabled(actions_enabled)
         self.dislike_button.setEnabled(actions_enabled)

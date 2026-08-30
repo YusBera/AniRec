@@ -359,7 +359,7 @@ class BundleInfoBlock(QFrame):
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(scaled(SPACE["sm"]))
-        self.dislike_button = QPushButton("Not for me")
+        self.dislike_button = QPushButton("Dislike")
         self.dislike_button.setObjectName("bundleDislikeButton")
         self.dislike_button.setProperty("feedback", "disliked")
         self.later_button = QPushButton("Later")

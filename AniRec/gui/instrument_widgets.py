@@ -684,7 +684,12 @@ class Scanlines(QWidget):
     # weight and cover artwork went grey behind it. The arithmetic gives 31;
     # this sits a little under, because the app puts the raster over
     # photographic artwork where the page only ever put it over flat panels.
-    INK_ALPHA = 26
+    # CHANGE [QUIETER-RASTER]: 26 -> 17. Every cover is already exempt, so
+    # what remains is the raster over chrome - and over the surfaces that
+    # carry small mono type, a 1-in-3 dark line is competing with the letter
+    # forms rather than sitting behind them. The texture survives at this
+    # weight; the reading of a 7pt readout stops being negotiated with it.
+    INK_ALPHA = 17
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

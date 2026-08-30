@@ -353,6 +353,8 @@ def themed_ui_icon(name: str, role: str = "resolvedTextSubtle") -> QIcon:
         "resolvedAccent": "#C6A15B",
         "resolvedText": "#E9E5D6",
         "resolvedTextSubtle": "#7C8C80",
+        "resolvedSuccess": "#6FCF99",
+        "resolvedDanger": "#D98363",
         "resolvedSignal": "#6FC6C0",
         "resolvedAccentContrast": "#0A120E",
     }

@@ -121,6 +121,11 @@ class ThemeManager:
         # error states - needs the value handed to the renderer. Published
         # here with the rest so it follows the gradient themes too.
         self.application.setProperty("resolvedDanger", colours["danger_text"])
+        # CHANGE [ICON-VERDICTS]: the card's verdict row is glyphs rather than
+        # words, and a like and a dislike drawn in the same colour are one
+        # control twice. Both roles are published so the renderer can tint
+        # them, and both follow the gradient themes with everything else.
+        self.application.setProperty("resolvedSuccess", colours["success_text"])
         # CHANGE [LINK]: rich text takes its anchor colour from
         # ``QPalette::Link``, never from a stylesheet ``color``. The sheet
         # declared ``QLabel#wizardApiLink { color: $accent_soft; }`` and that

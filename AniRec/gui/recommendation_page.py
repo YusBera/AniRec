@@ -983,7 +983,7 @@ class RecommendationExplorerPage(QWidget):
         self.like_selected_button.setObjectName("recommendationLikeSelected")
         self.like_selected_button.setProperty("feedback", "liked")
         self.like_selected_button.setCheckable(True)
-        self.dislike_selected_button = QPushButton("Not for me")
+        self.dislike_selected_button = QPushButton("Dislike")
         self.dislike_selected_button.setObjectName("recommendationDislikeSelected")
         self.dislike_selected_button.setProperty("feedback", "disliked")
         self.dislike_selected_button.setCheckable(True)
@@ -1859,10 +1859,27 @@ class RecommendationExplorerPage(QWidget):
 
         CHANGE [BUG1]: reuses rows for the same reason cards are reused. Both
         views are kept in step, so a rebuild of one was a rebuild of both.
+
+        CHANGE [BUILD-QUIET]: built with updates suppressed. Measured on a
+        120-title feed, switching to the list took 4.8 seconds, and almost
+        none of it was this application's own code: 2.7s inside 247 calls to
+        setVisible and 1.4s inside 240 calls to addLayout. Those are absurd
+        numbers for Qt, and they are what a live, visible container does when
+        widgets are added to it one at a time under a global stylesheet -
+        every insertion re-resolves style and re-runs layout across the whole
+        growing tree, so the cost is quadratic in the number of rows.
+        Suppressing updates for the duration collapses that into one pass.
         """
         # CHANGE [BUG1]: see _rebuild_cards. Only the visible layout is built.
         if self._view_mode is not RecommendationViewMode.LIST:
             return
+        self.list_container.setUpdatesEnabled(False)
+        try:
+            self._rebuild_rows_locked()
+        finally:
+            self.list_container.setUpdatesEnabled(True)
+
+    def _rebuild_rows_locked(self) -> None:
         wanted = [
             (self._key_by_model[id(model)], model) for model in self._visible_models
         ]
@@ -1900,6 +1917,14 @@ class RecommendationExplorerPage(QWidget):
         self.list_layout.addStretch()
 
     def _build_row(self, key: str, model: RecommendationViewModel):
+        # The container is the parent from the moment the row exists, and it
+        # must stay that way. A QWidget with no parent is a top-level window:
+        # build one unparented and Qt maps it as a real frame on the next
+        # event-loop turn, so rebuilding the list flashes a title bar per row
+        # before deleteLater catches up. That is BUG1 exactly, and it was
+        # re-introduced here while chasing the rebuild cost - which the
+        # unparenting did not even reduce. The cost was elsewhere; see the
+        # placeholder size and the visibility call in RecommendationRow.
         row = RecommendationRow(model, self.list_container)
         row.selection_requested.connect(
             lambda _model, selected_key=key: self.select_key(selected_key)
@@ -2010,6 +2035,14 @@ class RecommendationExplorerPage(QWidget):
         # change, and that repolish is what a theme switch actually costs.
         if self._view_mode is not RecommendationViewMode.CARDS:
             return
+        self.card_container.setUpdatesEnabled(False)
+        try:
+            self._rebuild_cards_locked()
+        finally:
+            self.card_container.setUpdatesEnabled(True)
+
+    def _rebuild_cards_locked(self) -> None:
+        """See _rebuild_rows for why this runs with updates suppressed."""
         wanted = self._display_entries()
         wanted_keys = {key for key, _item in wanted}
 
@@ -2330,7 +2363,7 @@ class RecommendationExplorerPage(QWidget):
             self.hide_selected_button.setText("Hide")
             self.watch_later_selected_button.setText("Watch Later")
             self.like_selected_button.setText("Like")
-            self.dislike_selected_button.setText("Not for me")
+            self.dislike_selected_button.setText("Dislike")
             self.like_selected_button.setChecked(False)
             self.dislike_selected_button.setChecked(False)
             return
@@ -2354,7 +2387,7 @@ class RecommendationExplorerPage(QWidget):
             if disliked
             else "Move to Disliked"
             if liked
-            else "Not for me"
+            else "Dislike"
         )
 
     def _update_selected_actions_visibility(self) -> None:
