@@ -49,6 +49,8 @@ from ..services import (
     RecommendationLocalState,
     RecommendationStateService,
 )
+from .bundle_card import BundleCard
+from .bundle_view_model import BundleViewModel, build_bundles
 from .discover_filters import (
     ActiveFilter,
     DiscoverFilterState,
@@ -397,6 +399,18 @@ class RecommendationExplorerPage(QWidget):
         self._key_by_model: dict[int, str] = {}
         self._model_by_key: dict[str, RecommendationViewModel] = {}
         self._cards_by_key: dict[str, RecommendationCard] = {}
+        # CHANGE [BUNDLE-WIRING]: build_bundles() has existed, tested, with no
+        # callers since the groundwork landed, so the feed has been showing
+        # "The Master of Diabolism 2" and "3" as separate cards next to each
+        # other. Bundling is a card-grid affordance and nothing more: the
+        # models behind the list, the table, filtering, sorting, selection and
+        # every key stay exactly as they were, and only what the grid draws is
+        # folded. That is what keeps this a display change rather than a
+        # second pipeline.
+        self._bundle_graph: dict[int, dict] = {}
+        self._watched_mal_ids: set[int] = set()
+        self._expanded_bundles: set[str] = set()
+        self._bundles_enabled = False
         self._rows_by_key: dict[str, RecommendationRow] = {}
         self._selected_key: str | None = None
         self._view_mode = RecommendationViewMode.CARDS
@@ -587,6 +601,10 @@ class RecommendationExplorerPage(QWidget):
     def set_show_covers(self, show_covers: bool) -> None:
         self.show_covers = bool(show_covers)
         for card in self._cards_by_key.values():
+            # A bundle draws a stack of tiles rather than one portrait, and
+            # has no separate cover to switch off.
+            if isinstance(card, BundleCard):
+                continue
             card.set_cover_visible(self.show_covers)
             # CHANGE [FEAT2]: the badge follows the active theme rather than
             # assuming a dark portrait behind it.
@@ -1898,6 +1916,80 @@ class RecommendationExplorerPage(QWidget):
         )
         return row
 
+    def set_bundle_context(
+        self, graph=None, watched_mal_ids=(), *, enabled: bool = True
+    ) -> None:
+        """Supply what franchise folding needs, and say whether to do it.
+
+        Off by default and switched on only for Discover. My Library is a
+        list of decisions the reader has already made about individual
+        titles; folding three of them into "1 series" there would hide the
+        very thing that surface exists to show.
+        """
+        self._bundle_graph = dict(graph or {})
+        self._watched_mal_ids = {
+            int(value) for value in watched_mal_ids or () if value is not None
+        }
+        self._bundles_enabled = bool(enabled and self._bundle_graph)
+        self._expanded_bundles.clear()
+        self._rebuild_cards()
+
+    def _display_entries(self):
+        """The card grid's contents: single titles, and folded franchises.
+
+        Returns ``(key, item)`` pairs where an item is either a view model or
+        a bundle. An expanded bundle contributes its members instead of
+        itself, so opening one is a change of key rather than a change of
+        widget tree - which is what lets the existing card reuse handle it.
+        """
+        models = self._visible_models
+        if not self._bundles_enabled:
+            return [(self._key_by_model[id(model)], model) for model in models]
+
+        feed, _bundles = build_bundles(
+            models, self._bundle_graph, self._watched_mal_ids
+        )
+        entries = []
+        for item in feed:
+            if isinstance(item, BundleViewModel):
+                if item.key in self._expanded_bundles:
+                    for entry in item.entries:
+                        key = self._key_by_model.get(id(entry))
+                        if key is not None:
+                            entries.append((key, entry))
+                    continue
+                entries.append((item.key, item))
+                continue
+            key = self._key_by_model.get(id(item))
+            if key is not None:
+                entries.append((key, item))
+        return entries
+
+    def _toggle_bundle(self, card) -> None:
+        key = card.bundle.key
+        if key in self._expanded_bundles:
+            self._expanded_bundles.discard(key)
+        else:
+            self._expanded_bundles.add(key)
+        self._rebuild_cards()
+
+    def _hide_bundle(self, bundle) -> None:
+        """Hide every member of a franchise in one action."""
+        if not self.can_review:
+            return
+        for mal_id in bundle.mal_ids:
+            if mal_id in self.local_state.hidden_mal_ids:
+                continue
+            if self.profile_id is None:
+                self.local_state = _toggle_in_memory(
+                    self.local_state, "hidden_mal_ids", mal_id, True
+                )
+            else:
+                self.local_state = self.state_service.set_hidden(
+                    self.profile_id, mal_id, True
+                )
+        self._apply_query()
+
     def _rebuild_cards(self) -> None:
         """Bring the card grid in line with the visible models.
 
@@ -1918,10 +2010,8 @@ class RecommendationExplorerPage(QWidget):
         # change, and that repolish is what a theme switch actually costs.
         if self._view_mode is not RecommendationViewMode.CARDS:
             return
-        wanted = [
-            (self._key_by_model[id(model)], model) for model in self._visible_models
-        ]
-        wanted_keys = {key for key, _model in wanted}
+        wanted = self._display_entries()
+        wanted_keys = {key for key, _item in wanted}
 
         for key in [key for key in self._cards_by_key if key not in wanted_keys]:
             card = self._cards_by_key.pop(key)
@@ -1939,8 +2029,14 @@ class RecommendationExplorerPage(QWidget):
         for key, model in wanted:
             card = self._cards_by_key.get(key)
             if card is None:
-                card = self._build_card(key, model)
+                card = (
+                    self._build_bundle_card(model)
+                    if isinstance(model, BundleViewModel)
+                    else self._build_card(key, model)
+                )
                 self._cards_by_key[key] = card
+            if isinstance(model, BundleViewModel):
+                continue
             card.set_local_state(
                 hidden=model.mal_id in self.local_state.hidden_mal_ids,
                 watch_later=model.mal_id in self.local_state.watch_later_mal_ids,
@@ -1952,6 +2048,18 @@ class RecommendationExplorerPage(QWidget):
             card.set_badge_colours(*_badge_colours())
         self._reflow_cards()
         self._schedule_visible_covers()
+
+    def _build_bundle_card(self, bundle: BundleViewModel):
+        card = BundleCard(bundle, self.card_container)
+        card.toggled.connect(self._toggle_bundle)
+        card.cover_requested.connect(
+            lambda url, key=bundle.key: self._request_cover(key, url)
+        )
+        card.hide_button.clicked.connect(
+            lambda _checked=False, item=bundle: self._hide_bundle(item)
+        )
+        card.hide_button.setEnabled(self.can_review)
+        return card
 
     def _build_card(self, key: str, model: RecommendationViewModel):
         card = RecommendationCard(model, self.card_container)
@@ -2174,6 +2282,8 @@ class RecommendationExplorerPage(QWidget):
 
     def _restore_selection(self) -> None:
         for key, card in self._cards_by_key.items():
+            if isinstance(card, BundleCard):
+                continue
             card.set_selected(key == self._selected_key)
         self.table.blockSignals(True)
         self.table.clearSelection()
@@ -2548,6 +2658,10 @@ class RecommendationExplorerPage(QWidget):
         # CHANGE [BUG3]: deliver to rows as well, not only cards.
         landed = ""
         for card in self._cards_by_key.values():
+            if isinstance(card, BundleCard):
+                if card.set_cover_data(url, result.data):
+                    landed = landed or card.bundle.title
+                continue
             if card.model.cover_url == url:
                 card.set_cover_data(result.data)
                 landed = card.model.display_title

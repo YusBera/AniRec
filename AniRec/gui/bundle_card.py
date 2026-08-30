@@ -78,6 +78,13 @@ class BundleCard(QFrame):
     """The collapsed stack: one grid cell, the same height as a card."""
 
     toggled = Signal(object)
+    # CHANGE [BUNDLE-WIRING]: the stack drew placeholders forever, because
+    # nothing ever asked for its members' artwork - the feed's cover pass only
+    # knew how to talk to a RecommendationCard. A bundle asks for the covers
+    # of the entries it actually draws, and no more: fetching artwork for the
+    # eleventh member of a franchise that shows four tiles is bandwidth spent
+    # on something nobody can see.
+    cover_requested = Signal(str)
 
     def __init__(self, bundle: BundleViewModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -120,7 +127,11 @@ class BundleCard(QFrame):
         # The mean, never the best of the members: a best-of number would rank
         # every bundle by its strongest entry and make bundles outscore the
         # single cards beside them in the same grid.
-        self.match_label = QLabel("AVG MATCH %d%%" % round(bundle.average_match))
+        # CHANGE [PRECISION]: one decimal, as everywhere else a match is
+        # printed. A bundle rounding to a whole number beside cards printing a
+        # tenth is the same disagreement this application has already been
+        # through once.
+        self.match_label = QLabel("AVG MATCH %.1f%%" % bundle.average_match)
         self.match_label.setObjectName("bundleMatch")
         layout.addWidget(self.match_label)
         layout.addStretch(1)
@@ -153,6 +164,29 @@ class BundleCard(QFrame):
         self.setProperty("expanded", self._expanded)
         self.style().unpolish(self)
         self.style().polish(self)
+
+    def visible_entries(self):
+        """The members whose tiles are actually painted on the stack."""
+        entries = self.bundle.entries
+        return entries[:4] if len(entries) < COUNT_FROM else entries[:3]
+
+    def request_cover(self) -> None:
+        """Ask for the artwork of every tile this stack draws."""
+        for entry in self.visible_entries():
+            if entry.cover_url:
+                self.cover_requested.emit(entry.cover_url)
+
+    def set_cover_data(self, url: str, data: bytes) -> bool:
+        """Take a downloaded image for whichever member it belongs to."""
+        pixmap = QPixmap()
+        if not data or not pixmap.loadFromData(data):
+            return False
+        landed = False
+        for entry in self.visible_entries():
+            if entry.cover_url == url and entry.mal_id is not None:
+                self.set_cover(entry.mal_id, pixmap)
+                landed = True
+        return landed
 
     def set_cover(self, mal_id: int, pixmap: QPixmap) -> None:
         """Supply one member's artwork; the stack redraws with what it has."""
@@ -199,7 +233,7 @@ class BundleCard(QFrame):
             )
 
         entries = self.bundle.entries
-        shown = entries[:4] if len(entries) < COUNT_FROM else entries[:3]
+        shown = self.visible_entries()
         left = (width - block) // 2
         for index, entry in enumerate(shown):
             column, row = index % 2, index // 2

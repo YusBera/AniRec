@@ -70,6 +70,7 @@ from ..services import (
     ProfileStatisticsService,
     RecommendationStateService,
     ResultService,
+    BundleContextService,
     SampleDataService,
     SettingsService,
     TasteFeedbackService,
@@ -346,6 +347,10 @@ class MainWindow(QMainWindow):
         self.active_profile: UserProfile | None = None
         self.setup_wizard: SetupWizard | None = None
         self.sample_data_service = SampleDataService()
+        # CHANGE [BUNDLE-WIRING]: what the feed needs to fold a franchise.
+        # Read from the profile directory, best effort: no graph means the
+        # feed reads exactly as it always has.
+        self.bundle_context_service = BundleContextService()
         self.demo_mode = False
         # CHANGE [COMPARE]: what ships wired up is the provider that refuses,
         # with a reason. Nothing on the Compare surface invents a match score,
@@ -466,6 +471,7 @@ class MainWindow(QMainWindow):
             view.set_recommendations(result.recommendations)
         self.discover_page.set_genre_stats(result.genre_stats)
         self._publish_studio_names()
+        self._publish_bundle_context()
         self.genre_analysis_page.set_genre_stats(result.genre_stats)
         self.home_page.set_state(None, result)
         self.demo_banner.setVisible(True)
@@ -535,6 +541,7 @@ class MainWindow(QMainWindow):
         self.genre_analysis_page.set_genre_stats(stats)
         self.discover_page.set_genre_stats(stats)
         self._publish_studio_names()
+        self._publish_bundle_context()
         # The two lines that used to be asserted at construction, reported
         # here instead - each only when the thing it names actually happened,
         # and each carrying the count that proves it.
@@ -1198,6 +1205,32 @@ class MainWindow(QMainWindow):
         except (AniRecError, OSError, TypeError, ValueError):
             # A preference is not worth interrupting the session over.
             return
+
+    def _publish_bundle_context(self) -> None:
+        """Give Discover what it needs to fold franchises, and only Discover.
+
+        My Library is a record of decisions the reader has already made about
+        individual titles. Collapsing three of them into "1 series" there
+        would hide the very thing that surface exists to show, so the library
+        explorer is handed the same context with bundling switched off.
+        """
+        directory = None
+        profile = self.active_profile
+        if profile is not None and self.profile_service is not None:
+            try:
+                directory = self.profile_service.directory(profile.profile_id)
+            except (AniRecError, OSError, TypeError, ValueError):
+                directory = None
+        context = self.bundle_context_service.load(directory)
+
+        feed = getattr(self, "recommendations_page", None)
+        if feed is not None:
+            feed.set_bundle_context(
+                context.graph, context.watched_mal_ids, enabled=True
+            )
+        library = getattr(self, "library_page", None)
+        if library is not None:
+            library.set_bundle_context({}, (), enabled=False)
 
     def _publish_studio_names(self) -> None:
         """Tell the taste sentence which of its ranked terms are studios.
