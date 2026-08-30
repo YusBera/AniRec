@@ -22,6 +22,8 @@ the one narrow exception. Sections fail independently: each is wrapped in a
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import math
 
 from PySide6.QtCore import Qt, Signal
@@ -55,7 +57,7 @@ from .profile_widgets import (
     TimelinePlot,
     motion_enabled,
 )
-from .resources import cover_placeholder_pixmap
+from .resources import cover_placeholder_pixmap, ui_icon_pixmap
 from .scaling import scaled
 from .taste_profile import (
     DASH,
@@ -141,6 +143,10 @@ COLUMN_MIN_WIDTH = 320
 # none of them.
 INSTRUMENT_MIN_WIDTH = 420
 
+# A fact card holds a legend, a figure and a sentence of about eighty
+# characters. Narrower than an instrument because it carries no chart.
+FACT_MIN_WIDTH = 320
+
 
 class ReflowGrid(QWidget):
     """Widgets laid into as many columns of at least ``minimum`` width as fit.
@@ -158,11 +164,27 @@ class ReflowGrid(QWidget):
         *,
         spacing: str = "sm",
         uniform_height: bool = False,
+        slots: int = 0,
+        avoid_orphans: bool = True,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("profileReflow")
         self._minimum = minimum
         self._uniform_height = uniform_height
+        # CHANGE [KEEP-THE-SLOT]: how many columns this row is *for*, when the
+        # caller knows. The column count is otherwise capped at the number of
+        # widgets present, so a row that expects three and receives one gives
+        # that one a full-page-width column - which is how a single receipt
+        # ended up as a 1600px box with a title in the left corner. With a
+        # slot count the lone widget keeps a third of the row and the rest
+        # stays empty, which is a gap rather than a stretched object.
+        self._slots = int(slots)
+        # CHANGE [USE-THE-WIDTH]: whether a lone widget on the last row is
+        # worth dropping a whole column for. It is, for a bank of five peer
+        # readings that reads as one strip. It is not for the ten collapsed
+        # instrument panels: ten in three columns leaves one orphan, and
+        # avoiding it cost a third of the page's width on every row above.
+        self._avoid_orphans = bool(avoid_orphans)
         self._widgets: list[QWidget] = []
         self._columns = 0
         self.grid = QGridLayout(self)
@@ -194,14 +216,19 @@ class ReflowGrid(QWidget):
         minimum = scaled(self._minimum)
         gap = self.grid.horizontalSpacing()
         available = max(self.width(), minimum)
-        columns = max(
-            1, min(len(self._widgets), (available + gap) // (minimum + gap))
-        )
+        fits = max(1, (available + gap) // (minimum + gap))
+        wanted = self._slots or len(self._widgets)
+        columns = max(1, min(wanted, fits))
         # Never leave a single module alone on the last row. Five readings in
         # four columns is a strip of four and an orphan, which reads as a
         # mistake; three and two reads as a deliberate arrangement, and the
         # modules only get wider for it.
-        if columns > 2 and len(self._widgets) % columns == 1:
+        if (
+            self._avoid_orphans
+            and not self._slots
+            and columns > 2
+            and len(self._widgets) % columns == 1
+        ):
             columns -= 1
         if columns != self._columns:
             self._columns = columns
@@ -580,113 +607,358 @@ class VerdictHero(InstrumentPanel):
         self.sentence_label.setWordWrap(True)
         layout.addWidget(self.sentence_label)
 
-        layout.addSpacing(scaled(SPACE["xs"]))
-        self.evidence_label = QLabel("")
-        self.evidence_label.setObjectName("profileVerdictEvidence")
-        self.evidence_label.setWordWrap(True)
-        layout.addWidget(self.evidence_label)
+        # CHANGE [ONE-BOARD]: the figures behind the claim are tiles on the
+        # board below, not a row inside this panel. Spread across a full-width
+        # hero they were three numbers with 400px between them; on the board
+        # they sit beside every other derived fact, which is what they are.
+        # The hero states the claim and stops.
 
     def set_archetype(self, archetype) -> None:
         """Draw the reading, or say plainly that there is not one."""
         if archetype:
             name, sentence = archetype.name, archetype.sentence
-            evidence = archetype.evidence
         else:
             name = PROFILE_TEXT.verdict_plain_name
             sentence = PROFILE_TEXT.verdict_plain_sentence
-            evidence = ()
+            readings = ()
         self.name_label.setText(f"{PROFILE_TEXT.verdict_prefix} {name}.")
         self.sentence_label.setText(sentence)
-        self.evidence_label.setText("   ".join(evidence))
-        self.evidence_label.setVisible(bool(evidence))
         self.setAccessibleName(f"{self.name_label.text()} {sentence}")
 
 
-class UnlistedFacts(QWidget):
-    """The derived facts, named for the fact that they are derived.
+def _fact_mark_colour(tone: str) -> str:
+    """Tint the mark with the same meaning its figure carries."""
+    from PySide6.QtWidgets import QApplication
 
-    Every line here comes out of comparing this reader's scores against
-    everyone else's, which is exactly why none of it appears on a
-    MyAnimeList profile page. Saying so in the heading is the point: the
-    value is not the arithmetic, it is that nobody else did the arithmetic.
+    role, fallback = (
+        ("resolvedDanger", "#D98363")
+        if tone == "against"
+        else ("resolvedAccent", "#D9A441")
+    )
+    application = QApplication.instance()
+    value = application.property(role) if application is not None else None
+    return str(value or fallback)
 
-    Lines are sentences rather than readout pairs. A nemesis studio is a
-    thing you tell somebody, not a metric you monitor.
+
+@dataclass(frozen=True)
+class UnlistedFact:
+    """One derived fact, as a card wants it: a mark, a figure, a sentence."""
+
+    icon: str
+    legend: str
+    value: str
+    caption: str
+    tone: str = "you"
+
+
+# Which mark stands for which season. Drawn in the same plotted, butt-capped
+# language as the rest of the interface set rather than as illustration: a
+# soft autumn leaf would be the first rounded thing in the application.
+# The fingerprint readings and the named-title receipts, as marks. Every one
+# of these facts is derived by comparing this reader against everyone else,
+# which is why they belong on the same board under the same heading.
+_READING_ICONS = {
+    "community-sync": "fact-sync",
+    "rating-bias": "fact-bias",
+    "contrarian": "fact-contrarian",
+    "completion": "fact-completion",
+    "mainstream": "fact-mainstream",
+}
+
+_SEASON_ICONS = {
+    "winter": "fact-season-winter",
+    "spring": "fact-season-spring",
+    "summer": "fact-season-summer",
+    "fall": "fact-season-fall",
+    "autumn": "fact-season-fall",
+}
+
+
+class UnlistedFactCard(InstrumentPanel):
+    """One fact, built to be looked at rather than read past.
+
+    CHANGE [FUN-FACTS]: these were seven sentences with a rule down the left,
+    stacked in a column. Everything interesting about them - a studio you
+    clash with, the years you keep coming back to - was buried mid-sentence
+    at body size, and the panel read as a paragraph. The figure is the thing
+    somebody screenshots and sends to a group chat, so it is set large and
+    the sentence explains it underneath.
+    """
+
+    def __init__(self, fact: UnlistedFact, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.fact = fact
+        self.setObjectName("profileFactCard")
+        self.setProperty("tone", fact.tone)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(
+            scaled(SPACE["lg"]), scaled(SPACE["md"]),
+            scaled(SPACE["lg"]), scaled(SPACE["md"]),
+        )
+        layout.setSpacing(scaled(SPACE["xs"]))
+
+        head = QHBoxLayout()
+        head.setSpacing(scaled(SPACE["sm"]))
+        self.mark = QLabel()
+        self.mark.setObjectName("profileFactMark")
+        self.mark.setFixedSize(scaled(22), scaled(22))
+        self.mark.setPixmap(
+            ui_icon_pixmap(fact.icon, _fact_mark_colour(fact.tone), scaled(22))
+        )
+        head.addWidget(self.mark, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.legend_label = QLabel(fact.legend)
+        self.legend_label.setObjectName("profileFactLegend")
+        head.addWidget(self.legend_label, 0, Qt.AlignmentFlag.AlignVCenter)
+        head.addStretch(1)
+        layout.addLayout(head)
+
+        self.value_label = QLabel(fact.value)
+        self.value_label.setObjectName("profileFactValue")
+        self.value_label.setProperty("tone", fact.tone)
+        self.value_label.setWordWrap(True)
+        layout.addWidget(self.value_label)
+
+        self.caption_label = QLabel(fact.caption)
+        self.caption_label.setObjectName("profileFactCaption")
+        self.caption_label.setWordWrap(True)
+        layout.addWidget(self.caption_label)
+        layout.addStretch(1)
+
+        self.setAccessibleName(f"{fact.legend.title()}: {fact.value}. {fact.caption}")
+
+
+class UnlistedFacts(ReflowGrid):
+    """The derived facts as a board of cards, named for being derived.
+
+    Every one of these comes out of comparing this reader's scores against
+    everyone else's, which is exactly why none of it appears on a MyAnimeList
+    profile. The heading says so; the cards are what make somebody want to
+    show one to a friend.
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+        # Uniform height: captions run one to three lines, and aligned to the
+        # top that leaves every row with a ragged underside. One frame height
+        # per row is what makes a board read as a board.
+        super().__init__(
+            FACT_MIN_WIDTH,
+            parent,
+            spacing="lg",
+            avoid_orphans=False,
+            uniform_height=True,
+        )
         self.setObjectName("profileUnlisted")
-        self.layout_ = QVBoxLayout(self)
-        self.layout_.setContentsMargins(0, 0, 0, 0)
-        self.layout_.setSpacing(scaled(SPACE["sm"]))
-        self._labels: list[QLabel] = []
+        self._facts: tuple[UnlistedFact, ...] = ()
 
     def set_profile(self, profile) -> None:
-        for label in self._labels:
-            label.setParent(None)
-            label.deleteLater()
-        self._labels = []
-        for sentence in unlisted_sentences(profile):
-            label = QLabel(sentence)
-            label.setObjectName("profileUnlistedLine")
-            label.setWordWrap(True)
-            label.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse
-            )
-            self.layout_.addWidget(label)
-            self._labels.append(label)
+        self._facts = board_facts(profile)
+        self.set_widgets([UnlistedFactCard(fact) for fact in self._facts])
+
+    @property
+    def facts(self) -> tuple[UnlistedFact, ...]:
+        return self._facts
 
     @property
     def sentences(self) -> tuple[str, ...]:
-        return tuple(label.text() for label in self._labels)
+        return tuple(f"{fact.value} {fact.caption}".strip() for fact in self._facts)
 
 
-def unlisted_sentences(profile) -> tuple[str, ...]:
+def reading_facts(profile) -> tuple[UnlistedFact, ...]:
+    """The fingerprint readings, as tiles.
+
+    These are not on a MyAnimeList profile either: "you disagree with the
+    consensus on a third of your list" is a comparison against everybody
+    else, which is the same claim every other tile on this board makes.
+    """
+    facts = []
+    for reading in profile.fingerprint:
+        facts.append(
+            UnlistedFact(
+                # CHANGE [HONEST-FALLBACK]: an unknown reading used to be
+                # handed the community-sync mark, which asserts a specific
+                # meaning the tile may not have. fact-unknown is a plate with
+                # a dash in it - the same "no value" mark the rest of the
+                # interface uses - and claims nothing.
+                _READING_ICONS.get(reading.reading_id, "fact-unknown"),
+                reading.caption,
+                reading.value_text,
+                reading.detail or reading.label,
+                tone="you" if reading.tone == "you" else "",
+            )
+        )
+    return tuple(facts)
+
+
+def receipt_facts(profile) -> tuple[UnlistedFact, ...]:
+    """The named titles, as tiles.
+
+    A title is the strongest evidence this page has - "you rated Stone Ocean
+    a 1 and everyone else 8.05" is the fact people repeat - so it sits on the
+    board with the rest rather than in a row of its own that goes half empty
+    whenever a profile is missing one.
+    """
+    facts = []
+    biggest = getattr(profile.hype_killers, "biggest", None)
+    if biggest is not None and biggest.title:
+        facts.append(
+            UnlistedFact(
+                "fact-hype",
+                PROFILE_TEXT.receipt_hype,
+                biggest.title,
+                PROFILE_TEXT.receipt_versus.format(
+                    you=biggest.your_score_text,
+                    community=biggest.community_score_text,
+                ),
+                tone="against",
+            )
+        )
+    deepest = getattr(profile.hidden_gems, "deepest", None)
+    if deepest is not None and deepest.title:
+        facts.append(
+            UnlistedFact(
+                "fact-gem",
+                PROFILE_TEXT.receipt_gem,
+                deepest.title,
+                PROFILE_TEXT.receipt_versus.format(
+                    you=deepest.your_score_text,
+                    community=deepest.community_score_text,
+                ),
+            )
+        )
+    rewatch = getattr(profile.habits, "most_rewatched", None)
+    if rewatch is not None and rewatch.title:
+        facts.append(
+            UnlistedFact(
+                "fact-rewatch",
+                PROFILE_TEXT.receipt_rewatch,
+                rewatch.title,
+                PROFILE_TEXT.receipt_rewatch_detail.format(
+                    watches=rewatch.watches_text
+                ),
+            )
+        )
+    return tuple(facts)
+
+
+def board_facts(profile) -> tuple[UnlistedFact, ...]:
+    """Everything the board shows, in one list.
+
+    CHANGE [ONE-BOARD]: this used to be three separate grids stacked down the
+    page - the reading's figures, the named titles, the derived facts - each
+    with its own item count and therefore its own leftover space. A reader
+    with three fingerprint readings and one receipt got three figures spread
+    across a full-width row with 400px gaps, then a single 540px receipt
+    beside 1100px of nothing, then six cards in a four-column grid. Three
+    grids, three sets of holes.
+    
+    They are one kind of thing - a fact derived by comparing this reader
+    against everyone else - and they share one shape: a legend, a figure, and
+    a sentence. As one grid there is a single partial row, at the end, which
+    is what a board is supposed to look like.
+
+    Order matters: the readings are the general shape of the reader, the
+    named titles are the proof, and the studio and era facts are the
+    curiosities. Broad to specific.
+    """
+    return reading_facts(profile) + receipt_facts(profile) + unlisted_facts(profile)
+
+
+def unlisted_facts(profile) -> tuple[UnlistedFact, ...]:
     """Compose the derived-only facts, skipping whatever is not there.
 
-    Kept as a free function so the wording can be tested without a widget,
-    and so a provider that answers with half a profile produces a shorter
-    list rather than a column of "N/A".
+    A free function so the wording and the selection can be tested without a
+    widget, and so a provider that answers with half a profile produces a
+    shorter board rather than a row of "N/A" cards.
     """
-    lines: list[str] = []
+    facts: list[UnlistedFact] = []
 
     nemesis = getattr(profile.studios, "nemesis", None)
     if nemesis is not None and nemesis.name:
-        lines.append(
-            PROFILE_TEXT.unlisted_nemesis.format(
-                name=nemesis.name,
-                watched=nemesis.watched_text,
-                average=nemesis.average_text,
+        facts.append(
+            UnlistedFact(
+                "fact-nemesis",
+                PROFILE_TEXT.unlisted_nemesis_legend,
+                nemesis.name,
+                PROFILE_TEXT.unlisted_nemesis_caption.format(
+                    watched=nemesis.watched_text, average=nemesis.average_text
+                ),
+                tone="against",
             )
         )
     trusted = getattr(profile.studios, "most_trusted", None)
     if trusted is not None and trusted.name:
-        lines.append(
-            PROFILE_TEXT.unlisted_trusted.format(
-                name=trusted.name, average=trusted.average_text
+        facts.append(
+            UnlistedFact(
+                "fact-trusted",
+                PROFILE_TEXT.unlisted_trusted_legend,
+                trusted.name,
+                PROFILE_TEXT.unlisted_trusted_caption.format(
+                    average=trusted.average_text
+                ),
             )
         )
     divisive = getattr(profile.genres, "divisive", None)
     if divisive is not None and divisive.name:
-        lines.append(PROFILE_TEXT.unlisted_divisive.format(name=divisive.name))
-    golden = getattr(profile.eras, "golden", None)
-    if golden is not None and golden.label:
-        lines.append(
-            PROFILE_TEXT.unlisted_golden.format(
-                label=golden.label, average=golden.average_text
+        facts.append(
+            UnlistedFact(
+                "fact-divisive",
+                PROFILE_TEXT.unlisted_divisive_legend,
+                divisive.name,
+                PROFILE_TEXT.unlisted_divisive_caption,
             )
         )
-    season = getattr(profile.eras, "season_of_choice", "")
+    golden = getattr(profile.eras, "golden", None)
+    if golden is not None and golden.label:
+        facts.append(
+            UnlistedFact(
+                "fact-era",
+                PROFILE_TEXT.unlisted_golden_legend,
+                golden.label,
+                PROFILE_TEXT.unlisted_golden_caption.format(
+                    average=golden.average_text
+                ),
+            )
+        )
+    season = str(getattr(profile.eras, "season_of_choice", "") or "")
     if season:
-        lines.append(PROFILE_TEXT.unlisted_season.format(season=season.title()))
+        facts.append(
+            UnlistedFact(
+                # A season nobody recognises is not a calendar either.
+                _SEASON_ICONS.get(season.casefold(), "fact-unknown"),
+                PROFILE_TEXT.unlisted_season_legend,
+                season.title(),
+                PROFILE_TEXT.unlisted_season_caption.format(season=season.lower()),
+            )
+        )
     gems = getattr(profile.hidden_gems, "rate_text", "")
     if gems and gems != DASH:
-        lines.append(PROFILE_TEXT.unlisted_gems.format(rate=gems))
+        facts.append(
+            UnlistedFact(
+                "fact-gem",
+                PROFILE_TEXT.unlisted_gems_legend,
+                gems,
+                PROFILE_TEXT.unlisted_gems_caption,
+            )
+        )
     hype = getattr(profile.hype_killers, "count", None)
     if hype:
-        lines.append(PROFILE_TEXT.unlisted_hype.format(count=hype))
-    return tuple(lines)
+        facts.append(
+            UnlistedFact(
+                "fact-hype",
+                PROFILE_TEXT.unlisted_hype_legend,
+                str(hype),
+                PROFILE_TEXT.unlisted_hype_caption,
+                tone="against",
+            )
+        )
+    return tuple(facts)
+
+
+def unlisted_sentences(profile) -> tuple[str, ...]:
+    """The same facts as plain sentences, for anything that wants prose."""
+    return tuple(
+        f"{fact.value} {fact.caption}".strip() for fact in unlisted_facts(profile)
+    )
 
 
 class FingerprintModule(QFrame):
@@ -724,8 +996,14 @@ class FingerprintModule(QFrame):
 
         label = QLabel(reading.label or "")
         label.setObjectName("profileFingerprintLabel")
-        label.setVisible(bool(reading.label))
+        # CHANGE [BUG1]: added to the layout before its visibility is set.
+        # setVisible(True) on a label the layout has not adopted yet is
+        # setVisible on a widget with no parent, and a parentless QWidget is
+        # a top-level window - so opening Profile flashed one empty frame per
+        # fingerprint reading. Same defect as the feed's cards and rows, in
+        # the one constructor the original sweep did not reach.
         layout.addWidget(label)
+        label.setVisible(bool(reading.label))
 
         layout.addSpacing(scaled(SPACE["xs"]))
         self.instrument = self._build_instrument(reading)
@@ -1852,9 +2130,6 @@ class ProfilePage(QWidget):
         self.verdict = VerdictHero()
         self.container_layout.addWidget(self.verdict)
 
-        self.receipts = ReflowGrid(COLUMN_MIN_WIDTH, spacing="lg")
-        self.container_layout.addWidget(self.receipts)
-
         # The wink, as its own titled section rather than a fact buried in a
         # chart. This is the part of the page that could not be screenshotted
         # off MyAnimeList, so it is named for that.
@@ -1880,7 +2155,9 @@ class ProfilePage(QWidget):
         instruments_hint.setWordWrap(True)
         self.container_layout.addWidget(instruments_hint)
 
-        self.instrument_grid = ReflowGrid(INSTRUMENT_MIN_WIDTH, spacing="lg")
+        self.instrument_grid = ReflowGrid(
+            INSTRUMENT_MIN_WIDTH, spacing="lg", avoid_orphans=False
+        )
         self.container_layout.addWidget(self.instrument_grid)
         self._instruments: list[ProfileSection] = []
 
@@ -2071,7 +2348,6 @@ class ProfilePage(QWidget):
         # page whose entire purpose is to tell you what kind of reader you are
         # should not be able to render without saying anything.
         self.verdict.set_archetype(archetype_for(profile))
-        self._fill_receipts(profile)
 
         self._fill("unlisted", lambda: self._fill_unlisted(profile))
         self._fill("fingerprint", lambda: self._fill_fingerprint(profile))
@@ -2100,36 +2376,6 @@ class ProfilePage(QWidget):
             section.show_empty()
             return
         section.show_content()
-
-    def _fill_receipts(self, profile: TasteProfile) -> None:
-        """Three named titles that make the verdict concrete.
-
-        A percentage is an assertion; a title you recognise is evidence.
-        Whichever of the three a profile cannot supply is left out rather
-        than drawn as an empty plate.
-        """
-        panels: list[QWidget] = []
-        biggest = getattr(profile.hype_killers, "biggest", None)
-        if biggest is not None:
-            panels.append(
-                HighlightPanel(PROFILE_TEXT.receipt_hype, biggest, tone="below")
-            )
-        deepest = getattr(profile.hidden_gems, "deepest", None)
-        if deepest is not None:
-            panels.append(
-                HighlightPanel(PROFILE_TEXT.receipt_gem, deepest, tone="above")
-            )
-        rewatch = getattr(profile.habits, "most_rewatched", None)
-        if rewatch is not None and rewatch.title:
-            panels.append(
-                HighlightPanel(
-                    PROFILE_TEXT.receipt_rewatch,
-                    TitleVerdict(title=rewatch.title, mal_id=rewatch.mal_id),
-                    figures=((PROFILE_TEXT.receipt_watches, rewatch.watches_text, "you"),),
-                )
-            )
-        self.receipts.set_widgets(panels)
-        self.receipts.setVisible(bool(panels))
 
     def _fill_unlisted(self, profile: TasteProfile) -> bool:
         self.unlisted.set_profile(profile)

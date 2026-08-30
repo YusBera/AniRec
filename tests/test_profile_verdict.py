@@ -8,7 +8,9 @@ has to decline to say anything when there is nothing to say.
 
 from __future__ import annotations
 
-from AniRec.gui.profile_page import ProfilePage, unlisted_sentences
+import pathlib
+
+from AniRec.gui.profile_page import ProfilePage, unlisted_facts, unlisted_sentences
 from AniRec.gui.taste_profile import (
     EraBucket,
     EraPreferences,
@@ -27,6 +29,16 @@ from AniRec.gui.taste_profile import (
     archetype_for,
 )
 from AniRec.gui_main import create_application
+
+
+ICON_DIR = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "AniRec"
+    / "gui"
+    / "resources"
+    / "icons"
+    / "ui"
+)
 
 
 def _reading(reading_id: str, position: float, value: str = "50%"):
@@ -135,14 +147,37 @@ def test_unlisted_facts_are_the_derived_ones_and_skip_what_is_missing():
         hype_killers=HypeKillers(count=17),
     )
 
-    sentences = unlisted_sentences(full)
+    facts = unlisted_facts(full)
 
-    assert len(sentences) == 7
-    assert any("Studio Pierrot" in line for line in sentences)
-    assert any("Romance" in line for line in sentences)
-    assert any("2010-2014" in line for line in sentences)
-    assert not any("N/A" in line for line in sentences)
+    assert len(facts) == 7
+    # CHANGE [FUN-FACTS]: each fact is a card - a mark, the figure, and a
+    # sentence - so the value has to be the part worth reading, not something
+    # buried mid-prose. These are the strings somebody screenshots.
+    assert [fact.value for fact in facts] == [
+        "Studio Pierrot",
+        "Kyoto Animation",
+        "Romance",
+        "2010-2014",
+        "Fall",
+        "14%",
+        "17",
+    ]
+    # A studio you clash with and a show you rated below the crowd are the
+    # two facts that are not compliments, and they are the two drawn in the
+    # danger role rather than in "yours".
+    assert [fact.tone for fact in facts if fact.tone == "against"] == [
+        "against",
+        "against",
+    ]
+    # Every mark exists as a real asset; a card with a missing glyph is a
+    # card with a hole in it.
+    for fact in facts:
+        assert (
+            ICON_DIR / f"{fact.icon}.svg"
+        ).is_file(), fact.icon
+    assert not any("N/A" in fact.caption for fact in facts)
 
+    assert unlisted_facts(TasteProfile()) == ()
     assert unlisted_sentences(TasteProfile()) == ()
 
 
@@ -152,10 +187,18 @@ def test_the_page_leads_with_the_verdict_and_folds_the_instrument():
     page.show_profile(SampleTasteProfileProvider().taste_profile())
 
     assert page.verdict.name_label.text() == "You are the outlier."
-    assert page.verdict.evidence_label.text()
-    # Three named titles, not three percentages.
-    assert len(page.receipts.widgets) == 3
-    assert page.unlisted.sentences
+    # CHANGE [ONE-BOARD]: the readings, the named titles and the derived
+    # facts are one grid. As three stacked grids each ended in its own
+    # leftover space - three figures spread across a full-width row, then a
+    # lone receipt beside 1100px of nothing, then a ragged card row.
+    assert len(page.unlisted.facts) == 5 + 3 + 7
+    assert len(page.unlisted.widgets) == len(page.unlisted.facts)
+    legends = [fact.legend for fact in page.unlisted.facts]
+    # Broad to specific: the shape of the reader, then the proof, then the
+    # curiosities.
+    assert legends[0] == "COMMUNITY SYNC"
+    assert legends[5] == "BIGGEST HYPE KILL"
+    assert legends[8] == "NEMESIS"
     # Every instrument exists and every one of them starts shut: the reader
     # has already been told what they are, above.
     assert len(page.instrument_grid.widgets) == 10
@@ -182,35 +225,51 @@ def test_a_reader_with_no_nameable_trait_still_gets_a_sentence():
 
     assert "hard to pin down" in page.verdict.name_label.text()
     assert page.verdict.sentence_label.text()
-    assert not page.verdict.evidence_label.isVisibleTo(page.verdict)
+    assert page.unlisted.facts == ()
 
 
-def test_a_rewatch_receipt_does_not_reserve_columns_for_scores_it_lacks():
-    """A rewatch note has a count, not two opinions to set against each other."""
+def test_every_board_tile_is_a_legend_a_figure_and_a_sentence():
+    """One shape, or the board is three grids wearing a costume.
+
+    A reading, a named title and a derived fact are the same kind of claim -
+    something true about this reader that comes out of comparing them against
+    everybody else - and they only belong in one grid if they genuinely read
+    the same. Anything that arrives without a figure would be a hole in the
+    row.
+    """
+    create_application([])
+    page = ProfilePage()
+    page.show_profile(SampleTasteProfileProvider().taste_profile())
+
+    for fact in page.unlisted.facts:
+        assert fact.legend and fact.legend == fact.legend.upper(), fact
+        assert fact.value and fact.value != "N/A", fact
+        assert fact.caption, fact
+        assert (ICON_DIR / f"{fact.icon}.svg").is_file(), fact.icon
+
+
+def test_a_missing_group_leaves_no_hole_in_the_board():
+    """A profile with only some of its facts still fills whole rows.
+
+    This is the failure the single board exists to prevent: with three
+    separate grids, a reader with three readings and one receipt got two
+    half-empty rows before the facts even started.
+    """
     create_application([])
     page = ProfilePage()
     page.show_profile(
         TasteProfile(
-            hype_killers=HypeKillers(
-                biggest=TitleVerdict(
-                    "A", your_score=3, community_score=8.7, delta=-5.7
-                )
+            fingerprint=(
+                FingerprintReading("contrarian", "CONTRARIAN", "10%", position=0.1,
+                                   detail="Rarely disagrees."),
             ),
-            habits=WatchingHabits(
-                most_rewatched=RewatchNote("Steins;Gate", watches=6)
-            ),
+            studios=StudioDNA(nemesis=StudioReading("Tezuka Productions", 6, 6.0)),
         )
     )
 
-    spoken = {
-        panel.row._title_text: panel.row.accessibleName()
-        for panel in page.receipts.widgets
-    }
-    # The comparison row still announces both opinions, because it has both.
-    assert "You 3" in spoken["A"]
-    assert "community 8.70" in spoken["A"]
-    # The rewatch row announces the figure it actually shows, and does not
-    # reserve two columns for a comparison that does not exist here.
-    assert "times 6" in spoken["Steins;Gate"]
-    assert "N/A" not in spoken["Steins;Gate"]
-    assert "community" not in spoken["Steins;Gate"]
+    # One reading and one fact, in one grid, with nothing between them.
+    assert [fact.legend for fact in page.unlisted.facts] == [
+        "CONTRARIAN",
+        "NEMESIS",
+    ]
+    assert len(page.unlisted.widgets) == 2

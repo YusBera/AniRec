@@ -1263,6 +1263,11 @@ QLabel#profileReadoutValue {
     color: $text; font-family: $font_mono; font-size: $font_md; font-weight: 700;
 }
 QLabel#profileReadoutValue[readoutSize="lg"] { font-size: $font_xl; }
+/* CHANGE [USE-THE-WIDTH]: the reading's own figures. The panel gives each of
+   the five a fifth of a very wide row, and a 14px number in that much space
+   reads as a footnote to the sentence above rather than as the evidence for
+   it. */
+QLabel#profileReadoutValue[readoutSize="xl"] { font-size: $font_3xl; }
 QLabel#profileReadoutValue[tone="you"] { color: $accent; }
 QLabel#profileReadoutValue[tone="community"] { color: $focus; }
 QLabel#profileReadoutValue[tone="against"] { color: $danger_text; }
@@ -1287,12 +1292,26 @@ QLabel#profileVerdictEvidence {
     letter-spacing: 1px;
 }
 
-/* ---- the derived facts ---- */
+/* ---- the derived facts, as a board of cards ---- */
 QWidget#profileUnlisted { background: transparent; }
-QLabel#profileUnlistedLine {
-    color: $text; font-size: $font_sm;
-    border-left: 2px solid $focus; padding: 2px 0 2px 12px;
+QFrame#profileFactCard {
+    background: $surface_raised; border: 1px solid $border;
+    border-radius: ${radius_lg}px;
 }
+QFrame#profileFactCard[tone="against"] { border-color: $danger_border; }
+QLabel#profileFactLegend {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+    font-weight: 700; letter-spacing: 2px;
+}
+/* The figure is the part somebody screenshots, so it is the size of a
+   heading rather than of a sentence. */
+QLabel#profileFactValue {
+    color: $accent; font-family: $font_display; font-size: $font_2xl;
+    font-weight: 800;
+}
+QLabel#profileFactValue[tone="against"] { color: $danger_text; }
+QLabel#profileFactCaption { color: $text_muted; font-size: $font_sm; }
+QLabel#profileFactMark { background: transparent; }
 
 /* ---- section frame ---- */
 QFrame#profileSection {

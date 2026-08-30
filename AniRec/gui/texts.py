@@ -542,8 +542,9 @@ class ProfileTextCatalog:
     receipt_hype: str = "BIGGEST HYPE KILL"
     receipt_gem: str = "DEEPEST CUT"
     receipt_rewatch: str = "MOST REWATCHED"
-    receipt_rewatch_detail: str = "{watches} times through"
+    receipt_rewatch_detail: str = "You have been back through it {watches}."
     receipt_watches: str = "TIMES"
+    receipt_versus: str = "You said {you}. Everyone else said {community}."
 
     # ---- the wink ----
     # Named for what it is. Everything in it is derived rather than displayed,
@@ -553,13 +554,24 @@ class ProfileTextCatalog:
         "None of this is a number MyAnimeList shows you. It comes out of "
         "comparing every score you have given against everyone else's."
     )
-    unlisted_nemesis: str = "Your nemesis studio is {name} - {watched} watched, averaging {average}."
-    unlisted_trusted: str = "You trust {name} most, at {average} across everything of theirs you have seen."
-    unlisted_divisive: str = "{name} is your most divisive genre. You either love it or you do not."
-    unlisted_golden: str = "Your golden era is {label}, averaging {average}."
-    unlisted_season: str = "You rate {season} premieres higher than any other season."
-    unlisted_gems: str = "{rate} of your list is material almost nobody else has rated."
-    unlisted_hype: str = "You have rated {count} widely loved shows well below the crowd."
+    # CHANGE [FUN-FACTS]: each fact is a card - a mark, the figure large, and
+    # a sentence under it - rather than a line of prose with a rule beside it.
+    # The value is the part somebody screenshots, so it is what the card is
+    # built around; the sentence explains it rather than containing it.
+    unlisted_nemesis_caption: str = "Your nemesis studio. {watched} watched, averaging {average}."
+    unlisted_trusted_caption: str = "The studio you trust most, at {average} across their work."
+    unlisted_divisive_caption: str = "Your most divisive genre. You either love it or you do not."
+    unlisted_golden_caption: str = "Your golden era, averaging {average}."
+    unlisted_season_caption: str = "You rate {season} premieres higher than any other season."
+    unlisted_gems_caption: str = "of your list is material almost nobody else has rated."
+    unlisted_hype_caption: str = "widely loved shows you rated well below the crowd."
+    unlisted_nemesis_legend: str = "NEMESIS"
+    unlisted_trusted_legend: str = "MOST TRUSTED"
+    unlisted_divisive_legend: str = "MOST DIVISIVE"
+    unlisted_golden_legend: str = "GOLDEN ERA"
+    unlisted_season_legend: str = "SEASON OF CHOICE"
+    unlisted_gems_legend: str = "DEEP CUTS"
+    unlisted_hype_legend: str = "HYPE KILLED"
 
     instruments_title: str = "THE INSTRUMENT"
     instruments_description: str = (

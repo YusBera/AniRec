@@ -1218,6 +1218,11 @@ QLabel#profileReadoutValue {
     color: #C6D4C2; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 9.0pt; font-weight: 700;
 }
 QLabel#profileReadoutValue[readoutSize="lg"] { font-size: 11.7pt; }
+/* CHANGE [USE-THE-WIDTH]: the reading's own figures. The panel gives each of
+   the five a fifth of a very wide row, and a 14px number in that much space
+   reads as a footnote to the sentence above rather than as the evidence for
+   it. */
+QLabel#profileReadoutValue[readoutSize="xl"] { font-size: 17.6pt; }
 QLabel#profileReadoutValue[tone="you"] { color: #D9A441; }
 QLabel#profileReadoutValue[tone="community"] { color: #5FBFB5; }
 QLabel#profileReadoutValue[tone="against"] { color: #D98363; }
@@ -1242,12 +1247,26 @@ QLabel#profileVerdictEvidence {
     letter-spacing: 1px;
 }
 
-/* ---- the derived facts ---- */
+/* ---- the derived facts, as a board of cards ---- */
 QWidget#profileUnlisted { background: transparent; }
-QLabel#profileUnlistedLine {
-    color: #C6D4C2; font-size: 8.3pt;
-    border-left: 2px solid #5FBFB5; padding: 2px 0 2px 12px;
+QFrame#profileFactCard {
+    background: #101A14; border: 1px solid #1E2E24;
+    border-radius: 2px;
 }
+QFrame#profileFactCard[tone="against"] { border-color: #7A3E28; }
+QLabel#profileFactLegend {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    font-weight: 700; letter-spacing: 2px;
+}
+/* The figure is the part somebody screenshots, so it is the size of a
+   heading rather than of a sentence. */
+QLabel#profileFactValue {
+    color: #D9A441; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 14.4pt;
+    font-weight: 800;
+}
+QLabel#profileFactValue[tone="against"] { color: #D98363; }
+QLabel#profileFactCaption { color: #849686; font-size: 8.3pt; }
+QLabel#profileFactMark { background: transparent; }
 
 /* ---- section frame ---- */
 QFrame#profileSection {
