@@ -109,6 +109,23 @@ QLabel#railCaption {
     color: $text_subtle; font-family: $font_display;
     font-size: $font_xs; font-weight: 700; letter-spacing: 2px;
 }
+/* The collapsed console's caption is a control, so it reads as one on
+   hover and focus while sitting on the same baseline as the static
+   captions beside it. */
+QPushButton#railCaptionToggle {
+    background: transparent; border: none; padding: 0; text-align: left;
+    color: $text_subtle; font-family: $font_display;
+    font-size: $font_xs; font-weight: 700; letter-spacing: 2px;
+}
+QPushButton#railCaptionToggle:hover { color: $text; }
+QPushButton#railCaptionToggle:focus {
+    color: $text; border: 1px solid $focus; padding: 1px 2px;
+}
+/* The one line the collapsed console is actually read for. */
+QLabel#systemLogSummary {
+    color: $text_muted; font-family: $font_mono; font-size: $font_xs;
+    padding: 2px 0 0 0;
+}
 QLabel#readoutKey {
     color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
     letter-spacing: 1px;
@@ -662,6 +679,11 @@ QLabel#recommendationRowTitle {
     font-size: $font_md; font-weight: 700;
 }
 QLabel#recommendationRowReason { color: $text_muted; font-size: $font_sm; }
+/* The row's metadata band. Mono, because it is mostly numbers and they
+   should line up down the list the way they do on a card. */
+QLabel#recommendationRowFacts {
+    color: $text_subtle; font-family: $font_mono; font-size: $font_xs;
+}
 QLabel#recommendationRowMatchTag {
     font-family: $font_mono;
     background: $accent_muted; color: $accent_soft; border: 1px solid $accent;

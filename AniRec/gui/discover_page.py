@@ -46,6 +46,11 @@ class TastePanel(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("dashboardPanel")
+        # Which ranked terms are studios rather than genres, and the last
+        # stats seen, so the sentence can be rewritten when the catalogue
+        # arrives after the stats do.
+        self._studio_names: set[str] = set()
+        self._last_stats: tuple | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACE["lg"], SPACE["sm"], SPACE["lg"], SPACE["sm"])
         layout.setSpacing(SPACE["xs"])
@@ -82,7 +87,16 @@ class TastePanel(QFrame):
             DISCOVER_TEXT.taste_hide if expanded else DISCOVER_TEXT.taste_show
         )
 
+    def set_studio_names(self, studios) -> None:
+        """Tell the panel which of its ranked terms are studios, not genres."""
+        self._studio_names = {
+            str(name).strip().casefold() for name in studios or () if str(name).strip()
+        }
+        if self._last_stats is not None:
+            self.set_genre_stats(self._last_stats)
+
     def set_genre_stats(self, stats) -> None:
+        self._last_stats = tuple(stats or ())
         ranked = sorted(
             stats, key=lambda stat: -float(stat.importance_score or 0.0)
         )
@@ -98,8 +112,7 @@ class TastePanel(QFrame):
             return
 
         self.toggle_button.setEnabled(True)
-        names = ", ".join(stat.genre for stat in liked) or DISCOVER_TEXT.taste_none_yet
-        self.summary_label.setText(DISCOVER_TEXT.taste_summary.format(genres=names))
+        self.summary_label.setText(self._summary_sentence(liked))
 
         lines = []
         for stat in liked:
@@ -110,6 +123,33 @@ class TastePanel(QFrame):
         for stat in disliked:
             lines.append(DISCOVER_TEXT.taste_avoid.format(genre=stat.genre))
         self.detail_label.setText("\n".join(lines))
+
+    def _summary_sentence(self, liked) -> str:
+        """Say what you like, and separately who tends to have made it.
+
+        Both kinds of term come out of the same ranking and both belong in
+        the sentence; they just do not belong in the same list. Until the
+        catalogue has been ingested there are no studio names to match
+        against, in which case this degrades to exactly the old sentence.
+        """
+        studio_names = getattr(self, "_studio_names", set())
+        genres = [
+            stat.genre for stat in liked if stat.genre.strip().casefold() not in studio_names
+        ]
+        studios = [
+            stat.genre for stat in liked if stat.genre.strip().casefold() in studio_names
+        ]
+        if genres and studios:
+            return DISCOVER_TEXT.taste_summary_studios.format(
+                genres=", ".join(genres), studios=" and ".join(studios[:2])
+            )
+        if studios:
+            return DISCOVER_TEXT.taste_summary_studios_only.format(
+                studios=" and ".join(studios[:2])
+            )
+        return DISCOVER_TEXT.taste_summary.format(
+            genres=", ".join(genres) or DISCOVER_TEXT.taste_none_yet
+        )
 
 
 class DiscoverPage(QWidget):
@@ -274,6 +314,9 @@ class DiscoverPage(QWidget):
 
     def set_genre_stats(self, stats) -> None:
         self.taste_panel.set_genre_stats(tuple(stats or ()))
+
+    def set_studio_names(self, studios) -> None:
+        self.taste_panel.set_studio_names(studios)
 
     def set_status(self, message: str, *, tone: str = "success") -> None:
         """Report what happened. The sentence goes beside STATE, not into it."""

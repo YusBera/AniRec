@@ -36,7 +36,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 
 from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QApplication,
@@ -465,6 +465,7 @@ class MainWindow(QMainWindow):
             view.set_ephemeral(True)
             view.set_recommendations(result.recommendations)
         self.discover_page.set_genre_stats(result.genre_stats)
+        self._publish_studio_names()
         self.genre_analysis_page.set_genre_stats(result.genre_stats)
         self.home_page.set_state(None, result)
         self.demo_banner.setVisible(True)
@@ -533,6 +534,7 @@ class MainWindow(QMainWindow):
             )
         self.genre_analysis_page.set_genre_stats(stats)
         self.discover_page.set_genre_stats(stats)
+        self._publish_studio_names()
         # The two lines that used to be asserted at construction, reported
         # here instead - each only when the thing it names actually happened,
         # and each carrying the count that proves it.
@@ -790,8 +792,14 @@ class MainWindow(QMainWindow):
             button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             button.setMinimumHeight(34)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setAccessibleName(f"Open {definition.label} page")
-            button.setToolTip(definition.description)
+            # CHANGE [NUMBERED-NAV]: the 01-05 prefixes read as a sequence -
+            # a wizard you work through - on what is flat navigation you can
+            # enter at any point. Rather than drop them, they are made true:
+            # each number is now the key that reaches its page. The label
+            # stops being decoration and starts being documentation.
+            button.setShortcut(QKeySequence(f"Alt+{index}"))
+            button.setAccessibleName(f"Open {definition.label} page, Alt+{index}")
+            button.setToolTip(f"{definition.description}  (Alt+{index})")
             button.setIcon(themed_ui_icon(nav_icon_name(definition.page_id)))
             button.clicked.connect(
                 lambda checked=False, page_id=definition.page_id: self.navigate_to(page_id)
@@ -860,11 +868,20 @@ class MainWindow(QMainWindow):
             return
         busy = self._engine_busy
         readout.set_value("ENGINE", "BUSY" if busy else "READY", tone="busy" if busy else "ok")
-        readout.set_value(
-            "SOURCE", "SAMPLE" if self.demo_mode else "LIVE",
-            tone="warn" if self.demo_mode else "ok",
-        )
+        # CHANGE [READOUT-HONESTY]: this said LIVE for anything that was not
+        # sample mode, including "you left the sample vault and connected
+        # nothing" - so the rail could read SOURCE LIVE directly above
+        # PROFILE -- and MAL OFFLINE, three rows apparently disagreeing about
+        # whether there was any data at all. LIVE now means what a reader
+        # takes it to mean: a real library is loaded.
         profile_name = self._profile_name
+        if self.demo_mode:
+            source, source_tone = "SAMPLE", "warn"
+        elif profile_name:
+            source, source_tone = "LIVE", "ok"
+        else:
+            source, source_tone = "NONE", "idle"
+        readout.set_value("SOURCE", source, tone=source_tone)
         readout.set_value("PROFILE", profile_name or "--", tone="ok" if profile_name else "idle")
         connected = self._mal_connected
         # "warn", not "idle". Offline is a state the user can act on; an
@@ -1181,6 +1198,23 @@ class MainWindow(QMainWindow):
         except (AniRecError, OSError, TypeError, ValueError):
             # A preference is not worth interrupting the session over.
             return
+
+    def _publish_studio_names(self) -> None:
+        """Tell the taste sentence which of its ranked terms are studios.
+
+        The importance ranking mixes genres and studios in one list, which is
+        correct for scoring and wrong for a sentence: "You tend to enjoy
+        Samurai, Bandai Namco Pictures, Parody, Shaft" reads like a bug. The
+        explorer already keeps a catalogue of every studio it has actually
+        seen, so the split needs no new source of truth - only for the two
+        halves of the application to be introduced to each other.
+        """
+        names: set[str] = set()
+        for view in self._recommendation_views():
+            catalog = getattr(view, "metadata_catalog", None)
+            if catalog is not None:
+                names.update(catalog.studios)
+        self.discover_page.set_studio_names(names)
 
     def _recommendation_views(self):
         """Every explorer instance that should reflect the same library."""

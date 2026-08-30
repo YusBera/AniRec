@@ -524,7 +524,13 @@ class ComparePage(QWidget):
         # The friends list is an accelerator, never a gate. It is built first
         # and can be empty, private or missing without the field beside it
         # caring - which is why manual entry is not conditional on it.
-        friends_block = QVBoxLayout()
+        # In its own widget rather than a bare layout: when friends lists do
+        # not exist the whole block is hidden, and a hidden *layout* still
+        # holds its stretch, which left half the row as dead space with the
+        # username field crushed into the other half.
+        self.friends_block = QWidget()
+        friends_block = QVBoxLayout(self.friends_block)
+        friends_block.setContentsMargins(0, 0, 0, 0)
         friends_block.setSpacing(SPACE["xs"])
         self.friends_label = QLabel(COMPARE_TEXT.friends_label)
         self.friends_label.setObjectName("filterControlLabel")
@@ -536,7 +542,7 @@ class ComparePage(QWidget):
         self.friends_picker.addItem(COMPARE_TEXT.friends_placeholder, None)
         self.friends_picker.currentIndexChanged.connect(self._on_friend_chosen)
         friends_block.addWidget(self.friends_picker)
-        row.addLayout(friends_block, 1)
+        row.addWidget(self.friends_block, 1)
 
         username_block = QVBoxLayout()
         username_block.setSpacing(SPACE["xs"])
@@ -641,6 +647,9 @@ class ComparePage(QWidget):
 
     def set_friends(self, friends) -> None:
         friends = tuple(friends or ())
+        # A real answer, even an empty one, means the feature exists: undo any
+        # hiding a previous BACKEND_MISSING refusal applied.
+        self.friends_block.setVisible(True)
         self.friends_picker.blockSignals(True)
         self.friends_picker.clear()
         self.friends_picker.addItem(COMPARE_TEXT.friends_placeholder, None)
@@ -668,6 +677,16 @@ class ComparePage(QWidget):
 
     def set_friends_unavailable(self, reason: UnavailableReason) -> None:
         self.set_friends(())
+        # CHANGE [DEAD-CONTROL]: when friends lists are not implemented at all,
+        # the picker used to stay on screen - full width, with a chevron and a
+        # "Choose a friend…" placeholder, reading as a working control - above
+        # a caption admitting it does not work. A control that cannot do
+        # anything should not be drawn; the sentence explaining why is the
+        # whole of what is left to say. A private or empty list is different:
+        # the feature exists, this account just has nothing in it, so the
+        # picker stays and only goes quiet.
+        implemented = reason is not UnavailableReason.BACKEND_MISSING
+        self.friends_block.setVisible(implemented)
         self.set_friends_notice(
             COMPARE_TEXT.friends_private
             if reason is UnavailableReason.FRIENDS_PRIVATE

@@ -29,7 +29,7 @@ from .instrument_widgets import keep_crisp
 from .scaling import scaled
 from .recommendation_card import MEMORY_COVER_CACHE, open_mal_url
 from .recommendation_view_model import RecommendationViewModel
-from .resources import cover_placeholder_pixmap
+from .resources import cover_placeholder_pixmap, title_placeholder_pixmap
 
 
 # CHANGE [BUG7]: a 2:3 poster, matching the card and the source artwork.
@@ -101,7 +101,18 @@ class RecommendationRow(QFrame):
         self.reason_label = QLabel(_truncate(model.reason or model.genres_text))
         self.reason_label.setObjectName("recommendationRowReason")
         self.reason_label.setWordWrap(True)
+        # CHANGE [ROW-DENSITY]: the row carried a title, one sentence and a
+        # single orphaned genre chip, then several centimetres of nothing.
+        # The card states the year, the run length, the studio and the MAL
+        # score; the list view is supposed to be the denser way to read the
+        # same feed and was showing strictly less. The facts go in the empty
+        # space that was already there.
+        self.facts_label = QLabel(_facts_line(model))
+        self.facts_label.setObjectName("recommendationRowFacts")
+        self.facts_label.setWordWrap(False)
+        self.facts_label.setVisible(bool(self.facts_label.text()))
         text_column.addWidget(self.title_label)
+        text_column.addWidget(self.facts_label)
         text_column.addWidget(self.reason_label)
         layout.addLayout(text_column, 1)
 
@@ -146,7 +157,9 @@ class RecommendationRow(QFrame):
     # -- cover ---------------------------------------------------------------
 
     def _show_placeholder(self) -> None:
-        placeholder = cover_placeholder_pixmap()
+        placeholder = title_placeholder_pixmap(self.model.display_title)
+        if placeholder.isNull():
+            placeholder = cover_placeholder_pixmap()
         if placeholder.isNull():
             self.cover_label.setText("")
             return
@@ -252,6 +265,24 @@ def _truncate(text: str | None, limit: int = REASON_CHARACTERS) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 1].rstrip() + "…"
+
+
+def _facts_line(model: RecommendationViewModel) -> str:
+    """The metadata band the card shows and the row was missing.
+
+    Only parts that actually exist are joined, so a title with no year and no
+    studio produces a shorter line rather than a row of "Not available".
+    """
+    parts: list[str] = []
+    if model.studios:
+        parts.append(model.studios[0])
+    if model.year is not None:
+        parts.append(str(model.year))
+    if model.episodes is not None:
+        parts.append(model.episodes_text)
+    if model.mal_score is not None:
+        parts.append(f"MAL {model.mal_score:.2f}")
+    return "  ·  ".join(parts)
 
 
 def _primary_tag(model: RecommendationViewModel) -> str:

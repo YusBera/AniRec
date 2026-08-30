@@ -47,7 +47,11 @@ from .match_badge import (
 )
 from .scaling import scaled
 from .recommendation_view_model import RecommendationViewModel
-from .resources import cover_placeholder_pixmap, themed_ui_icon
+from .resources import (
+    cover_placeholder_pixmap,
+    themed_ui_icon,
+    title_placeholder_pixmap,
+)
 
 
 CARD_WIDTH = 208
@@ -59,7 +63,12 @@ CARD_WIDTH = 208
 CARD_MAX_WIDTH = 300
 
 # Square side of the icon-only card actions.
-ICON_ACTION_SIZE = 26
+# CHANGE [TARGET-SIZE]: WCAG 2.1 AA (2.5.8) puts the floor for a pointer
+# target at 24x24 CSS pixels. At 26 these cleared it only on the axis that
+# was pinned, and only before the GUI scale went below 1.0 - three unlabelled
+# glyph controls, side by side, at the smallest size in the interface. 32
+# leaves margin on both axes at every scale the settings offer.
+ICON_ACTION_SIZE = 32
 # A 2:3 poster, the standard shape for anime cover art. Sized so that a whole
 # card, including the review actions, fits the default window without
 # scrolling; at the previous size the buttons sat below the fold.
@@ -375,8 +384,16 @@ class RecommendationCard(QFrame):
         # CHANGE [FEAT2]: match percentage stamped over the bottom of the
         # portrait. Parented to the cover so it overlays the artwork, and
         # omitted entirely when there is no score to show.
+        # CHANGE [COMPARE-BADGE]: never on a comparison card. "Personal
+        # match" is a Discover quantity and the compatibility payload does
+        # not carry one, so Recommendation coerced the missing value to 0.0
+        # and every card under "Most different ratings" wore a red 0% plate -
+        # a confident, meaningless number, in the one place on the surface
+        # where the reader is being asked to trust a comparison. The card
+        # already states the two scores that do mean something, in the strip
+        # underneath.
         self.match_badge = None
-        if should_show_badge(model):
+        if self.comparison is None and should_show_badge(model):
             self.match_badge = MatchBadge(model.personal_match, self.cover_label)
             self._make_detail_target(self.match_badge)
             self.match_badge.set_contributions(
@@ -397,7 +414,7 @@ class RecommendationCard(QFrame):
         # fallback for a recommendation that carries no score at all, where
         # there is no bar to read it from, and it keeps its text either way so
         # nothing that reports the card's contents loses the figure.
-        self.match_label.setVisible(self.match_badge is None)
+        self.match_label.setVisible(self.match_badge is None and self.comparison is None)
         self.title_label = self._label(
             model.display_title, "recommendationTitle", clamped=True
         )
@@ -580,6 +597,12 @@ class RecommendationCard(QFrame):
             button.setText("")
             button.setIcon(themed_ui_icon(icon))
             button.setToolTip(tip)
+            # A tooltip is not an accessible name: it is not announced on
+            # focus and never reaches a keyboard user. These three lost their
+            # only label the moment setText("") stripped it, so the name is
+            # restated here from the same sentence the tooltip carries.
+            if not button.accessibleName():
+                button.setAccessibleName(tip)
             # Width is pinned, height is not: the stylesheet's min-height
             # wins over setFixedSize, so pinning both left these 10px shorter
             # than the labelled button beside them and vertically centred
@@ -1004,7 +1027,12 @@ class RecommendationCard(QFrame):
         self._position_badge()
 
     def _show_placeholder(self) -> None:
-        source = cover_placeholder_pixmap()
+        # A plate carrying this title's own initials and hue, so a feed with
+        # no artwork reads as eight distinct entries rather than as eight
+        # copies of a missing image.
+        source = title_placeholder_pixmap(self.model.display_title)
+        if source.isNull():
+            source = cover_placeholder_pixmap()
         if source.isNull():
             source = QPixmap(scaled(COVER_WIDTH), scaled(COVER_HEIGHT))
             source.fill(Qt.GlobalColor.transparent)

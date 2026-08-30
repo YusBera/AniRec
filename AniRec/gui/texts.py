@@ -278,7 +278,14 @@ class DiscoverTextCatalog:
     status_synced_template: str = "Last updated {when}."
     taste_show: str = "EXPAND"
     taste_hide: str = "COLLAPSE"
+    # CHANGE [TASTE-SENTENCE]: one list held both genres and studios, so the
+    # line read "You tend to enjoy Samurai, Bandai Namco Pictures, Parody,
+    # Shaft." - a studio is not a thing you enjoy in the way a genre is, and
+    # the mixture reads as a data fault even though the ranking behind it is
+    # correct. The two kinds now get their own clause.
     taste_summary: str = "You tend to enjoy {genres}."
+    taste_summary_studios: str = "You tend to enjoy {genres}, often from {studios}."
+    taste_summary_studios_only: str = "You tend to reach for work from {studios}."
     taste_empty: str = "Your taste appears here once AniRec has seen your ratings."
     taste_none_yet: str = "nothing yet"
     taste_line: str = "{genre}: {count} you have finished"

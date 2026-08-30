@@ -64,6 +64,23 @@ QLabel#railCaption {
     color: #748676; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif;
     font-size: 7.4pt; font-weight: 700; letter-spacing: 2px;
 }
+/* The collapsed console's caption is a control, so it reads as one on
+   hover and focus while sitting on the same baseline as the static
+   captions beside it. */
+QPushButton#railCaptionToggle {
+    background: transparent; border: none; padding: 0; text-align: left;
+    color: #748676; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif;
+    font-size: 7.4pt; font-weight: 700; letter-spacing: 2px;
+}
+QPushButton#railCaptionToggle:hover { color: #C6D4C2; }
+QPushButton#railCaptionToggle:focus {
+    color: #C6D4C2; border: 1px solid #5FBFB5; padding: 1px 2px;
+}
+/* The one line the collapsed console is actually read for. */
+QLabel#systemLogSummary {
+    color: #849686; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    padding: 2px 0 0 0;
+}
 QLabel#readoutKey {
     color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
     letter-spacing: 1px;
@@ -429,8 +446,8 @@ QLabel#dashboardSectionTitle {
     font-size: 10.3pt; font-weight: 700;
 }
 QLabel#dashboardEmptyState {
-    background: #241B0C; border: 1px solid #6E5421; border-radius: 1px;
-    color: #D9A441; padding: 10px 12px;
+    background: #241609; border: 1px solid #7A4E1E; border-radius: 1px;
+    color: #E08A43; padding: 10px 12px;
 }
 QLabel#dashboardActivity {
     background: #101A14; border: 1px solid #1E2E24; border-radius: 1px;
@@ -617,6 +634,11 @@ QLabel#recommendationRowTitle {
     font-size: 9.0pt; font-weight: 700;
 }
 QLabel#recommendationRowReason { color: #849686; font-size: 8.3pt; }
+/* The row's metadata band. Mono, because it is mostly numbers and they
+   should line up down the list the way they do on a card. */
+QLabel#recommendationRowFacts {
+    color: #748676; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+}
 QLabel#recommendationRowMatchTag {
     font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace;
     background: #241B0C; color: #E9C275; border: 1px solid #D9A441;
@@ -741,7 +763,7 @@ QLabel#recommendationScoreEmpty { color: #849686; font-size: 8.3pt; }
 QFrame[contributionTone="accent1"] { background: #D9A441; }
 QFrame[contributionTone="accent2"] { background: #E8B85C; }
 QFrame[contributionTone="accent3"] { background: #E9C275; }
-QFrame[contributionTone="accent4"] { background: #D9A441; }
+QFrame[contributionTone="accent4"] { background: #E08A43; }
 QFrame[contributionTone="signal"] { background: #5FBFB5; }
 QFrame[contributionTone="negative"] { background: #D98363; }
 QFrame#recommendationSynopsisPanel {
@@ -879,7 +901,7 @@ QFrame#filterPill[filterKind="genre"] QLabel#filterPillCaption { color: #5FBFB5;
 QFrame#filterPill[filterKind="studio"] { border-color: #241B0C; }
 QFrame#filterPill[filterKind="studio"] QLabel#filterPillCaption { color: #E9C275; }
 QFrame#filterPill[filterKind="year"] QLabel#filterPillCaption { color: #849686; }
-QFrame#filterPill[filterKind="score"] QLabel#filterPillCaption { color: #D9A441; }
+QFrame#filterPill[filterKind="score"] QLabel#filterPillCaption { color: #E08A43; }
 QFrame#filterPill[filterKind="status"] QLabel#filterPillCaption { color: #849686; }
 QFrame#filterPill[filterKind="episodes"] QLabel#filterPillCaption { color: #849686; }
 QFrame#filterPill[filterKind="profile"] { border-color: #2F6B66; }
@@ -987,7 +1009,7 @@ QLabel#metadataSuggestionEmpty, QLabel#profileInputMessage {
     color: #849686; font-size: 7.4pt; padding: 3px 0;
 }
 QLabel#profileInputMessage[tone="error"] { color: #D98363; }
-QLabel#profileInputMessage[tone="warn"] { color: #D9A441; }
+QLabel#profileInputMessage[tone="warn"] { color: #E08A43; }
 QPushButton#profileInputAdd {
     font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt; font-weight: 700;
     letter-spacing: 1px; border-radius: 0;
@@ -1004,7 +1026,7 @@ QLabel#groupModeBanner {
     font-weight: 700; letter-spacing: 1px; padding: 5px 10px;
 }
 QLabel#groupModeBanner[tone="warn"] {
-    background: #241B0C; border-color: #6E5421; color: #D9A441;
+    background: #241609; border-color: #7A4E1E; color: #E08A43;
 }
 QLabel#groupModeBanner[tone="error"] {
     background: #241110; border-color: #7A3E28; color: #D98363;
@@ -1067,8 +1089,8 @@ QLabel#compatibilityStatValue {
     font-weight: 700;
 }
 QLabel#compatibilitySampleStamp {
-    background: #241B0C; border: 1px solid #6E5421; border-radius: 0;
-    color: #D9A441; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    background: #241609; border: 1px solid #7A4E1E; border-radius: 0;
+    color: #E08A43; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
     font-weight: 700; letter-spacing: 1px; padding: 3px 8px;
 }
 QFrame#comparisonSection { background: transparent; border: none; }
@@ -1182,8 +1204,8 @@ QLabel#profileMemberSince {
     letter-spacing: 1px;
 }
 QLabel#profileSampleStamp {
-    background: #241B0C; border: 1px solid #6E5421; border-radius: 0;
-    color: #D9A441; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    background: #241609; border: 1px solid #7A4E1E; border-radius: 0;
+    color: #E08A43; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
     font-weight: 700; letter-spacing: 1px; padding: 3px 8px;
 }
 

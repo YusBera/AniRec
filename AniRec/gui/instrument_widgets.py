@@ -200,8 +200,20 @@ class ScoreTrack(QWidget):
         self.update()
 
     def animate(self) -> None:
+        # CHANGE [NEVER-EMPTY]: this both ignored the machine's reduced-motion
+        # setting - which every other reveal in the application honours - and
+        # started from a literal zero, so the score bar in the inspector was
+        # empty on its first painted frame. Same floor, same visibility guard,
+        # same rule: an instrument nobody can see draws its finished value.
+        from .profile_widgets import REVEAL_FLOOR, motion_enabled
+
+        if not motion_enabled() or not self.isVisible():
+            self._reveal = 1.0
+            self.update()
+            return
         self._animation.stop()
-        self._reveal = 0.0
+        self._animation.setStartValue(REVEAL_FLOOR)
+        self._reveal = REVEAL_FLOOR
         self._animation.start()
 
     def _set_reveal(self, value) -> None:

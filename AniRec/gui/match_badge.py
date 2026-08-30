@@ -189,7 +189,7 @@ class MatchBadge(QWidget):
         self._hover_anim.valueChanged.connect(self._on_hover_value)
         self.setMouseTracking(True)
         self.setAccessibleName(
-            f"{round(self._percentage)} percent match with your interests"
+            f"{self._percentage:.1f} percent match with your interests"
         )
         self.apply_scale()
 
@@ -344,7 +344,12 @@ class MatchBadge(QWidget):
         # CHANGE [READOUT]: the caption is gone. It spent more than half the
         # plate's width spelling out what the "%" beside it already says, on
         # a card that shows no other number.
-        label = f"{round(self._percentage)}%"
+        # CHANGE [PRECISION]: one decimal, everywhere. The card rounded to a
+        # whole number while the row, the table and the detail dialog all
+        # printed a tenth, so the same title read 95% here and 94.6% one
+        # click away. A scoring app that cannot agree with itself about the
+        # score is not believable, and the plate has room for the digit.
+        label = f"{self._percentage:.1f}%"
         font = QFont(self.font())
         font.setFamilies(MONO_FAMILIES)
         font.setPointSizeF(max(6.0, rect.height() * READOUT_RATIO))

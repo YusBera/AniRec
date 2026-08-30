@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QLabel,
     QPlainTextEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -143,9 +144,29 @@ class SystemLog(QFrame):
         layout.setContentsMargins(14, 10, 10, 10)
         layout.setSpacing(4)
 
-        caption = QLabel("ACTIVITY")
-        caption.setObjectName("railCaption")
-        layout.addWidget(caption)
+        # CHANGE [RAIL-BUDGET]: the console is collapsed by default. Expanded,
+        # its 132px plus the SYSTEM readout above it spent close to a third of
+        # the rail's height on lines like "system palette bound - x1.00" -
+        # true, but nothing anybody acts on, and it was crowding the only
+        # navigation in the application. Collapsed it keeps the one thing the
+        # panel is actually read for, the newest event, on a single line, and
+        # opens on click for the rest.
+        self.caption = QPushButton("ACTIVITY  +")
+        self.caption.setObjectName("railCaptionToggle")
+        self.caption.setProperty("buttonRole", "link")
+        self.caption.setCheckable(True)
+        self.caption.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.caption.setAccessibleName("Show or hide the system activity log")
+        self.caption.toggled.connect(self.set_expanded)
+        layout.addWidget(self.caption)
+
+        self.summary = QLabel("")
+        self.summary.setObjectName("systemLogSummary")
+        self.summary.setWordWrap(True)
+        self.summary.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        layout.addWidget(self.summary)
 
         self.view = QPlainTextEdit()
         self.view.setObjectName("systemLogView")
@@ -164,6 +185,7 @@ class SystemLog(QFrame):
         # rest, and never so tall that it competes with the navigation above.
         self.view.setFixedHeight(LOG_HEIGHT)
         self.view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.view.setVisible(False)
         layout.addWidget(self.view)
         self._highlighter = LogHighlighter(self.view.document())
 
@@ -179,6 +201,37 @@ class SystemLog(QFrame):
         # front once it is full, which would silently shift every stored
         # index by one and make a meter rewrite the wrong row.
         self._live_tag: str | None = None
+
+    # ---- expansion -----------------------------------------------------
+
+    def set_expanded(self, expanded: bool) -> None:
+        """Open or close the console, leaving the newest line always visible."""
+        expanded = bool(expanded)
+        if self.caption.isChecked() != expanded:
+            self.caption.setChecked(expanded)
+        self.caption.setText("ACTIVITY  −" if expanded else "ACTIVITY  +")
+        self.view.setVisible(expanded)
+        self.summary.setVisible(not expanded)
+        if expanded:
+            self._render(follow=True)
+
+    @property
+    def is_expanded(self) -> bool:
+        # isVisible() is False for every child of a window that has not been
+        # shown yet, which is not what is being asked here.
+        return self.view.isVisibleTo(self)
+
+    def _update_summary(self) -> None:
+        """Show the newest record's message on the collapsed single line."""
+        if not self._lines:
+            self.summary.setText("")
+            return
+        # A record is laid out over two rows, "stamp TAG" then the indented
+        # message. The message is what is worth the one line; the stamp and
+        # the channel are not.
+        newest = self._lines[-1].splitlines()[-1].strip()
+        self.summary.setText(newest)
+        self.summary.setToolTip(newest)
 
     # ---- writing -------------------------------------------------------
 
@@ -269,6 +322,7 @@ class SystemLog(QFrame):
         self._lines.clear()
         self._live_tag = None
         self.view.clear()
+        self._update_summary()
 
     # ---- rendering -----------------------------------------------------
 
@@ -278,6 +332,7 @@ class SystemLog(QFrame):
         return bar.value() >= bar.maximum() - 2
 
     def _render(self, *, follow: bool) -> None:
+        self._update_summary()
         bar = self.view.verticalScrollBar()
         previous = bar.value()
         self.view.setPlainText("\n".join(self._lines))

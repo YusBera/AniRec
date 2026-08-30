@@ -596,13 +596,21 @@ class SettingsPage(QWidget):
         self.delete_all_data_button.clicked.connect(
             lambda: self.delete_data_scope(DataDeletionScope.ALL_LOCAL_DATA)
         )
+        # CHANGE [BLAST-RADIUS]: the irreversible one used to sit in the same
+        # evenly-spaced run as three benign ones, so "Clear cache" and "Delete
+        # all local data" were adjacent, identically sized, and one slip
+        # apart. Red carried the entire warning. It is now separated from the
+        # reversible group and pushed to the far end, so reaching it is a
+        # deliberate movement rather than an adjacent one.
         for button in (
             self.clear_cache_button,
             self.clear_covers_button,
             self.open_logs_button,
-            self.delete_all_data_button,
         ):
             buttons.addWidget(button)
+        buttons.addStretch(1)
+        buttons.addSpacing(SPACE["xl"])
+        buttons.addWidget(self.delete_all_data_button)
         scope = QLabel(
             "Destructive actions show their exact target and scope before changing local files."
         )

@@ -163,9 +163,16 @@ DARK = MappingProxyType(
         "danger_bg": "#241110",
         "danger_border": "#7A3E28",
         "danger_text": "#D98363",
-        "warning_bg": "#241B0C",
-        "warning_border": "#6E5421",
-        "warning_text": "#D9A441",
+        # CHANGE [WARN-VS-YOU]: this was #D9A441 - byte for byte the accent
+        # above. The palette's own rule is that amber means "yours": your
+        # match, your taste, the one action a screen is asking for. A
+        # caution wearing the identical value breaks that rule at the worst
+        # moment, so a SAMPLE DATA stamp and a RUN ANALYSIS button read as
+        # the same kind of thing. Warning moves toward orange: still
+        # unmistakably a caution, no longer the brand accent.
+        "warning_bg": "#241609",
+        "warning_border": "#7A4E1E",
+        "warning_text": "#E08A43",
         "busy_bg": "#0E1F21",
         "busy_border": "#2F6B66",
         "busy_text": "#8FCFC7",
@@ -338,14 +345,61 @@ def _accent_for(start: str, end: str, base) -> str:
     return candidate
 
 
-def _readable(colour: str, background: str, minimum: float = 0.34) -> str:
-    """Push a colour away from a background until it is comfortably legible."""
+def _channels(colour: str) -> tuple[float, float, float]:
+    body = colour.lstrip("#")
+    if len(body) == 3:
+        body = "".join(character * 2 for character in body)
+    return tuple(int(body[index : index + 2], 16) / 255 for index in (0, 2, 4))  # type: ignore[return-value]
+
+
+def _relative_luminance(colour: str) -> float:
+    """WCAG 2.1 relative luminance: sRGB channels linearised, then weighted.
+
+    Distinct from ``_luminance`` above, which weights the gamma-encoded values
+    directly. That one is a fine cheap answer to "is this backdrop light or
+    dark", which is all it is still used for. It is not the quantity the
+    contrast formula is defined over, and using it there was the bug.
+    """
+    linear = [
+        channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+        for channel in _channels(colour)
+    ]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast_ratio(first: str, second: str) -> float:
+    """The WCAG 2.1 contrast ratio between two colours, from 1 to 21."""
+    lighter, darker = sorted(
+        (_relative_luminance(first), _relative_luminance(second)), reverse=True
+    )
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+# WCAG 2.1 AA: 4.5:1 for body text, 3:1 for large text, UI components and
+# graphical objects. Borders and focus rings are the latter.
+CONTRAST_TEXT = 4.5
+CONTRAST_UI = 3.0
+
+
+def _readable(colour: str, background: str, minimum: float = CONTRAST_TEXT) -> str:
+    """Push a colour away from a background until it actually passes WCAG.
+
+    CHANGE [WCAG]: this used to compare gamma-encoded luminances and accept
+    any pair whose difference cleared an arbitrary 0.28-0.34. That is not the
+    contrast formula and does not correlate with it: the check passes colours
+    that fail 4.5:1 and rejects ones that pass, and every derived role in the
+    palette - the tinted text, the five status chips, focus, accent_soft -
+    was built through it. It now measures the ratio the standard defines, so
+    the theme is accessible by construction rather than by hope.
+    """
     target = "#FFFFFF" if _luminance(background) < 0.5 else "#000000"
     candidate = colour
-    for _attempt in range(8):
-        if abs(_luminance(candidate) - _luminance(background)) >= minimum:
+    # Sixteen steps of 0.10 traverse the full distance to the target, so a
+    # colour that starts on top of its background can still reach compliance.
+    for _attempt in range(16):
+        if contrast_ratio(candidate, background) >= minimum:
             return candidate
-        candidate = _mix(candidate, target, 0.16)
+        candidate = _mix(candidate, target, 0.10)
     return candidate
 
 
@@ -381,7 +435,7 @@ def gradient_palette(start: str, end: str):
     # Text keeps the base's contrast and only a trace of the hue: bias it any
     # further and long passages start to lose legibility.
     def _tinted_text(role: str, amount: float = 0.08) -> str:
-        return _readable(_mix(base[role], midpoint, amount), page_bg, 0.30)
+        return _readable(_mix(base[role], midpoint, amount), page_bg, CONTRAST_TEXT)
 
     def _status(role_bg: str, role_border: str, role_text: str):
         """Keep the hue, join the world, stay readable on its own chip."""
@@ -389,7 +443,7 @@ def gradient_palette(start: str, end: str):
         return (
             chip,
             _mix(base[role_border], midpoint, 0.30),
-            _readable(_mix(base[role_text], midpoint, 0.12), chip, 0.32),
+            _readable(_mix(base[role_text], midpoint, 0.12), chip, CONTRAST_TEXT),
         )
 
     success = _status("success_bg", "success_border", "success_text")
@@ -401,14 +455,14 @@ def gradient_palette(start: str, end: str):
     # The second accent stays a second accent. Collapsing focus onto the
     # user's colour cost the interface its "yours" / "the system" split, so
     # the base signal hue is kept and only lifted until it reads.
-    focus = _readable(_mix(base["focus"], midpoint, 0.18), surface, 0.30)
+    focus = _readable(_mix(base["focus"], midpoint, 0.18), surface, CONTRAST_UI)
 
     return MappingProxyType(
         {
             **base,
             "accent": accent,
             "accent_hover": _shift(accent, 0.14, base),
-            "accent_soft": _readable(_shift(accent, 0.28, base), surface, 0.30),
+            "accent_soft": _readable(_shift(accent, 0.28, base), surface, CONTRAST_TEXT),
             "accent_muted": _mix(accent, midpoint, 0.78),
             "accent_contrast": "#FFFFFF" if _luminance(accent) < 0.55 else "#101014",
             "focus": focus,

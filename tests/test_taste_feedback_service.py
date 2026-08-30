@@ -28,5 +28,26 @@ def test_feedback_builds_bounded_genre_affinities_and_reranks_explainably():
     )
     assert [item.anime.title for item in personalized] == ["Fantasy", "Romance"]
     assert personalized[0].match_score == 84.0
-    assert "Boosted by your likes" in personalized[0].reason
+    # CHANGE [ONE-SENTENCE]: what feedback taught us is folded into the
+    # engine's own sentence rather than prepended as a second one, and a term
+    # the engine already named is not named twice. The card reserves two
+    # lines; two sentences making the same argument did not fit in them.
+    assert personalized[0].reason == "Based on your likes in Fantasy."
+    assert personalized[0].reason.count(".") == 1
     assert personalized[1].match_score == 72.0
+
+    # With a reason already written, the clause joins it instead of stacking.
+    joined = service.personalize(
+        (
+            Recommendation(
+                Anime("Fantasy", genres=("Fantasy",)),
+                match_score=78,
+                reason="Matches your interests in Mystery and Drama.",
+            ),
+        ),
+        state,
+    )
+    assert joined[0].reason == (
+        "Matches your interests in Mystery and Drama, and your likes in Fantasy."
+    )
+    assert joined[0].reason.count(".") == 1

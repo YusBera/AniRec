@@ -64,6 +64,23 @@ QLabel#railCaption {
     color: #5C6858; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif;
     font-size: 7.4pt; font-weight: 700; letter-spacing: 2px;
 }
+/* The collapsed console's caption is a control, so it reads as one on
+   hover and focus while sitting on the same baseline as the static
+   captions beside it. */
+QPushButton#railCaptionToggle {
+    background: transparent; border: none; padding: 0; text-align: left;
+    color: #5C6858; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif;
+    font-size: 7.4pt; font-weight: 700; letter-spacing: 2px;
+}
+QPushButton#railCaptionToggle:hover { color: #16241F; }
+QPushButton#railCaptionToggle:focus {
+    color: #16241F; border: 1px solid #2C7C74; padding: 1px 2px;
+}
+/* The one line the collapsed console is actually read for. */
+QLabel#systemLogSummary {
+    color: #4C5B50; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    padding: 2px 0 0 0;
+}
 QLabel#readoutKey {
     color: #5C6858; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
     letter-spacing: 1px;
@@ -617,6 +634,11 @@ QLabel#recommendationRowTitle {
     font-size: 9.0pt; font-weight: 700;
 }
 QLabel#recommendationRowReason { color: #4C5B50; font-size: 8.3pt; }
+/* The row's metadata band. Mono, because it is mostly numbers and they
+   should line up down the list the way they do on a card. */
+QLabel#recommendationRowFacts {
+    color: #5C6858; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+}
 QLabel#recommendationRowMatchTag {
     font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace;
     background: #EDE7D5; color: #5E4813; border: 1px solid #7A5D1C;

@@ -97,6 +97,24 @@ class RecommendationViewModel:
     # otherwise a movie can be listed before the series it belongs to.
     media_type: str | None = None
 
+    # CHANGE [NO-NULL-PROSE]: the detail dialog used to print
+    # "Aired: Not available to Not available" whenever a title carried
+    # neither date, which is a template with two holes in it shown to a
+    # person. The range is composed here, where both ends are known, and
+    # returns None when there is nothing to say so the caller can hide the
+    # row rather than narrate the absence.
+    @property
+    def aired_text(self) -> str | None:
+        start = self.start_date if self.start_date != NOT_AVAILABLE else None
+        end = self.end_date if self.end_date != NOT_AVAILABLE else None
+        if start and end:
+            return start if start == end else f"{start} to {end}"
+        if start:
+            return f"{start} onwards"
+        if end:
+            return f"until {end}"
+        return None
+
     @classmethod
     def from_recommendation(cls, recommendation: Recommendation) -> "RecommendationViewModel":
         anime = recommendation.anime

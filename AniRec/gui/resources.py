@@ -82,6 +82,93 @@ def cover_placeholder_pixmap(*, base_override: str | Path | None = None) -> QPix
 def clear_cover_placeholder_cache() -> None:
     """Drop the rendered plates so the next request re-renders per theme."""
     _COVER_PLACEHOLDER_CACHE.clear()
+    _TITLE_PLACEHOLDER_CACHE.clear()
+
+
+# CHANGE [SAMPLE-PLATE]: one identical grey "A" per card is why the sample
+# library - the only thing most people ever see, because it is what the app
+# opens on - reads as a broken image grid rather than as a feed. The bundled
+# sample carries no artwork and should not: shipping other people's cover art
+# inside the binary is a licensing decision, not a design one. So the plate
+# stops pretending to be a missing image and becomes a legible stand-in
+# instead: the title's own initials, on a ground whose hue is derived from
+# the title, so eight cards are eight distinguishable objects. The same plate
+# covers a live cover that failed to download.
+_TITLE_PLACEHOLDER_CACHE: dict[tuple, QPixmap] = {}
+
+# Hues are picked off a wheel rather than from a fixed list so that any title
+# gets one, and the same title always gets the same one.
+_PLATE_HUES = 12
+
+
+def _plate_initials(title: str) -> str:
+    """One or two letters that stand for a title on a small plate."""
+    words = [word for word in str(title).replace(":", " ").split() if word]
+    letters = [word[0] for word in words if word[0].isalnum()]
+    if not letters:
+        return "?"
+    if len(letters) == 1:
+        return letters[0].upper()
+    return (letters[0] + letters[1]).upper()
+
+
+def title_placeholder_pixmap(
+    title: str, size: tuple[int, int] | None = None
+) -> QPixmap:
+    """A distinguishable stand-in plate for a title that has no artwork."""
+    from hashlib import blake2s
+
+    from PySide6.QtGui import QColor, QFont
+
+    from .design_tokens import FONT_STACK_DISPLAY
+
+    width, height = size or COVER_PLACEHOLDER_SIZE
+    text = str(title or "").strip()
+    if not text:
+        return cover_placeholder_pixmap()
+
+    ground = _resolved("resolvedWell", "#040806")
+    border = _resolved("resolvedBorder", "#1E2E24")
+    key = (text.casefold(), width, height, ground, border)
+    cached = _TITLE_PLACEHOLDER_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    digest = blake2s(text.casefold().encode("utf-8"), digest_size=4).digest()
+    hue = int.from_bytes(digest, "big") % _PLATE_HUES * (360 // _PLATE_HUES)
+
+    base = QColor(ground)
+    tint = QColor.fromHsv(hue, 70, max(38, base.value() + 26))
+    mark = QColor.fromHsv(hue, 46, 150)
+
+    pixmap = QPixmap(width, height)
+    pixmap.fill(tint)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    painter.setPen(QColor(border))
+    painter.drawRect(0, 0, width - 1, height - 1)
+
+    font = QFont()
+    font.setFamilies([family.strip(' "') for family in FONT_STACK_DISPLAY.split(",")])
+    font.setPixelSize(max(18, int(height * 0.30)))
+    font.setWeight(QFont.Weight.Bold)
+    painter.setFont(font)
+    painter.setPen(mark)
+    painter.drawText(
+        pixmap.rect(), int(Qt.AlignmentFlag.AlignCenter), _plate_initials(text)
+    )
+    painter.end()
+
+    _TITLE_PLACEHOLDER_CACHE[key] = pixmap
+    return pixmap
+
+
+def _resolved(role: str, fallback: str) -> str:
+    from PySide6.QtWidgets import QApplication
+
+    application = QApplication.instance()
+    value = application.property(role) if application is not None else None
+    return str(value or fallback)
 
 
 FONT_RESOURCE_DIR = "gui/resources/fonts"

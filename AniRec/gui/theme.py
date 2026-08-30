@@ -136,6 +136,47 @@ class ThemeManager:
         link_palette.setColor(
             QPalette.ColorRole.LinkVisited, QColor(colours["accent_soft"])
         )
+        # CHANGE [NO-WHITE-FLASH]: the entire dark appearance used to rest on
+        # the stylesheet string and nothing else - only Link was ever set on
+        # the palette. So any moment without a sheet is not "unstyled", it is
+        # Qt's default light palette at full size: a white window. Both
+        # loaders above can return "" (generation raising, then the packaged
+        # .qss unreadable - which is exactly what a partial install or a
+        # blocked read looks like), and a widget shown before a sheet is
+        # applied gets the same. The base roles are now set from the resolved
+        # colours, so the worst case is an unstyled dark window instead of a
+        # flashbang, and every native part Qt draws itself - menus, tooltips,
+        # scroll areas - lands in the right family too.
+        for role, value in (
+            (QPalette.ColorRole.Window, colours["bg"]),
+            (QPalette.ColorRole.WindowText, colours["text"]),
+            (QPalette.ColorRole.Base, colours["surface"]),
+            (QPalette.ColorRole.AlternateBase, colours["surface_raised"]),
+            (QPalette.ColorRole.Text, colours["text"]),
+            (QPalette.ColorRole.Button, colours["surface"]),
+            (QPalette.ColorRole.ButtonText, colours["text"]),
+            (QPalette.ColorRole.ToolTipBase, colours["surface_raised"]),
+            (QPalette.ColorRole.ToolTipText, colours["text"]),
+            (QPalette.ColorRole.Highlight, colours["selection"]),
+            (QPalette.ColorRole.HighlightedText, colours["text_strong"]),
+            (QPalette.ColorRole.PlaceholderText, colours["text_muted"]),
+        ):
+            link_palette.setColor(role, QColor(value))
+        link_palette.setColor(
+            QPalette.ColorGroup.Disabled,
+            QPalette.ColorRole.WindowText,
+            QColor(colours["text_disabled"]),
+        )
+        link_palette.setColor(
+            QPalette.ColorGroup.Disabled,
+            QPalette.ColorRole.Text,
+            QColor(colours["text_disabled"]),
+        )
+        link_palette.setColor(
+            QPalette.ColorGroup.Disabled,
+            QPalette.ColorRole.ButtonText,
+            QColor(colours["text_disabled"]),
+        )
         self.application.setPalette(link_palette)
         # Publish painted-widget colours before the style change event.  The
         # score rail and scanline panels then repaint in the incoming palette,

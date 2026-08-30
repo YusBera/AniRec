@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from PySide6.QtGui import QKeySequence
 from PySide6.QtCore import Qt
 
 from AniRec.gui.main_window import MainWindow, PAGE_DEFINITIONS, PageId
@@ -47,7 +48,12 @@ def test_sidebar_buttons_navigate_and_expose_accessible_state():
         assert window.current_page_id is definition.page_id
         assert window.page_stack.currentWidget() is window.page_widgets[definition.page_id]
         assert button.isChecked()
-        assert button.accessibleName() == f"Open {definition.label} page"
+        # CHANGE [NUMBERED-NAV]: the rail's 01-05 prefixes are real
+        # shortcuts now, and the accessible name says so - a keyboard user
+        # should not have to discover Alt+1 by trying it.
+        index = PAGE_DEFINITIONS.index(definition) + 1
+        assert button.accessibleName() == f"Open {definition.label} page, Alt+{index}"
+        assert button.shortcut() == QKeySequence(f"Alt+{index}")
         assert button.focusPolicy() & Qt.FocusPolicy.TabFocus
         assert sum(candidate.isChecked() for candidate in window.navigation_buttons.values()) == 1
 

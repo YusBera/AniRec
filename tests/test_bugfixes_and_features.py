@@ -252,12 +252,18 @@ def test_a_preview_is_told_apart_from_a_commit():
 # ---------------------------------------------------------------------------
 
 
-def test_the_badge_shows_a_whole_percentage():
+def test_the_badge_shows_the_same_precision_as_every_other_readout():
+    """CHANGE [PRECISION]: the badge used to round to a whole number.
+
+    The row, the table and the score inspector all print a tenth, so the
+    same title read 95% on its card and 94.6% one click away, in an
+    application whose entire claim is that its score means something.
+    """
     create_application([])
     badge = MatchBadge(94.6)
 
     assert badge.percentage == pytest.approx(94.6)
-    assert "95 percent" in badge.accessibleName()
+    assert "94.6 percent" in badge.accessibleName()
 
 
 def test_the_badge_is_hidden_when_there_is_no_score():

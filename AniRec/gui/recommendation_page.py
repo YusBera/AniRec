@@ -318,6 +318,32 @@ def _resolved_colour(role: str, fallback: str) -> str:
     return str(value or fallback)
 
 
+# CHANGE [SORT]: the table looked exactly like a sortable table and was not
+# one - setSortingEnabled(False), with the only sort control a combo box two
+# panels away. Turning Qt's sorting on is not enough on its own, because
+# QTableWidgetItem compares its display string: "9.10" would sort above
+# "88.1%", and "1100" above "24". Each cell now carries the value it was made
+# from and compares on that.
+class _SortableTableItem(QTableWidgetItem):
+    """A cell that sorts by the value it was rendered from, not by its text."""
+
+    def __init__(self, text: str, sort_key: float | str | None) -> None:
+        super().__init__(text)
+        # Missing values sort below every real one ascending, which is where a
+        # reader looks for them.
+        self.sort_key = float("-inf") if sort_key is None else sort_key
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:  # noqa: D105 - Qt API
+        other_key = getattr(other, "sort_key", None)
+        if other_key is None:
+            return super().__lt__(other)
+        if isinstance(self.sort_key, str) != isinstance(other_key, str):
+            return super().__lt__(other)
+        if isinstance(self.sort_key, str):
+            return self.sort_key.casefold() < str(other_key).casefold()
+        return float(self.sort_key) < float(other_key)
+
+
 class RecommendationExplorerPage(QWidget):
     """One query state rendered as either accessible cards or a compact table."""
 
@@ -922,9 +948,14 @@ class RecommendationExplorerPage(QWidget):
         selected_actions = QHBoxLayout(self.selected_actions_frame)
         selected_actions.setContentsMargins(12, 8, 12, 8)
         selected_actions.setSpacing(8)
-        selected_label = QLabel("Selected anime")
-        selected_label.setObjectName("recommendationSelectedLabel")
-        selected_actions.addWidget(selected_label)
+        # CHANGE [SELECTION]: this said "Selected anime" - a caption for a
+        # field rather than the field itself - beside four buttons that were
+        # greyed out with no explanation, which in sample mode is every time.
+        # It now names the title you actually selected, and says why the
+        # actions are unavailable when they are.
+        self.selected_label = QLabel()
+        self.selected_label.setObjectName("recommendationSelectedLabel")
+        selected_actions.addWidget(self.selected_label)
         selected_actions.addStretch()
         self.watch_later_selected_button = QPushButton("Watch Later")
         self.watch_later_selected_button.setObjectName("recommendationWatchLaterSelected")
@@ -1017,9 +1048,15 @@ class RecommendationExplorerPage(QWidget):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.setSortingEnabled(False)
+        self.table.setSortingEnabled(True)
         self.table.verticalHeader().setVisible(False)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSortIndicatorShown(True)
+        self.table.horizontalHeader().setSectionsClickable(True)
+        # Qt's default indicator is column 0 *descending*, which would open
+        # the table showing the feed backwards - worst match first. The
+        # resting state is the order the reader's own sort produced.
+        self.table.horizontalHeader().setSortIndicator(0, Qt.SortOrder.AscendingOrder)
         self.table.itemSelectionChanged.connect(self._on_table_selection_changed)
         self.table.itemDoubleClicked.connect(lambda _item: self._open_selected_details())
 
@@ -2086,23 +2123,52 @@ class RecommendationExplorerPage(QWidget):
 
     def _rebuild_table(self) -> None:
         self.table.blockSignals(True)
+        # Rows must be filled with sorting off, or Qt re-sorts after every
+        # setItem() and the row index stops meaning anything mid-loop.
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(self._visible_models))
         for row, model in enumerate(self._visible_models):
             key = self._key_by_model[id(model)]
-            values = (
-                str(model.rank) if model.rank is not None else "N/A",
-                model.display_title,
-                f"{model.personal_match:.1f}%" if model.personal_match_available else "Not available",
-                f"{model.mal_score:.2f}" if model.mal_score is not None else "Not rated",
-                model.genres_text,
-                str(model.year) if model.year is not None else "Not available",
-                model.status,
-                str(model.episodes) if model.episodes is not None else "Not available",
+            # CHANGE [RANK]: this printed model.rank, the position the backend
+            # assigned inside its own candidate ordering, against rows laid
+            # out in the order the reader asked for. Sorted by personal match
+            # the column read 7, 1, 2, 6, 4, 5, 3, 8 down the page - a visibly
+            # wrong number in the one view that exists to be scanned, in an
+            # application whose whole claim is that its ranking is worth
+            # trusting. It is now the position in the current ordering, which
+            # is what a column called Rank means, and it is deliberately not
+            # renumbered when a header sort is applied: re-sorting by Year
+            # then still shows you which of those titles ranked first.
+            rank = row + 1
+            values: tuple[tuple[str, float | str | None], ...] = (
+                (str(rank), rank),
+                (model.display_title, model.display_title),
+                (
+                    f"{model.personal_match:.1f}%"
+                    if model.personal_match_available
+                    else "Not available",
+                    model.personal_match if model.personal_match_available else None,
+                ),
+                (
+                    f"{model.mal_score:.2f}" if model.mal_score is not None else "Not rated",
+                    model.mal_score,
+                ),
+                (model.genres_text, model.genres_text),
+                (
+                    str(model.year) if model.year is not None else "Not available",
+                    model.year,
+                ),
+                (model.status, model.status),
+                (
+                    str(model.episodes) if model.episodes is not None else "Not available",
+                    model.episodes,
+                ),
             )
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
+            for column, (value, sort_key) in enumerate(values):
+                item = _SortableTableItem(value, sort_key)
                 item.setData(Qt.ItemDataRole.UserRole, key)
                 self.table.setItem(row, column, item)
+        self.table.setSortingEnabled(True)
         self.table.resizeColumnsToContents()
         self.table.blockSignals(False)
 
@@ -2135,6 +2201,21 @@ class RecommendationExplorerPage(QWidget):
         self.like_selected_button.setEnabled(enabled)
         self.dislike_selected_button.setEnabled(enabled)
         self._update_selected_actions_visibility()
+        if model is not None:
+            self.selected_label.setText(model.display_title)
+            if enabled:
+                self.selected_label.setToolTip("")
+            else:
+                reason = (
+                    "Connect a MyAnimeList profile to save votes"
+                    if self.profile_id is None
+                    else "This title has no MyAnimeList entry to vote on"
+                )
+                self.selected_label.setText(f"{model.display_title} — {reason}")
+                self.selected_label.setToolTip(reason)
+        else:
+            self.selected_label.setText("")
+            self.selected_label.setToolTip("")
         if model is None:
             self.hide_selected_button.setText("Hide")
             self.watch_later_selected_button.setText("Watch Later")

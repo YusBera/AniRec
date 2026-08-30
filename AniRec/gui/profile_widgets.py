@@ -81,6 +81,15 @@ def motion_enabled() -> bool:
 # because several of these play at once when the page opens.
 REVEAL_MILLISECONDS = 480
 
+# CHANGE [NEVER-EMPTY]: the reveal used to start at exactly zero, so the first
+# painted frame of the Rating Distribution was a grid with no bars in it -
+# an entire chart that reads as broken, for as long as it takes anyone to
+# glance at it or take a screenshot. It now starts a quarter of the way in.
+# Nothing is misreported by this: the reveal scales each bar's own final
+# length, so a count of zero still draws nothing and a count of 68 is simply
+# short for a moment rather than absent.
+REVEAL_FLOOR = 0.25
+
 
 class _RevealingWidget(QWidget):
     """A painted widget whose value grows in from nothing once, on mount.
@@ -95,7 +104,7 @@ class _RevealingWidget(QWidget):
         self._reveal = 1.0
         self._animation = QVariantAnimation(self)
         self._animation.setDuration(REVEAL_MILLISECONDS)
-        self._animation.setStartValue(0.0)
+        self._animation.setStartValue(REVEAL_FLOOR)
         self._animation.setEndValue(1.0)
         self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._animation.valueChanged.connect(self._on_reveal)
@@ -105,12 +114,16 @@ class _RevealingWidget(QWidget):
         self.update()
 
     def animate(self) -> None:
-        if not motion_enabled():
+        # A reveal nobody can see is not a reveal, it is a clock running
+        # against a hidden widget - which is how these landed on screen
+        # already part-way through, or worse, at zero. Off-screen, the
+        # finished state is the only honest thing to draw.
+        if not motion_enabled() or not self.isVisible():
             self._reveal = 1.0
             self.update()
             return
         self._animation.stop()
-        self._reveal = 0.0
+        self._reveal = REVEAL_FLOOR
         self._animation.start()
 
     def event(self, event: QEvent) -> bool:

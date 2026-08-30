@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEasingCurve, Qt, QTimer, QUrl, QVariantAnimation, Signal
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QKeyEvent, QPixmap, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
@@ -30,12 +30,11 @@ from .design_tokens import RADIUS, SPACE
 from .instrument_widgets import InstrumentPanel, ScoreTrack, Scanlines
 from .recommendation_card import open_mal_url
 from .recommendation_view_model import RecommendationViewModel
-from .resources import cover_placeholder_pixmap
+from .resources import cover_placeholder_pixmap, title_placeholder_pixmap
 
 
 DETAIL_COVER_WIDTH = 300
 DETAIL_COVER_HEIGHT = 450
-NO_ALTERNATIVE_TITLES = "No alternative titles are available."
 NO_GENRE_CONTRIBUTIONS = "No score contribution breakdown is available."
 
 
@@ -304,12 +303,14 @@ class RecommendationDetailDialog(QDialog):
         self.scroll.setWidget(content)
         root.addWidget(self.scroll, 1)
 
-        self._score_animation = QVariantAnimation(self)
-        self._score_animation.setDuration(680)
-        self._score_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._score_animation.valueChanged.connect(
-            lambda value: self.score_value_label.setText(f"{float(value):.1f}")
-        )
+        # CHANGE [HONEST-READOUT]: the headline percentage no longer counts up
+        # from zero. It used to run 0 -> value over 680ms, which meant that for
+        # two thirds of a second this dialog printed a large, confident,
+        # wrong number - 13.5% - directly above a breakdown that already read
+        # "SUMS TO 94.60". The number is the one thing on this screen that
+        # must never be wrong, so it is now set once, final, before paint.
+        # The reveal it used to carry lives on the contribution track below,
+        # which is decoration and can afford to move.
         self.set_navigation(1, 1)
 
     @staticmethod
@@ -327,11 +328,16 @@ class RecommendationDetailDialog(QDialog):
         self.title_label.setText(model.display_title)
         self.secondary_title_label.setText(model.secondary_title or "")
         self.secondary_title_label.setVisible(bool(model.secondary_title))
+        # CHANGE [NO-NULL-PROSE]: a title with no alternative names used to
+        # spend the most valuable line on the screen - directly under the
+        # heading - saying so. The absence of data is not content; the row
+        # goes away instead.
         self.alternative_titles_label.setText(
             "Alternative titles: " + " · ".join(model.alternative_titles)
             if model.alternative_titles
-            else NO_ALTERNATIVE_TITLES
+            else ""
         )
+        self.alternative_titles_label.setVisible(bool(model.alternative_titles))
         self.personal_match_label.setText(model.personal_match_text)
         self.score_value_label.setText(f"{model.personal_match:.1f}")
         self.mal_score_label.setText(model.mal_score_text)
@@ -339,7 +345,9 @@ class RecommendationDetailDialog(QDialog):
         self.episodes_label.setText(f"Episodes: {model.episodes_text}")
         self.status_label.setText(f"Status: {model.status}")
         self.year_label.setText(f"Airing year: {model.year_text}")
-        self.dates_label.setText(f"Aired: {model.start_date} to {model.end_date}")
+        aired_text = model.aired_text
+        self.dates_label.setText(f"Aired: {aired_text}" if aired_text else "")
+        self.dates_label.setVisible(aired_text is not None)
         self.synopsis_label.setText(model.synopsis)
         self.reason_label.setText(model.reason)
         contribution_text = self._contributions_text(model)
@@ -426,11 +434,9 @@ class RecommendationDetailDialog(QDialog):
         if self.model is None:
             return
         self._pending_animation = False
-        self._score_animation.stop()
-        self._score_animation.setStartValue(0.0)
-        self._score_animation.setEndValue(self.model.personal_match)
+        # The readout is already showing the final value from set_model(); only
+        # the track reveals.
         self.score_track.animate()
-        self._score_animation.start()
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt API
         super().showEvent(event)
@@ -499,7 +505,15 @@ class RecommendationDetailDialog(QDialog):
         return True
 
     def _show_placeholder(self) -> None:
-        source = cover_placeholder_pixmap()
+        source = (
+            title_placeholder_pixmap(
+                self.model.display_title, (DETAIL_COVER_WIDTH, DETAIL_COVER_HEIGHT)
+            )
+            if self.model is not None
+            else QPixmap()
+        )
+        if source.isNull():
+            source = cover_placeholder_pixmap()
         if source.isNull():
             source = QPixmap(DETAIL_COVER_WIDTH, DETAIL_COVER_HEIGHT)
             source.fill(Qt.GlobalColor.transparent)
