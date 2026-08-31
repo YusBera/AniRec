@@ -408,13 +408,21 @@ class GenreReading:
 
 @dataclass(frozen=True)
 class GenreVerdict:
-    """A named genre singled out for one reason, with the figure behind it."""
+    """A named genre singled out for one reason, with the figure behind it.
+
+    CHANGE [EVIDENCE]: and with the titles behind the figure. "Military is
+    your most divisive genre" is a claim a reader cannot check and often does
+    not believe - the usual reaction is "I have watched something tagged
+    Military?" - so the verdict carries the two ends that made it divisive.
+    """
 
     name: str
     watched: int | None = None
     average: float | None = None
     spread: float | None = None
     detail: str = ""
+    titles: tuple[TasteTitle, ...] = ()
+    lowest: tuple[TasteTitle, ...] = ()
 
     @property
     def watched_text(self) -> str:
@@ -443,9 +451,18 @@ class GenreDNA:
 
 @dataclass(frozen=True)
 class StudioReading:
+    """One studio, and what of theirs this reader actually saw.
+
+    A studio name on its own is the weakest fact on the board: most people
+    cannot name a thing Tezuka Productions made, so "your nemesis studio"
+    reads as trivia about somebody else. The titles make it about the reader.
+    """
+
     name: str
     watched: int | None = None
     average: float | None = None
+    titles: tuple[TasteTitle, ...] = ()
+    lowest: tuple[TasteTitle, ...] = ()
 
     @property
     def watched_text(self) -> str:
@@ -657,7 +674,7 @@ _ARCHETYPES = {
     ),
     ("contrarian", "low"): (
         "the level head",
-        "You and the consensus almost never fall out. When you disagree, it means something.",
+        "Almost nothing you watch surprises you into disagreeing. The handful that did are worth a second look.",
     ),
     ("rating-bias", "low"): (
         "the hard marker",
@@ -669,11 +686,11 @@ _ARCHETYPES = {
     ),
     ("mainstream", "low"): (
         "the deep diver",
-        "Most of your list sits outside what everybody else has seen.",
+        "Most of your list is material the average watcher has never heard of.",
     ),
     ("mainstream", "high"): (
         "the mainliner",
-        "You watch what the medium is actually talking about, and you keep up.",
+        "You watch what the medium is actually arguing about, while it is still arguing.",
     ),
     ("completion", "high"): (
         "the finisher",
@@ -685,7 +702,7 @@ _ARCHETYPES = {
     ),
     ("community-sync", "high"): (
         "the barometer",
-        "Your scores track everybody else's closely enough to predict them.",
+        "If a show lands with you, it lands with everyone. Your taste is the forecast.",
     ),
     ("community-sync", "low"): (
         "the wildcard",
@@ -1004,6 +1021,15 @@ def _genres_from(raw) -> GenreDNA:
     )
 
 
+def _taste_titles_from(raw) -> tuple[TasteTitle, ...]:
+    """Parse a list of title/score pairs, dropping anything unusable."""
+    return tuple(
+        TasteTitle(title=name, your_score=_number(entry.get("your_score")))
+        for entry in raw or ()
+        if isinstance(entry, dict) and (name := _text(entry.get("title")))
+    )
+
+
 def _genre_verdict_from(raw) -> GenreVerdict | None:
     if not isinstance(raw, dict):
         return None
@@ -1016,6 +1042,8 @@ def _genre_verdict_from(raw) -> GenreVerdict | None:
         average=_number(raw.get("average")),
         spread=_number(raw.get("spread")),
         detail=_text(raw.get("detail")),
+        titles=_taste_titles_from(raw.get("titles")),
+        lowest=_taste_titles_from(raw.get("lowest")),
     )
 
 
@@ -1029,6 +1057,8 @@ def _studio_from(raw) -> StudioReading | None:
         name=name,
         watched=_count(raw.get("watched")),
         average=_number(raw.get("average")),
+        titles=_taste_titles_from(raw.get("titles")),
+        lowest=_taste_titles_from(raw.get("lowest")),
     )
 
 

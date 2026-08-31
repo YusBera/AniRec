@@ -1266,6 +1266,13 @@ QLabel#profileFactValue {
 }
 QLabel#profileFactValue[tone="against"] { color: #96301F; }
 QLabel#profileFactCaption { color: #4C5B50; font-size: 8.3pt; }
+/* The titles behind the claim. Aqua is "everyone else / the record" in this
+   palette, and these are drawn from the reader's own scored history rather
+   than from the derivation, so they sit apart from the amber figure above. */
+QLabel#profileFactEvidence {
+    color: #2C7C74; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt;
+    border-left: 1px solid #A8B4A0; padding: 1px 0 1px 9px;
+}
 QLabel#profileFactMark { background: transparent; }
 
 /* ---- section frame ---- */

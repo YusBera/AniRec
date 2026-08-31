@@ -558,6 +558,12 @@ class ProfileTextCatalog:
     # a sentence under it - rather than a line of prose with a rule beside it.
     # The value is the part somebody screenshots, so it is what the card is
     # built around; the sentence explains it rather than containing it.
+    # CHANGE [EVIDENCE]: the caption says what the figure means; the evidence
+    # line under it says which anime produced it. Without the second line the
+    # reader's honest reaction to "your nemesis studio is Tezuka Productions"
+    # is "who?" - the claim is unfalsifiable and so it is not interesting.
+    evidence_versus: str = "{high}  ·  {low}"
+    evidence_title: str = "{title} {score}"
     unlisted_nemesis_caption: str = "Your nemesis studio. {watched} watched, averaging {average}."
     unlisted_trusted_caption: str = "The studio you trust most, at {average} across their work."
     unlisted_divisive_caption: str = "Your most divisive genre. You either love it or you do not."

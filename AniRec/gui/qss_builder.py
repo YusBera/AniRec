@@ -1311,6 +1311,13 @@ QLabel#profileFactValue {
 }
 QLabel#profileFactValue[tone="against"] { color: $danger_text; }
 QLabel#profileFactCaption { color: $text_muted; font-size: $font_sm; }
+/* The titles behind the claim. Aqua is "everyone else / the record" in this
+   palette, and these are drawn from the reader's own scored history rather
+   than from the derivation, so they sit apart from the amber figure above. */
+QLabel#profileFactEvidence {
+    color: $focus; font-family: $font_mono; font-size: $font_xs;
+    border-left: 1px solid $border_strong; padding: 1px 0 1px 9px;
+}
 QLabel#profileFactMark { background: transparent; }
 
 /* ---- section frame ---- */

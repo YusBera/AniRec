@@ -173,12 +173,12 @@
     ],
     "best_match": {"name": "Psychological", "watched": 41, "average": 8.41},
     "weakness": {"name": "Isekai", "watched": 34, "average": 5.80},
-    "divisive": {"name": "Romance", "watched": 34, "average": 7.10, "spread": 2.9, "detail": "WIDE SCORE RANGE"}
+    "divisive": {"name": "Romance", "watched": 34, "average": 7.10, "spread": 2.9, "detail": "WIDE SCORE RANGE", "titles": [{"title": "Toradora!", "your_score": 10.0}, {"title": "Clannad: After Story", "your_score": 9.0}], "lowest": [{"title": "Sword Art Online II", "your_score": 3.0}, {"title": "School Days", "your_score": 2.0}]}
   },
   "studios": {
     "most_watched": {"name": "Shaft", "watched": 27, "average": 7.62},
-    "most_trusted": {"name": "Kyoto Animation", "watched": 19, "average": 8.42},
-    "nemesis": {"name": "Studio Pierrot", "watched": 14, "average": 5.10},
+    "most_trusted": {"name": "Kyoto Animation", "watched": 19, "average": 8.42, "titles": [{"title": "Violet Evergarden", "your_score": 10.0}, {"title": "Hyouka", "your_score": 9.0}]},
+    "nemesis": {"name": "Studio Pierrot", "watched": 14, "average": 5.10, "lowest": [{"title": "Bleach", "your_score": 4.0}, {"title": "Naruto: Shippuuden", "your_score": 5.0}], "titles": [{"title": "Yuu Yuu Hakusho", "your_score": 7.0}]},
     "readings": [
       {"name": "Shaft", "watched": 27, "average": 7.62},
       {"name": "Kyoto Animation", "watched": 19, "average": 8.42},

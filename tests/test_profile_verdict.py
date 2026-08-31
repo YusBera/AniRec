@@ -228,6 +228,64 @@ def test_a_reader_with_no_nameable_trait_still_gets_a_sentence():
     assert page.unlisted.facts == ()
 
 
+def test_a_claim_the_reader_cannot_check_carries_its_titles():
+    """The three facts that are meaningless without evidence.
+
+    "Your nemesis studio is Tezuka Productions" invites "who?" - most people
+    cannot name a thing that studio made, so the card reads as the application
+    asserting something rather than showing the reader themselves. "Military
+    is your most divisive genre" invites "I have watched something tagged
+    Military?". Both become interesting the moment the anime are named.
+    """
+    create_application([])
+    page = ProfilePage()
+    page.show_profile(SampleTasteProfileProvider().taste_profile())
+    by_legend = {fact.legend: fact for fact in page.unlisted.facts}
+
+    for legend in ("NEMESIS", "MOST TRUSTED", "MOST DIVISIVE"):
+        assert by_legend[legend].evidence, f"{legend} states a claim with no proof"
+
+    # A nemesis is a nemesis because of its low scores; listing a 7 beside the
+    # 4s muddles the point the card exists to make.
+    nemesis = by_legend["NEMESIS"].evidence
+    assert nemesis == ("Bleach 4", "Naruto: Shippuuden 5")
+
+    # Divisive means both ends. One end alone states the claim and hides the
+    # half that proves it.
+    divisive = by_legend["MOST DIVISIVE"].evidence
+    assert divisive[0].endswith("10") and divisive[-1].endswith("2")
+
+    # A percentage explains itself and needs no titles.
+    assert by_legend["COMMUNITY SYNC"].evidence == ()
+
+
+def test_evidence_never_names_the_same_title_twice():
+    """A title can sit at the top of one list and inside the other."""
+    from AniRec.gui.profile_page import _evidence
+    from AniRec.gui.taste_profile import TasteTitle
+
+    high = (TasteTitle("Bleach", 4.0), TasteTitle("Naruto", 5.0))
+    low = (TasteTitle("Bleach", 4.0), TasteTitle("Gintama", 6.0))
+
+    lines = _evidence(high, low)
+
+    assert lines == ("Bleach 4", "Naruto 5", "Gintama 6")
+
+
+def test_a_profile_with_no_recorded_titles_still_renders_its_cards():
+    """Evidence is an improvement to a card, never a precondition for one."""
+    create_application([])
+    page = ProfilePage()
+    page.show_profile(
+        TasteProfile(studios=StudioDNA(nemesis=StudioReading("Bare Studio", 6, 5.0)))
+    )
+
+    fact = page.unlisted.facts[0]
+    assert fact.value == "Bare Studio"
+    assert fact.evidence == ()
+    assert len(page.unlisted.widgets) == 1
+
+
 def test_every_board_tile_is_a_legend_a_figure_and_a_sentence():
     """One shape, or the board is three grids wearing a costume.
 

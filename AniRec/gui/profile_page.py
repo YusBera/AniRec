@@ -266,9 +266,23 @@ class ReflowGrid(QWidget):
                 heights.append(layout.totalHeightForWidth(item_width))
             else:
                 heights.append(widget.sizeHint().height())
-        if heights:
-            shared_height = max(heights)
-            for widget in self._widgets:
+        # CHANGE [ROW-HEIGHTS]: one height per row, not one per board.
+        #
+        # A single shared height is right for the fingerprint, which is five
+        # peer readouts that must terminate on one baseline. It is wrong for
+        # the fact board, where one card carrying four evidence titles used to
+        # pad every other card on the page to match - the first two rows came
+        # out with forty pixels of nothing under every tile. A grid row is
+        # already as tall as its tallest member; equalising within the row
+        # squares the tiles off without letting the tallest one set the height
+        # of tiles it does not sit beside.
+        for start in range(0, len(self._widgets), columns):
+            row = self._widgets[start:start + columns]
+            row_heights = heights[start:start + columns]
+            if not row_heights:
+                continue
+            shared_height = max(row_heights)
+            for widget in row:
                 widget.setMinimumHeight(shared_height)
 
 
@@ -626,6 +640,34 @@ class VerdictHero(InstrumentPanel):
         self.setAccessibleName(f"{self.name_label.text()} {sentence}")
 
 
+# How many titles a card can carry before it stops being a card. Two reads as
+# evidence; five reads as a list the reader has to work through.
+EVIDENCE_LIMIT = 2
+
+
+def _evidence(*groups) -> tuple[str, ...]:
+    """Name the anime behind a claim, best first, with the score given.
+
+    Duplicates are dropped because a title can be both the top of one end and
+    present in the other, and a card that names the same show twice looks
+    broken rather than thorough.
+    """
+    seen: set[str] = set()
+    lines: list[str] = []
+    for titles in groups:
+        for entry in (titles or ())[:EVIDENCE_LIMIT]:
+            name = (entry.title or "").strip()
+            if not name or name.casefold() in seen:
+                continue
+            seen.add(name.casefold())
+            lines.append(
+                PROFILE_TEXT.evidence_title.format(
+                    title=name, score=entry.your_score_text
+                )
+            )
+    return tuple(lines)
+
+
 def _fact_mark_colour(tone: str) -> str:
     """Tint the mark with the same meaning its figure carries."""
     from PySide6.QtWidgets import QApplication
@@ -642,13 +684,22 @@ def _fact_mark_colour(tone: str) -> str:
 
 @dataclass(frozen=True)
 class UnlistedFact:
-    """One derived fact, as a card wants it: a mark, a figure, a sentence."""
+    """One derived fact, as a card wants it: a mark, a figure, a sentence.
+
+    CHANGE [EVIDENCE]: and the titles that produced it. A claim the reader
+    cannot check is not a fun fact, it is the application asserting something
+    about them - "your nemesis studio is Tezuka Productions" invites "who?",
+    and "Military is your most divisive genre" invites "I have watched
+    something tagged Military?". Naming the anime turns both back into
+    something the reader recognises and can argue with.
+    """
 
     icon: str
     legend: str
     value: str
     caption: str
     tone: str = "you"
+    evidence: tuple[str, ...] = ()
 
 
 # Which mark stands for which season. Drawn in the same plotted, butt-capped
@@ -722,9 +773,29 @@ class UnlistedFactCard(InstrumentPanel):
         self.caption_label.setObjectName("profileFactCaption")
         self.caption_label.setWordWrap(True)
         layout.addWidget(self.caption_label)
+
+        # CHANGE [EVIDENCE]: the anime behind the claim, in the aqua the rest
+        # of the interface uses for "everyone else's numbers". Set apart by a
+        # rule rather than a heading, because the card has already said what
+        # this is; these are the receipts, not a new subject.
+        self.evidence_labels: list[QLabel] = []
+        if fact.evidence:
+            layout.addSpacing(scaled(SPACE["xs"]))
+            for line in fact.evidence:
+                label = QLabel(line)
+                label.setObjectName("profileFactEvidence")
+                label.setWordWrap(True)
+                label.setTextInteractionFlags(
+                    Qt.TextInteractionFlag.TextSelectableByMouse
+                )
+                layout.addWidget(label)
+                self.evidence_labels.append(label)
         layout.addStretch(1)
 
-        self.setAccessibleName(f"{fact.legend.title()}: {fact.value}. {fact.caption}")
+        spoken = f"{fact.legend.title()}: {fact.value}. {fact.caption}"
+        if fact.evidence:
+            spoken += " " + ". ".join(fact.evidence)
+        self.setAccessibleName(spoken)
 
 
 class UnlistedFacts(ReflowGrid):
@@ -883,6 +954,11 @@ def unlisted_facts(profile) -> tuple[UnlistedFact, ...]:
                     watched=nemesis.watched_text, average=nemesis.average_text
                 ),
                 tone="against",
+                # The low end only. Listing a 7 beside the 4s muddles the
+                # point of the card, so the higher-scored titles are the
+                # fallback for a profile that recorded no low end rather than
+                # a supplement to it.
+                evidence=_evidence(nemesis.lowest or nemesis.titles),
             )
         )
     trusted = getattr(profile.studios, "most_trusted", None)
@@ -895,6 +971,7 @@ def unlisted_facts(profile) -> tuple[UnlistedFact, ...]:
                 PROFILE_TEXT.unlisted_trusted_caption.format(
                     average=trusted.average_text
                 ),
+                evidence=_evidence(trusted.titles),
             )
         )
     divisive = getattr(profile.genres, "divisive", None)
@@ -905,6 +982,9 @@ def unlisted_facts(profile) -> tuple[UnlistedFact, ...]:
                 PROFILE_TEXT.unlisted_divisive_legend,
                 divisive.name,
                 PROFILE_TEXT.unlisted_divisive_caption,
+                # Both ends, because that is what divisive means. One end
+                # alone states the claim and hides the half that proves it.
+                evidence=_evidence(divisive.titles, divisive.lowest),
             )
         )
     golden = getattr(profile.eras, "golden", None)

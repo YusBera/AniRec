@@ -394,7 +394,13 @@ def _studio_payload(records: tuple[_TitleRecord, ...]) -> dict:
     for record in records:
         for studio in dict.fromkeys(record.studios):
             groups[studio].append(record)
-    readings = _group_readings(groups, total=len(records), include_titles=False)
+    # CHANGE [EVIDENCE]: studios carry their titles too. "Your nemesis studio
+    # is Tezuka Productions" is not a fact a reader can check - most people
+    # cannot name a single thing that studio made, so the card reads as the
+    # application asserting something about them rather than showing them
+    # something about themselves. The titles are what turn it back into
+    # evidence, and they were already in hand here.
+    readings = _group_readings(groups, total=len(records), include_titles=True)
     visible = readings[:VISIBLE_GROUP_LIMIT]
     return {
         "readings": visible,
@@ -433,6 +439,20 @@ def _group_readings(
             reading["titles"] = [
                 {"title": record.title, "your_score": record.user_score}
                 for record in ordered
+            ]
+            # The other end of the same list. A divisive genre is only
+            # divisive because of its extremes, so showing the top alone
+            # states the claim and hides the half that proves it.
+            scored = [
+                record for record in members if record.user_score is not None
+            ]
+            lowest = sorted(
+                scored,
+                key=lambda record: (record.user_score, record.title.casefold()),
+            )[:VISIBLE_TITLE_LIMIT]
+            reading["lowest"] = [
+                {"title": record.title, "your_score": record.user_score}
+                for record in lowest
             ]
         readings.append(reading)
     readings.sort(key=lambda item: (-item["watched"], item["name"].casefold()))
