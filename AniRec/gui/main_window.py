@@ -32,6 +32,7 @@ second press cannot start a second run and the control always comes back.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, replace
 from enum import Enum
 
@@ -71,6 +72,8 @@ from ..services import (
     RecommendationStateService,
     ResultService,
     BundleContextService,
+    CoverImageResult,
+    CoverImageService,
     SampleDataService,
     SettingsService,
     TasteFeedbackService,
@@ -122,6 +125,7 @@ from .setup_wizard import SetupWizard
 from .texts import COMPARE_TEXT, FILTER_TEXT, UI_TEXT, WIZARD_TEXT
 from .theme import ThemeManager
 from .workers import (
+    CoverDownloadWorker,
     MoreRecommendationsWorker,
     OperationAlreadyRunningError,
     RecommendationWorker,
@@ -330,6 +334,7 @@ class MainWindow(QMainWindow):
         data_management_service: DataManagementService | None = None,
         theme_manager: ThemeManager | None = None,
         taste_profile_provider: TasteProfileProvider | None = None,
+        cover_service: CoverImageService | None = None,
     ) -> None:
         super().__init__()
         self.profile_service = profile_service
@@ -368,10 +373,17 @@ class MainWindow(QMainWindow):
             else UnavailableTasteProfileProvider()
         )
         self.sample_taste_profile_provider = SampleTasteProfileProvider()
+        self.cover_service = cover_service or CoverImageService()
+        self._aux_cover_attempted: set[str] = set()
+        self._aux_cover_operations: dict[str, str] = {}
+        self._aux_cover_data: dict[str, bytes] = {}
+        self._loaded_taste_profile_id: str | None = None
+        self._taste_profile_dirty = True
         # Mirrored state for the rail's system readout. Kept here rather
         # than interrogated from widgets so the panel cannot disagree
         # with what the window believes.
         self._engine_busy = False
+        self._active_engine_operations: set[str] = set()
         self._mal_connected = False
         self._profile_name: str | None = None
         self.theme_manager = theme_manager
@@ -505,6 +517,9 @@ class MainWindow(QMainWindow):
         # refresh would only replace it with nothing.
         if self.demo_mode:
             return
+        previous_profile_id = (
+            self.active_profile.profile_id if self.active_profile is not None else None
+        )
         profile = None
         result = None
         if self.profile_service is not None:
@@ -518,6 +533,10 @@ class MainWindow(QMainWindow):
             except (AniRecError, OSError, TypeError, ValueError):
                 result = None
         self.active_profile = profile
+        current_profile_id = profile.profile_id if profile is not None else None
+        if current_profile_id != previous_profile_id:
+            self._loaded_taste_profile_id = None
+            self._taste_profile_dirty = True
         display_result = result
         local_state = None
         if profile is not None:
@@ -680,6 +699,16 @@ class MainWindow(QMainWindow):
     def _load_taste_profile(self) -> None:
         """Ask the provider for this reader's profile and draw what comes back."""
         page = self.profile_page
+        profile_id = (
+            self.active_profile.profile_id if self.active_profile is not None else None
+        )
+        if (
+            profile_id is not None
+            and profile_id == self._loaded_taste_profile_id
+            and not self._taste_profile_dirty
+        ):
+            page.request_visible_covers()
+            return
         page.show_loading()
         try:
             profile = self.taste_profile_provider.taste_profile()
@@ -703,7 +732,38 @@ class MainWindow(QMainWindow):
             page.show_unavailable(error)
             return
         page.show_profile(profile)
+        if profile_id is not None:
+            self._loaded_taste_profile_id = profile_id
+            self._taste_profile_dirty = False
         page.request_visible_covers()
+
+    def _request_aux_cover(self, url: str) -> None:
+        """Fetch artwork requested by Profile or Compare."""
+        cached = self._aux_cover_data.get(url)
+        if cached is not None:
+            self._deliver_aux_cover(url, cached)
+            return
+        if url in self._aux_cover_attempted:
+            return
+        self._aux_cover_attempted.add(url)
+        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+        operation_key = f"cover:{digest}"
+        self._aux_cover_operations[operation_key] = url
+        try:
+            self.worker_controller.start(
+                operation_key,
+                CoverDownloadWorker(self.cover_service, url),
+            )
+        except OperationAlreadyRunningError:
+            # A feed request for the same URL is already in flight. Both
+            # listeners receive its result, so keep this mapping until then.
+            pass
+
+    def _deliver_aux_cover(self, url: str, data: bytes) -> None:
+        for page in (self.profile_page, self.compare_page):
+            deliver = getattr(page, "deliver_cover", None)
+            if callable(deliver):
+                deliver(url, data)
 
     def _filter_discover_by_metadata(self, kind, value: str) -> None:
         """A genre or studio pressed on the Profile page.
@@ -984,11 +1044,13 @@ class MainWindow(QMainWindow):
                 page.metadata_filter_requested.connect(
                     self._filter_discover_by_metadata
                 )
+                page.cover_requested.connect(self._request_aux_cover)
                 self.profile_page = page
             elif definition.page_id is PageId.COMPARE:
                 page = ComparePage()
                 page.compare_requested.connect(self._start_comparison)
                 page.sample_requested.connect(self._show_sample_comparison)
+                page.cover_requested.connect(self._request_aux_cover)
                 self.compare_page = page
             elif definition.page_id is PageId.SETTINGS:
                 page = SettingsPage(
@@ -1370,7 +1432,10 @@ class MainWindow(QMainWindow):
         self._log("error" if tone == "error" else "status", message)
 
     def _on_operation_started(self, operation_key: str) -> None:
-        self._engine_busy = True
+        if operation_key.startswith("cover:"):
+            return
+        self._active_engine_operations.add(operation_key)
+        self._engine_busy = bool(self._active_engine_operations)
         self._refresh_system_readout()
         self._log("engine", f"{self._operation_name(operation_key)} engaged")
         if operation_key.startswith("sync:"):
@@ -1383,7 +1448,10 @@ class MainWindow(QMainWindow):
             self.recommendations_page.set_more_running(True)
 
     def _on_operation_finished(self, operation_key: str) -> None:
-        self._engine_busy = False
+        if operation_key.startswith("cover:"):
+            return
+        self._active_engine_operations.discard(operation_key)
+        self._engine_busy = bool(self._active_engine_operations)
         self._refresh_system_readout()
         self._log("engine", f"{self._operation_name(operation_key)} resolved")
         if operation_key.startswith("sync:"):
@@ -1396,6 +1464,12 @@ class MainWindow(QMainWindow):
             self.recommendations_page.set_more_running(False)
 
     def _on_operation_result(self, operation_key: str, result: object) -> None:
+        if isinstance(result, CoverImageResult):
+            url = self._aux_cover_operations.pop(operation_key, None)
+            if url is not None:
+                self._aux_cover_data[url] = result.data
+                self._deliver_aux_cover(url, result.data)
+            return
         if not isinstance(result, PipelineResult):
             return
         if self.active_profile is None or self.result_service is None:
@@ -1405,6 +1479,7 @@ class MainWindow(QMainWindow):
             return
         self.result_service.save_merged(self.active_profile.profile_id, result)
         if operation_key.startswith("sync:"):
+            self._taste_profile_dirty = True
             completed = result.user_stats.get("completed_count", 0)
             self._report_activity(
                 f"MAL data updated: {completed} completed titles synced.",
@@ -1423,6 +1498,9 @@ class MainWindow(QMainWindow):
         self.refresh_dashboard()
 
     def _on_operation_error(self, operation_key: str, error: object) -> None:
+        failed_cover = self._aux_cover_operations.pop(operation_key, None)
+        if failed_cover is not None:
+            self._aux_cover_attempted.discard(failed_cover)
         if operation_key.startswith("cover") or not isinstance(error, UserFacingError):
             return
         # An open modal wizard reports its own failures inline. Raising a second,

@@ -153,6 +153,11 @@ def test_local_statistics_build_real_sections_from_the_synced_snapshot(
         "rating-bias",
         "contrarian",
     }
+    overlap = payload["fingerprint"][0]
+    assert overlap["caption"] == "TASTE OVERLAP"
+    assert overlap["value_text"] == "61%"
+    assert overlap["label"] == "IN STEP"
+    assert "1.63 points" in overlap["detail"]
     assert payload["hot_takes"]["higher"][0]["title"] == "Alpha"
     assert payload["hot_takes"]["lower"][0]["title"] == "Beta"
     assert payload["hype_killers"]["biggest"]["title"] == "Beta"

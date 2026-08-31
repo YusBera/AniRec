@@ -794,11 +794,11 @@ class ScanSweep(QWidget):
     effect applied per card, and it is transparent to the mouse throughout so
     it can never swallow a click on a recommendation underneath it.
 
-    Timing is linear and short. Easing would read as modern motion design;
-    a constant-rate sweep reads as a machine drawing a frame.
+    The short sine curve softens the start and stop without making the pass
+    feel floaty. Only the damaged band is repainted while it travels.
     """
 
-    DURATION_MS = 520
+    DURATION_MS = 440
 
     # Band height as a fraction of the swept area.
     BAND = 0.28
@@ -815,7 +815,7 @@ class ScanSweep(QWidget):
         self._animation.setDuration(self.DURATION_MS)
         self._animation.setStartValue(0.0)
         self._animation.setEndValue(1.0)
-        self._animation.setEasingCurve(QEasingCurve.Type.Linear)
+        self._animation.setEasingCurve(QEasingCurve.Type.InOutSine)
         self._animation.valueChanged.connect(self._on_value)
         self._animation.finished.connect(self.hide)
 
@@ -824,6 +824,12 @@ class ScanSweep(QWidget):
         if self.parentWidget() is not None:
             self.setGeometry(self.parentWidget().rect())
         self._animation.stop()
+        from .profile_widgets import motion_enabled
+
+        if not motion_enabled():
+            self._position = 1.0
+            self.hide()
+            return
         self._position = 0.0
         self.show()
         self.raise_()
@@ -888,15 +894,14 @@ class NavMarker(QWidget):
     mark between the rows says the same thing and also says which way you
     went, which is the part a jump cut throws away.
 
-    Timing is linear and short, like ``ScanSweep``.  A carriage travelling to
-    a stop runs at a constant rate; easing would read as phone-app motion, and
-    this is chrome on an instrument.
+    The marker settles with a short deceleration, which keeps rapid page
+    changes responsive while making the selected stop feel deliberate.
 
     The widget is opaque and exactly the width of the mark, so travelling it
     never forces a repaint of anything except the narrow column it moves in.
     """
 
-    DURATION_MS = 150
+    DURATION_MS = 180
     WIDTH = 3
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -918,7 +923,7 @@ class NavMarker(QWidget):
         self._animation.setDuration(self.DURATION_MS)
         self._animation.setStartValue(0.0)
         self._animation.setEndValue(1.0)
-        self._animation.setEasingCurve(QEasingCurve.Type.Linear)
+        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._animation.valueChanged.connect(self._on_value)
         if parent is not None:
             parent.installEventFilter(self)
@@ -988,7 +993,9 @@ class NavMarker(QWidget):
         top = float(target.mapTo(parent, QPoint(0, 0)).y())
         height = float(target.height())
         self._animation.stop()
-        if not animate or not self._placed:
+        from .profile_widgets import motion_enabled
+
+        if not animate or not self._placed or not motion_enabled():
             self._apply(top, height)
             self._placed = True
             self.show()
@@ -1046,7 +1053,7 @@ class ChannelWipe(QWidget):
         self._animation.setDuration(self.DURATION_MS)
         self._animation.setStartValue(0.0)
         self._animation.setEndValue(1.0)
-        self._animation.setEasingCurve(QEasingCurve.Type.Linear)
+        self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._animation.valueChanged.connect(self._on_value)
         self._animation.finished.connect(self.hide)
         self.hide()
@@ -1057,11 +1064,21 @@ class ChannelWipe(QWidget):
         return self._animation
 
     def _on_value(self, value) -> None:
+        previous = self._position
         try:
             self._position = max(0.0, min(1.0, float(value)))
         except (TypeError, ValueError):
             return
-        self.update()
+        self.update(
+            self._segment_rect(previous).united(self._segment_rect(self._position))
+        )
+
+    def _segment_rect(self, position: float) -> QRect:
+        segment = max(24.0, self.width() * self.SEGMENT)
+        travel = self.width() + segment
+        right = position * travel
+        left = right - segment
+        return QRect(int(left) - 2, 0, int(segment) + 5, self.height())
 
     def run(self) -> None:
         """One pass. A second request restarts rather than stacking."""
@@ -1070,6 +1087,12 @@ class ChannelWipe(QWidget):
             return
         self.setGeometry(0, 0, parent.width(), max(1, scaled(self.THICKNESS)))
         self._animation.stop()
+        from .profile_widgets import motion_enabled
+
+        if not motion_enabled():
+            self._position = 1.0
+            self.hide()
+            return
         self._position = 0.0
         self.show()
         self.raise_()

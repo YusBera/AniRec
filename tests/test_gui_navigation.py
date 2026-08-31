@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from PySide6.QtGui import QKeySequence
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QAbstractAnimation, Qt
+from PySide6.QtWidgets import QWidget
 
 from AniRec.gui.main_window import MainWindow, PAGE_DEFINITIONS, PageId
+from AniRec.gui.instrument_widgets import ChannelWipe, ScanSweep
+from AniRec.gui import profile_widgets
 from AniRec.gui_main import create_application
 from AniRec.metadata import MINIMUM_WINDOW_HEIGHT, MINIMUM_WINDOW_WIDTH
 
@@ -112,3 +115,23 @@ def test_navigation_shell_remains_usable_at_minimum_window_size():
     assert window.connection_status.isVisible()
 
     window.close()
+
+
+def test_shared_transition_effects_honor_reduced_motion(monkeypatch):
+    application = create_application([])
+    monkeypatch.setattr(profile_widgets, "_ANIMATIONS_ALLOWED", False)
+    host = QWidget()
+    host.resize(900, 600)
+    host.show()
+    application.processEvents()
+
+    sweep = ScanSweep(host)
+    sweep.sweep()
+    wipe = ChannelWipe(host)
+    wipe.run()
+
+    assert sweep._animation.state() == QAbstractAnimation.State.Stopped
+    assert wipe.animation.state() == QAbstractAnimation.State.Stopped
+    assert not sweep.isVisible()
+    assert not wipe.isVisible()
+    host.close()

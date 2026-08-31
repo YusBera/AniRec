@@ -375,6 +375,21 @@ def test_visible_library_tabs_allow_watch_later_to_be_reviewed_and_removed(
     page.close()
 
 
+def test_library_never_enters_the_discover_autoload_state(system_temp_dir):
+    create_application([])
+    page = RecommendationExplorerPage(
+        state_service=RecommendationStateService(root_override=system_temp_dir)
+    )
+    page.set_visible_states(("liked", "watch-later", "disliked"))
+    page.set_more_available(True)
+    page.set_more_running(True)
+
+    assert not page._autoload_enabled
+    assert not page.more_button.isVisible()
+    assert not page.more_button.isEnabled()
+    page.close()
+
+
 def test_selected_action_strip_only_appears_for_a_selected_table_row():
     application = create_application([])
     page = RecommendationExplorerPage()

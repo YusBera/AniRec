@@ -434,6 +434,7 @@ class RecommendationExplorerPage(QWidget):
         self.detail_dialog: RecommendationDetailDialog | None = None
         self._more_available = False
         self._more_running = False
+        self._recommendation_actions_enabled = True
         self._more_unavailable_reason = ""
         self._profile_loaded = False
         self._ephemeral = False
@@ -514,13 +515,20 @@ class RecommendationExplorerPage(QWidget):
         )
 
     def _update_more_actions(self) -> None:
-        enabled = self._more_available and not self._more_running
+        enabled = (
+            self._recommendation_actions_enabled
+            and self._more_available
+            and not self._more_running
+        )
         self.more_button.setEnabled(enabled)
         # An unavailable top-up is already explained by the surrounding
         # connection/generation state.  Hiding it avoids a large disabled slab
         # that looks actionable but cannot convert; it returns as soon as the
         # candidate pool exists (and stays visible while a request is running).
-        self.more_button.setVisible(self._more_available or self._more_running)
+        self.more_button.setVisible(
+            self._recommendation_actions_enabled
+            and (self._more_available or self._more_running)
+        )
         self.refill_button.setEnabled(enabled)
         unavailable = self._more_unavailable_reason or "Generate recommendations first."
         self.more_button.setToolTip(
@@ -1288,6 +1296,9 @@ class RecommendationExplorerPage(QWidget):
         if not wanted:
             return
         self._visible_states = tuple(wanted)
+        self._recommendation_actions_enabled = "all" in self._visible_states
+        self.set_autoload_enabled(self._recommendation_actions_enabled)
+        self._update_more_actions()
         for state, button in self.library_tabs.items():
             button.setVisible(state in self._visible_states)
         # My Library is a filing surface, not a second recommendation funnel.
@@ -2354,7 +2365,7 @@ class RecommendationExplorerPage(QWidget):
                     if self.profile_id is None
                     else "This title has no MyAnimeList entry to vote on"
                 )
-                self.selected_label.setText(f"{model.display_title} — {reason}")
+                self.selected_label.setText(f"{model.display_title} · {reason}")
                 self.selected_label.setToolTip(reason)
         else:
             self.selected_label.setText("")

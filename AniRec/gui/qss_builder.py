@@ -1328,14 +1328,16 @@ QFrame#profileSection {
 /* The legend is the fold handle, so it reads as pressable without becoming
    a button-shaped object in a page made of panels. */
 QPushButton#profileSectionTitle {
-    background: transparent; border: none; padding: 0; text-align: left;
+    background: transparent; border: 1px solid transparent;
+    padding: 1px 3px; text-align: left;
     color: $text_strong; font-family: $font_display; font-size: $font_lg;
     font-weight: 800;
 }
 QPushButton#profileSectionTitle:hover { color: $accent_soft; }
 QPushButton#profileSectionTitle:focus {
-    color: $accent_soft; border: 1px solid $focus; padding: 1px 3px;
+    color: $text_strong; border-color: $focus;
 }
+QPushButton#profileSectionTitle:pressed { color: $text_strong; }
 QLabel#profileSectionTitle {
     color: $text_strong; font-family: $font_display; font-size: $font_lg;
     font-weight: 800;

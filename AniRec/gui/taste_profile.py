@@ -674,7 +674,7 @@ _ARCHETYPES = {
     ),
     ("contrarian", "low"): (
         "the level head",
-        "Almost nothing you watch surprises you into disagreeing. The handful that did are worth a second look.",
+        "You recognize quality without chasing disagreement for its own sake. When you break from consensus, it means something.",
     ),
     ("rating-bias", "low"): (
         "the hard marker",
@@ -682,23 +682,23 @@ _ARCHETYPES = {
     ),
     ("rating-bias", "high"): (
         "the enthusiast",
-        "You rate generously. You would rather enjoy something than be right about it.",
+        "You are generous with the things that earn your attention. Your list remembers what worked, not just what missed.",
     ),
     ("mainstream", "low"): (
         "the deep diver",
         "Most of your list is material the average watcher has never heard of.",
     ),
     ("mainstream", "high"): (
-        "the mainliner",
-        "You watch what the medium is actually arguing about, while it is still arguing.",
+        "the scene reader",
+        "You know the titles shaping the conversation, and you form your own view while everyone is still talking.",
     ),
     ("completion", "high"): (
         "the finisher",
         "You see things through. Once you start a series it is going on the completed pile.",
     ),
     ("completion", "low"): (
-        "the sampler",
-        "You try a lot and commit to little. Your list is a survey, not a shelf.",
+        "the curious sampler",
+        "You explore widely and protect your time. A series has to earn its place before you stay with it.",
     ),
     ("community-sync", "high"): (
         "the barometer",
@@ -715,11 +715,11 @@ _PRIORITY = ("contrarian", "mainstream", "rating-bias", "community-sync", "compl
 
 
 def archetype_for(profile: "TasteProfile") -> Archetype | None:
-    """Name the single way this reader most differs from an ordinary one.
+    """Name the reader's strongest trait, or their balance across traits.
 
-    Returns ``None`` when nothing is far enough from typical to be worth
-    saying. A page that insists on a headline for a perfectly ordinary reader
-    is inventing a personality, which is the opposite of the point.
+    Returns ``None`` only when there are no usable readings. Profiles near
+    the typical value on every axis receive a balanced identity instead of
+    being described as unremarkable.
     """
     scored: list[tuple[float, int, FingerprintReading]] = []
     for reading in profile.fingerprint:
@@ -739,10 +739,24 @@ def archetype_for(profile: "TasteProfile") -> Archetype | None:
     if not scored:
         return None
     strength, _rank, reading = max(scored, key=lambda item: (item[0], item[1]))
-    # Below this the reader is simply unremarkable on every axis, and saying
-    # so plainly beats promoting noise to a personality.
+    # A reader near the middle of every axis is not devoid of personality.
+    # The truthful conclusion is balance: no single habit dominates the way
+    # they choose, rate, or finish anime.
     if strength < 0.45:
-        return None
+        evidence = tuple(
+            f"{item.value_text} {item.caption.lower()}"
+            for item in profile.fingerprint
+            if item.value_text and item.value_text != DASH
+        )
+        return Archetype(
+            archetype_id="balanced-curator",
+            name="the balanced curator",
+            sentence=(
+                "You know when to trust the crowd and when to keep your own "
+                "counsel. Your taste has range without losing its center."
+            ),
+            evidence=evidence,
+        )
 
     typical, spread = _TYPICAL[reading.reading_id]
     direction = "high" if float(reading.position) >= typical else "low"

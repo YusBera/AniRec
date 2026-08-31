@@ -18,6 +18,7 @@ from AniRec.gui.taste_profile import (
     GenreDNA,
     GenreVerdict,
     HiddenGems,
+    HotTakes,
     HypeKillers,
     RewatchNote,
     SampleTasteProfileProvider,
@@ -80,8 +81,7 @@ def test_the_verdict_reads_both_directions_of_the_same_axis():
     assert archetype_for(high).archetype_id == "contrarian-high"
 
 
-def test_an_ordinary_reader_is_not_given_an_invented_personality():
-    """A label for someone who is typical on every axis is a made-up one."""
+def test_a_balanced_reader_gets_a_truthful_positive_identity():
     profile = TasteProfile(
         fingerprint=(
             _reading("community-sync", 0.60),
@@ -92,7 +92,10 @@ def test_an_ordinary_reader_is_not_given_an_invented_personality():
         )
     )
 
-    assert archetype_for(profile) is None
+    archetype = archetype_for(profile)
+    assert archetype is not None
+    assert archetype.archetype_id == "balanced-curator"
+    assert archetype.name == "the balanced curator"
     assert archetype_for(TasteProfile()) is None
 
 
@@ -196,7 +199,7 @@ def test_the_page_leads_with_the_verdict_and_folds_the_instrument():
     legends = [fact.legend for fact in page.unlisted.facts]
     # Broad to specific: the shape of the reader, then the proof, then the
     # curiosities.
-    assert legends[0] == "COMMUNITY SYNC"
+    assert legends[0] == "TASTE OVERLAP"
     assert legends[5] == "BIGGEST HYPE KILL"
     assert legends[8] == "NEMESIS"
     # Every instrument exists and every one of them starts shut: the reader
@@ -217,13 +220,98 @@ def test_an_instrument_opens_and_closes_from_its_legend():
     assert not section.is_expanded
 
 
+def test_instrument_expansion_settles_before_the_click_is_painted():
+    application = create_application([])
+    page = ProfilePage()
+    page.resize(1200, 700)
+    page.show_profile(SampleTasteProfileProvider().taste_profile())
+    page.show()
+    application.processEvents()
+    section = page.sections["hot-takes"]
+
+    section.title_label.click()
+    immediate = (
+        page.scroll.widget().height(),
+        page.instrument_grid.height(),
+        section.height(),
+    )
+    application.processEvents()
+
+    assert immediate == (
+        page.scroll.widget().height(),
+        page.instrument_grid.height(),
+        section.height(),
+    )
+    page.close()
+
+
+def test_profile_cover_requests_are_delivered_to_the_waiting_title():
+    create_application([])
+    url = "https://cdn.myanimelist.net/images/anime/1/1.jpg"
+    page = ProfilePage()
+    page.show_profile(
+        TasteProfile(
+            hot_takes=HotTakes(
+                higher=(TitleVerdict("Cover Test", cover_url=url),),
+            )
+        )
+    )
+    requested = []
+    page.cover_requested.connect(requested.append)
+    row = page.hot_takes.widgets[0].rows[0]
+    delivered = []
+    row.set_cover_data = delivered.append
+
+    page.request_visible_covers()
+    page.deliver_cover(url, b"image-data")
+
+    assert requested == [url]
+    assert delivered == [b"image-data"]
+
+
+def test_more_data_columns_do_not_share_their_vertical_row_height():
+    from PySide6.QtWidgets import QFrame
+
+    from AniRec.gui.profile_page import ReflowGrid
+
+    application = create_application([])
+    grid = ReflowGrid(
+        320,
+        spacing="lg",
+        avoid_orphans=False,
+        independent_columns=True,
+    )
+    cards = [QFrame() for _index in range(4)]
+    for card, height in zip(cards, (80, 300, 80, 80), strict=True):
+        card.setFixedHeight(height)
+
+    grid.resize(700, 500)
+    grid.set_widgets(cards)
+    grid.show()
+    application.processEvents()
+
+    assert grid._columns == 2
+    assert abs(cards[0].width() - cards[1].width()) <= 1
+    assert cards[2].y() < cards[3].y()
+    assert cards[2].y() >= cards[0].height()
+    assert cards[3].y() >= cards[1].height()
+
+    grid.resize(300, 800)
+    application.processEvents()
+
+    assert grid._columns == 1
+    assert all(card.x() == cards[0].x() for card in cards)
+    assert all(cards[index].y() < cards[index + 1].y() for index in range(3))
+    grid.close()
+
+
 def test_a_reader_with_no_nameable_trait_still_gets_a_sentence():
     """The hero must never render blank - it is the reason the page exists."""
     create_application([])
     page = ProfilePage()
     page.show_profile(TasteProfile(habits=WatchingHabits()))
 
-    assert "hard to pin down" in page.verdict.name_label.text()
+    assert "still writing the profile" in page.verdict.name_label.text()
     assert page.verdict.sentence_label.text()
     assert page.unlisted.facts == ()
 
@@ -256,7 +344,7 @@ def test_a_claim_the_reader_cannot_check_carries_its_titles():
     assert divisive[0].endswith("10") and divisive[-1].endswith("2")
 
     # A percentage explains itself and needs no titles.
-    assert by_legend["COMMUNITY SYNC"].evidence == ()
+    assert by_legend["TASTE OVERLAP"].evidence == ()
 
 
 def test_evidence_never_names_the_same_title_twice():

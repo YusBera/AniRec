@@ -530,12 +530,11 @@ class ProfileTextCatalog:
     # one that is, in a sentence somebody would repeat.
     verdict_legend: str = "THE READING"
     verdict_prefix: str = "You are"
-    # Shown when nothing about this reader is far enough from ordinary to
-    # name. Saying so is better than promoting noise to a personality.
-    verdict_plain_name: str = "hard to pin down"
+    # Shown only when there is not enough scored history to read fairly.
+    verdict_plain_name: str = "still writing the profile"
     verdict_plain_sentence: str = (
-        "Nothing in your scoring stands far enough out to give you a label. "
-        "That is its own kind of answer."
+        "There is not enough scored history yet to give your taste a fair "
+        "headline. A few more ratings will sharpen the picture."
     )
 
     receipts_legend: str = "THE RECEIPTS"

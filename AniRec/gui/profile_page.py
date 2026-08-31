@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 import math
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, Qt, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
@@ -166,6 +166,7 @@ class ReflowGrid(QWidget):
         uniform_height: bool = False,
         slots: int = 0,
         avoid_orphans: bool = True,
+        independent_columns: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("profileReflow")
@@ -185,6 +186,11 @@ class ReflowGrid(QWidget):
         # instrument panels: ten in three columns leaves one orphan, and
         # avoiding it cost a third of the page's width on every row above.
         self._avoid_orphans = bool(avoid_orphans)
+        # Instrument cards can differ by hundreds of pixels once expanded.
+        # Independent columns let the next card follow its own predecessor
+        # instead of waiting for the tallest card in a shared grid row.
+        self._independent_columns = bool(independent_columns)
+        self._column_containers: list[QWidget] = []
         self._widgets: list[QWidget] = []
         self._columns = 0
         self.grid = QGridLayout(self)
@@ -232,15 +238,57 @@ class ReflowGrid(QWidget):
             columns -= 1
         if columns != self._columns:
             self._columns = columns
-            while self.grid.count():
-                self.grid.takeAt(0)
-            for index, widget in enumerate(self._widgets):
-                self.grid.addWidget(
-                    widget, index // columns, index % columns, Qt.AlignmentFlag.AlignTop
-                )
-            for column in range(max(columns, self.grid.columnCount())):
-                self.grid.setColumnStretch(column, 1 if column < columns else 0)
+            if self._independent_columns:
+                self._rebuild_independent_columns(columns)
+            else:
+                while self.grid.count():
+                    self.grid.takeAt(0)
+                for index, widget in enumerate(self._widgets):
+                    self.grid.addWidget(
+                        widget,
+                        index // columns,
+                        index % columns,
+                        Qt.AlignmentFlag.AlignTop,
+                    )
+                for column in range(max(columns, self.grid.columnCount())):
+                    self.grid.setColumnStretch(column, 1 if column < columns else 0)
         self._equalize_widget_heights(columns, available, gap)
+
+    def _rebuild_independent_columns(self, columns: int) -> None:
+        """Stack cards per column so one tall card cannot enlarge a peer row."""
+        for widget in self._widgets:
+            widget.setParent(self)
+        while self.grid.count():
+            self.grid.takeAt(0)
+        for container in self._column_containers:
+            container.setParent(None)
+            container.deleteLater()
+        self._column_containers = []
+
+        column_layouts: list[QVBoxLayout] = []
+        for column in range(columns):
+            container = QWidget(self)
+            container.setObjectName("profileReflowColumn")
+            container.setSizePolicy(
+                QSizePolicy.Policy.Ignored,
+                QSizePolicy.Policy.Preferred,
+            )
+            layout = QVBoxLayout(container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(self.grid.verticalSpacing())
+            layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+            self._column_containers.append(container)
+            column_layouts.append(layout)
+            self.grid.addWidget(container, 0, column, Qt.AlignmentFlag.AlignTop)
+            self.grid.setColumnStretch(column, 1)
+
+        for index, widget in enumerate(self._widgets):
+            column_layouts[index % columns].addWidget(widget)
+
+        for column in range(columns, self.grid.columnCount()):
+            self.grid.setColumnStretch(column, 0)
+        self.grid.invalidate()
+        self.updateGeometry()
 
     def _equalize_widget_heights(
         self, columns: int, available: int, gap: int
@@ -252,7 +300,7 @@ class ReflowGrid(QWidget):
         frames should still terminate on the same baseline at every reflow.
         Other users of ``ReflowGrid`` remain content-sized.
         """
-        if not self._uniform_height:
+        if not self._uniform_height or self._independent_columns:
             return
         item_width = max(
             scaled(self._minimum),
@@ -386,6 +434,11 @@ class ProfileSection(QFrame):
         self.title_label.setAccessibleDescription(
             "Expanded" if expanded else "Collapsed"
         )
+        # Showing a height-for-width chart posts more than one layout pass.
+        # Finish those passes before Qt paints the click so the page does not
+        # briefly draw the section at an intermediate height.
+        if self.window().isVisible():
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.LayoutRequest)
 
     @property
     def is_expanded(self) -> bool:
@@ -2236,7 +2289,10 @@ class ProfilePage(QWidget):
         self.container_layout.addWidget(instruments_hint)
 
         self.instrument_grid = ReflowGrid(
-            INSTRUMENT_MIN_WIDTH, spacing="lg", avoid_orphans=False
+            INSTRUMENT_MIN_WIDTH,
+            spacing="lg",
+            avoid_orphans=False,
+            independent_columns=True,
         )
         self.container_layout.addWidget(self.instrument_grid)
         self._instruments: list[ProfileSection] = []
@@ -2614,6 +2670,12 @@ class ProfilePage(QWidget):
     def request_visible_covers(self) -> None:
         for row in self._cover_rows():
             row.request_cover()
+
+    def deliver_cover(self, url: str, data: bytes) -> None:
+        """Hand downloaded artwork to every profile row waiting for it."""
+        for row in self._cover_rows():
+            if row.verdict.cover_url == url:
+                row.set_cover_data(data)
 
     def _cover_rows(self):
         """Every row on the page that has a poster slot."""

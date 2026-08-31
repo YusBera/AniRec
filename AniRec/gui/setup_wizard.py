@@ -6,11 +6,12 @@ import time
 from enum import IntEnum
 
 from ..application.pipeline import FULL_PIPELINE_STEP_IDS, PipelineOrchestrator
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QDialog,
+    QFrame,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QSpinBox,
     QVBoxLayout,
@@ -60,6 +62,10 @@ ONBOARDING_TOKEN_PROFILE_ID = "onboarding"
 # How long closing the wizard waits for background work to unwind before
 # closing anyway. Kept short: this blocks the GUI thread.
 CLOSE_GRACE_SECONDS = 1.5
+
+WIZARD_DEFAULT_SIZE = QSize(760, 520)
+WIZARD_MINIMUM_SIZE = QSize(560, 360)
+WIZARD_SCREEN_FRACTION = 0.75
 
 
 class WizardStep(IntEnum):
@@ -166,7 +172,7 @@ def _configure_wizard_form(form: QFormLayout) -> None:
     )
     form.setFormAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
     form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
-    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+    form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
     form.setHorizontalSpacing(18)
     form.setVerticalSpacing(8)
 
@@ -534,6 +540,7 @@ class SetupWizard(QDialog):
         pipeline_orchestrator: PipelineOrchestrator | None = None,
         result_service: ResultService | None = None,
         worker_controller: WorkerController | None = None,
+        available_screen_size: QSize | None = None,
     ) -> None:
         super().__init__(parent)
         self.onboarding = onboarding
@@ -552,8 +559,15 @@ class SetupWizard(QDialog):
         # and gets none of the shell's treatment unless it asks.
         self.setWindowTitle(WIZARD_TEXT.title)
         self.setModal(True)
-        self.resize(760, 520)
-        self.setMinimumSize(680, 460)
+        screen_size = available_screen_size
+        if screen_size is None:
+            screen_size = self.screen().availableGeometry().size()
+        initial_size = self._initial_size_for_screen(screen_size)
+        self.setMinimumSize(
+            min(WIZARD_MINIMUM_SIZE.width(), initial_size.width()),
+            min(WIZARD_MINIMUM_SIZE.height(), initial_size.height()),
+        )
+        self.resize(initial_size)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 20, 24, 20)
@@ -585,7 +599,19 @@ class SetupWizard(QDialog):
             page.completion_changed.connect(self._update_navigation)
             self.pages[step] = page
             self.stack.addWidget(page)
-        outer.addWidget(self.stack, 1)
+        self.content_scroll = QScrollArea()
+        self.content_scroll.setObjectName("setupWizardScroll")
+        self.content_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.content_scroll.setWidgetResizable(True)
+        self.content_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.content_scroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.content_scroll.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.content_scroll.setWidget(self.stack)
+        outer.addWidget(self.content_scroll, 1)
 
         buttons = QHBoxLayout()
         self.cancel_button = QPushButton(WIZARD_TEXT.cancel)
@@ -613,6 +639,22 @@ class SetupWizard(QDialog):
         self.worker_controller.cancelled.connect(self._worker_cancelled)
         self.worker_controller.finished.connect(self._worker_finished)
         self.go_to(WizardStep.WELCOME)
+
+    @staticmethod
+    def _initial_size_for_screen(available_size: QSize) -> QSize:
+        """Keep the dialog within 75 percent of the usable logical screen."""
+        screen_width = max(1, available_size.width())
+        screen_height = max(1, available_size.height())
+        return QSize(
+            min(
+                WIZARD_DEFAULT_SIZE.width(),
+                max(1, int(screen_width * WIZARD_SCREEN_FRACTION)),
+            ),
+            min(
+                WIZARD_DEFAULT_SIZE.height(),
+                max(1, int(screen_height * WIZARD_SCREEN_FRACTION)),
+            ),
+        )
 
     @property
     def connection_page(self) -> ApiSettingsPage:

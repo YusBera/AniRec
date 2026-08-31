@@ -248,8 +248,17 @@ def _fingerprint_payload(records: tuple[_TitleRecord, ...]) -> list[dict]:
     if not compared:
         return []
 
-    sync = sum(abs(record.delta or 0.0) <= 1.0 for record in compared) / len(compared)
-    bias = _mean([record.delta for record in compared if record.delta is not None]) or 0.0
+    # Community overlap is continuous rather than a one-point pass/fail gate.
+    # An exact match contributes fully, a two-point gap contributes half, and
+    # a gap of four points or more contributes nothing. This keeps a 1.01 gap
+    # from being treated as categorically different from a 0.99 gap.
+    gaps = [abs(record.delta or 0.0) for record in compared]
+    overlap = _mean([max(0.0, 1.0 - gap / 4.0) for gap in gaps]) or 0.0
+    average_gap = _mean(gaps) or 0.0
+    bias = (
+        _mean([record.delta for record in compared if record.delta is not None])
+        or 0.0
+    )
     contrarian = (
         sum(abs(record.delta or 0.0) >= 2.0 for record in compared) / len(compared)
     )
@@ -266,20 +275,23 @@ def _fingerprint_payload(records: tuple[_TitleRecord, ...]) -> list[dict]:
     return [
         {
             "id": "community-sync",
-            "caption": "COMMUNITY SYNC",
-            "value_text": f"{sync:.0%}",
+            "caption": "TASTE OVERLAP",
+            "value_text": f"{overlap:.0%}",
             "label": (
-                "HIGH ALIGNMENT"
-                if sync >= 0.75
-                else "MOSTLY ALIGNED"
-                if sync >= 0.5
-                else "LOW ALIGNMENT"
+                "STRONG SHARED INSTINCT"
+                if overlap >= 0.78
+                else "IN STEP"
+                if overlap >= 0.58
+                else "OWN RHYTHM"
+                if overlap >= 0.38
+                else "TASTE TRAILBLAZER"
             ),
             "detail": (
-                f"Your score is within one point of the community on "
-                f"{round(sync * len(compared))} of {len(compared)} rated titles."
+                f"Your ratings sit {average_gap:.2f} points from the community "
+                f"on average across {len(compared)} titles. Every score gap "
+                f"contributes to this reading."
             ),
-            "position": sync,
+            "position": overlap,
             "readout": "cells",
         },
         {

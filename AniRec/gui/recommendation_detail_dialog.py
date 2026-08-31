@@ -27,7 +27,13 @@ from PySide6.QtWidgets import (
 
 from .cover_art import rounded_cover
 from .design_tokens import RADIUS, SPACE
-from .instrument_widgets import InstrumentPanel, ScoreTrack, Scanlines, keep_crisp
+from .instrument_widgets import (
+    ChannelWipe,
+    InstrumentPanel,
+    ScoreTrack,
+    Scanlines,
+    keep_crisp,
+)
 from .recommendation_card import open_mal_url
 from .recommendation_view_model import RecommendationViewModel
 from .resources import cover_placeholder_pixmap, title_placeholder_pixmap
@@ -308,6 +314,7 @@ class RecommendationDetailDialog(QDialog):
         content_layout.addStretch()
         self.scroll.setWidget(content)
         root.addWidget(self.scroll, 1)
+        self.content_wipe = ChannelWipe(self.scroll.viewport())
 
         # CHANGE [HONEST-READOUT]: the headline percentage no longer counts up
         # from zero. It used to run 0 -> value over 680ms, which meant that for
@@ -380,6 +387,7 @@ class RecommendationDetailDialog(QDialog):
         self.synopsis_toggle.setChecked(False)
         self._pending_animation = True
         if self.isVisible():
+            self.content_wipe.run()
             self._animate_score()
 
     def _render_contributions(self, model: RecommendationViewModel) -> None:

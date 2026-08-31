@@ -13,10 +13,10 @@
   "fingerprint": [
     {
       "id": "community-sync",
-      "caption": "COMMUNITY SYNC",
+      "caption": "TASTE OVERLAP",
       "value_text": "72%",
-      "label": "MOSTLY ALIGNED",
-      "detail": "Your score lands within a point of the community on 7 titles in 10.",
+      "label": "IN STEP",
+      "detail": "Your ratings often move with the community while your strongest disagreements still stand out.",
       "position": 0.72,
       "readout": "cells"
     },

@@ -1283,14 +1283,16 @@ QFrame#profileSection {
 /* The legend is the fold handle, so it reads as pressable without becoming
    a button-shaped object in a page made of panels. */
 QPushButton#profileSectionTitle {
-    background: transparent; border: none; padding: 0; text-align: left;
+    background: transparent; border: 1px solid transparent;
+    padding: 1px 3px; text-align: left;
     color: #0C1613; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 10.3pt;
     font-weight: 800;
 }
 QPushButton#profileSectionTitle:hover { color: #5E4813; }
 QPushButton#profileSectionTitle:focus {
-    color: #5E4813; border: 1px solid #2C7C74; padding: 1px 3px;
+    color: #0C1613; border-color: #2C7C74;
 }
+QPushButton#profileSectionTitle:pressed { color: #0C1613; }
 QLabel#profileSectionTitle {
     color: #0C1613; font-family: "Martian Mono", "Bahnschrift Condensed", "Bahnschrift", "Yu Gothic UI Semibold", "Segoe UI Variable Display", sans-serif; font-size: 10.3pt;
     font-weight: 800;
