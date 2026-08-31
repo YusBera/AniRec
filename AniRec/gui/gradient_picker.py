@@ -56,7 +56,7 @@ class GradientPreview(QWidget):
             f"QWidget#gradientPreview {{"
             f" background: qlineargradient(x1:0, y1:0, x2:1, y2:1,"
             f" stop:0 {start}, stop:1 {end});"
-            f" border: 1px solid {colours['border']}; border-radius: 10px; }}"
+            f" border: 1px solid {colours['border']}; border-radius: 1px; }}"
             f" QLabel#gradientPreviewTitle {{ color: {colours['text_strong']};"
             f" font-weight: 700; background: transparent; }}"
             f" QLabel#gradientPreviewBody {{ color: {colours['text_muted']};"
@@ -172,7 +172,7 @@ class GradientPicker(QWidget):
             readable = "#000000" if QColor(colour).lightness() > 127 else "#FFFFFF"
             button.setStyleSheet(
                 f"background: {colour}; color: {readable};"
-                " border: 1px solid rgba(128,128,128,0.5); border-radius: 8px;"
+                " border: 1px solid rgba(128,128,128,0.5); border-radius: 1px;"
                 " padding: 8px 10px; font-weight: 600;"
             )
         self.preview.set_colours(self._start, self._end)

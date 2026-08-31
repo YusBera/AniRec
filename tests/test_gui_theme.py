@@ -128,3 +128,61 @@ def test_visible_page_copy_comes_from_central_english_catalog():
         (page.label, page.description) for page in UI_TEXT.pages
     ]
     assert all(page.label.isascii() for page in UI_TEXT.pages)
+
+
+def _rule_positions(stylesheet: str, needle: str) -> list[int]:
+    return [
+        index
+        for index, line in enumerate(stylesheet.splitlines())
+        if needle in line and "{" in line or needle in line
+    ]
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_disabled_rules_are_the_last_word_in_the_stylesheet(theme):
+    """A disabled control must not be overridden by a role written later.
+
+    Qt follows CSS2 specificity, where ``QPushButton:disabled`` and
+    ``QPushButton[libraryTab="true"]`` score exactly the same - so whichever
+    appears last in the sheet wins. The disabled block used to sit two hundred
+    lines from the end carrying a comment that said it was last. The sheet
+    grew past it, and the collection tabs added afterwards measured
+    pixel-identical enabled and disabled: the whole point of the block,
+    silently undone by a rule that was merely written later.
+
+    This pins the ordering rather than the appearance, because ordering is the
+    thing that broke.
+    """
+    from AniRec.gui.qss_builder import build_stylesheet
+
+    stylesheet = build_stylesheet(theme)
+    lines = stylesheet.splitlines()
+
+    last_disabled = max(
+        index for index, line in enumerate(lines) if ":disabled" in line
+    )
+    # Every selector that competes with :disabled on equal specificity.
+    competing = [
+        index
+        for index, line in enumerate(lines)
+        if "QPushButton[" in line and ":disabled" not in line
+    ]
+    assert competing, "no role rules found; the check would pass vacuously"
+    assert max(competing) < last_disabled, (
+        "a QPushButton role rule is written after the last :disabled rule, "
+        "so it silently overrides the disabled state"
+    )
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+def test_focus_and_selection_do_not_collapse_into_one_look(theme):
+    """Focus and selection must remain separable on the collection tabs.
+
+    Selection takes the accent; focus on a tab that is *not* selected takes
+    the signal colour. Without the negation the tab that is both current and
+    focused would show two meanings in one border.
+    """
+    from AniRec.gui.qss_builder import build_stylesheet
+
+    stylesheet = build_stylesheet(theme)
+    assert 'QPushButton[libraryTab="true"]:focus:!checked' in stylesheet

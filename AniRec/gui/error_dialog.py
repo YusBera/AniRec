@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .instrument_widgets import Scanlines
 from ..errors import UserFacingError
 
 
@@ -33,6 +34,9 @@ class ErrorDialog(QDialog):
         self.open_logs_callback = open_logs
         self.retry_requested = False
         self.setObjectName("errorDialog")
+        # CHANGE [CRT]: the raster, so this reads as part of the same
+        # machine. Installed last in __init__ so it sits above the
+        # dialog's own children; it re-raises itself when more arrive.
         self.setWindowTitle(error.title)
         self.setModal(False)
         self.setMinimumWidth(520)
@@ -94,6 +98,8 @@ class ErrorDialog(QDialog):
         self.retry_button.clicked.connect(self._retry)
         self.log_button.clicked.connect(self._open_logs)
         layout.addWidget(buttons)
+        self.scanlines = Scanlines(self)
+        self.scanlines.raise_()
 
     def _toggle_technical_details(self, visible: bool) -> None:
         self.technical_details.setVisible(visible)

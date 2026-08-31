@@ -1,4 +1,4 @@
-"""The restructured shell: three surfaces, hidden tooling, and demo mode."""
+"""The restructured shell: focused surfaces, hidden tooling, and demo mode."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from AniRec.gui.main_window import DISCOVER_STATES, LIBRARY_STATES, MainWindow, 
 from PySide6.QtWidgets import QApplication
 
 from AniRec.gui_main import create_application
-from AniRec.services import SampleDataService
+from AniRec.services import CoverImageResult, SampleDataService
 
 
 @pytest.fixture
@@ -24,10 +24,12 @@ def window():
 # ---------------------------------------------------------------------------
 
 
-def test_navigation_offers_only_three_destinations(window):
+def test_navigation_offers_only_product_destinations(window):
     assert set(window.navigation_buttons) == {
         PageId.DISCOVER,
         PageId.LIBRARY,
+        PageId.PROFILE,
+        PageId.COMPARE,
         PageId.SETTINGS,
     }
 
@@ -75,6 +77,39 @@ def test_one_action_replaces_the_seven_step_pipeline_view(window):
     assert requested == [True]
 
 
+def test_profile_cover_requests_start_the_shared_cover_worker(
+    window, monkeypatch, tmp_path
+):
+    started = []
+    monkeypatch.setattr(
+        window.worker_controller,
+        "start",
+        lambda operation_key, worker: started.append((operation_key, worker)),
+    )
+    url = "https://cdn.myanimelist.net/images/anime/1/1.jpg"
+
+    window.profile_page.cover_requested.emit(url)
+
+    assert len(started) == 1
+    operation_key, worker = started[0]
+    assert operation_key.startswith("cover:")
+    assert worker.url == url
+    assert worker.service is window.cover_service
+
+    delivered = []
+    monkeypatch.setattr(
+        window.profile_page,
+        "deliver_cover",
+        lambda delivered_url, data: delivered.append((delivered_url, data)),
+    )
+    window._on_operation_result(
+        operation_key,
+        CoverImageResult(url, b"image-data", tmp_path / "cover.img", False),
+    )
+
+    assert delivered == [(url, b"image-data")]
+
+
 def test_progress_is_reported_where_the_user_is_looking(window):
     """Status must land on a visible surface.
 
@@ -84,7 +119,7 @@ def test_progress_is_reported_where_the_user_is_looking(window):
     """
     window._report_activity("Your recommendation feed has been refreshed.")
 
-    assert "refreshed" in window.discover_page.status_label.text()
+    assert "refreshed" in window.discover_page.message_label.text()
 
 
 def test_the_refresh_button_shows_that_work_is_under_way(window):

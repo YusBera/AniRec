@@ -77,6 +77,14 @@ UI_TEXT = UiTextCatalog(
     pages=(
         PageText("Discover", "Anime picked for you, and the taste behind them."),
         PageText("My Library", "Everything you have loved, saved, or passed on."),
+        # "Profile" rather than "Statistics": the page is a portrait of one
+        # reader's taste, and naming it after the arithmetic would promise a
+        # analytics screen, which is exactly what it is built not to be.
+        PageText("Profile", "The shape of your taste, read off your own ratings."),
+        # "Compare" rather than "Friends": the surface works on any public
+        # username, and a friends list is an accelerator it can do without.
+        # Naming it after the list would promise a feature that is optional.
+        PageText("Compare", "How your taste lines up with someone else's."),
         PageText("Settings", "Your account, how AniRec picks, and your data."),
     ),
 )
@@ -158,7 +166,7 @@ class WizardTextCatalog:
     )
     # Short enough to sit on one line of the status strip. The long form said
     # the same thing across two sentences and needed a banner of its own.
-    demo_banner: str = "Sample data — connect MyAnimeList to see your own picks."
+    demo_banner: str = "Sample data. Connect MyAnimeList to see your own picks."
     demo_banner_action: str = "Connect my account"
     client_id: str = "Client ID"
     client_secret: str = "Client Secret"
@@ -255,15 +263,29 @@ OAUTH_STATUS_TEXT = {
 class DiscoverTextCatalog:
     """Copy for the Discover surface. Plain language, no pipeline vocabulary."""
 
-    refresh: str = "Get new recommendations"
-    refreshing: str = "Finding anime for you…"
+    channel: str = "DISCOVER // 推薦"
+    state_caption: str = "STATE"
+    taste_caption: str = "TASTE VECTOR"
+    refresh: str = "RUN ANALYSIS"
+    refreshing: str = "ANALYSING…"
     refresh_accessible: str = "Update your anime list and pick new recommendations"
-    status_ready: str = "Ready when you are."
+    # A field captioned STATE holds states, not sentences. The message
+    # that used to be written here now has its own prose label beside it.
+    status_ready: str = "READY"
+    status_busy: str = "BUSY"
+    status_fault: str = "FAULT"
     status_never_synced: str = "Connect your MyAnimeList account to get started."
     status_synced_template: str = "Last updated {when}."
-    taste_show: str = "Why these?"
-    taste_hide: str = "Hide"
+    taste_show: str = "EXPAND"
+    taste_hide: str = "COLLAPSE"
+    # CHANGE [TASTE-SENTENCE]: one list held both genres and studios, so the
+    # line read "You tend to enjoy Samurai, Bandai Namco Pictures, Parody,
+    # Shaft." - a studio is not a thing you enjoy in the way a genre is, and
+    # the mixture reads as a data fault even though the ranking behind it is
+    # correct. The two kinds now get their own clause.
     taste_summary: str = "You tend to enjoy {genres}."
+    taste_summary_studios: str = "You tend to enjoy {genres}, often from {studios}."
+    taste_summary_studios_only: str = "You tend to reach for work from {studios}."
     taste_empty: str = "Your taste appears here once AniRec has seen your ratings."
     taste_none_yet: str = "nothing yet"
     taste_line: str = "{genre}: {count} you have finished"
@@ -274,19 +296,438 @@ class DiscoverTextCatalog:
 class SettingsTextCatalog:
     """Copy for the simplified Settings surface."""
 
-    adventurousness: str = "Adventurousness"
+    adventurousness: str = "ADVENTUROUSNESS"
     adventurousness_hint: str = (
         "Low keeps close to what you already love. High reaches further for "
         "something unexpected."
     )
-    adventurousness_low: str = "Familiar"
-    adventurousness_high: str = "Surprising"
-    developer_tools: str = "Developer tools"
+    adventurousness_low: str = "FAMILIAR"
+    adventurousness_high: str = "SURPRISING"
+    developer_tools: str = "DEVELOPER TOOLS"
     developer_tools_hint: str = (
         "Shows the individual data steps AniRec runs for you. Not needed for "
         "normal use."
     )
 
+
+
+@dataclass(frozen=True)
+class FilterTextCatalog:
+    """Copy for the filter row, the metadata search and the profile input.
+
+    Every sentence here names the thing it is about. "Could not load" on its
+    own is the version of this that leaves a reader guessing which of five
+    pills went wrong, and whether it was their typing or the network.
+    """
+
+    # ---- the pill row ----
+    clear_all: str = "CLEAR ALL"
+    clear_all_accessible: str = "Remove every active filter"
+    pill_dismiss_accessible: str = "Remove the {label} filter {value}"
+    pill_loading: str = "Loading {value}'s anime list…"
+    pill_failed: str = "Could not load {value}."
+    pill_retry: str = "RETRY"
+    pill_retry_accessible: str = "Try loading {value} again"
+
+    # ---- genre and studio search ----
+    search_label: str = "FIND A GENRE OR STUDIO"
+    search_placeholder: str = "Psychological, Shaft, Science SARU…"
+    search_accessible: str = "Search genres and studios to filter the feed"
+    search_suggestion: str = "{value} // {type}"
+    search_no_results: str = "No matching genres or studios."
+    # Naming what was typed makes it obvious the box received the input and
+    # simply has nothing for it, rather than having stopped responding.
+    search_no_results_for: str = (
+        "No genre or studio matches “{query}” in the anime loaded so far."
+    )
+
+    # ---- group profiles ----
+    profile_label: str = "ADD A FRIEND'S MAL USERNAME FOR GROUP RECOMMENDATIONS"
+    profile_placeholder: str = "MyAnimeList username"
+    profile_accessible: str = (
+        "Add a friend's MyAnimeList username to include their taste in these "
+        "recommendations"
+    )
+    profile_add: str = "ADD"
+    profile_add_accessible: str = "Add this profile to the group recommendation"
+    profile_limit: str = "Maximum 5 profiles for group recommendations."
+    profile_duplicate: str = "{value} is already added."
+    profile_is_you: str = "{value} is your own profile. It is always included."
+    profile_invalid: str = (
+        "A MyAnimeList username uses letters, numbers and underscores only."
+    )
+    profile_not_found: str = "No MyAnimeList user called {value}."
+    profile_private: str = (
+        "Could not load {value}. Their anime list may be private."
+    )
+    profile_unreachable: str = "Could not reach MyAnimeList for {value}."
+    profile_rate_limited: str = (
+        "MyAnimeList is busy right now. {value} was not loaded."
+    )
+    profile_failed: str = "Could not load {value}."
+    profile_needs_client_id: str = (
+        "Connect your MyAnimeList account in Settings to add other profiles."
+    )
+    profile_offline: str = "Profile lookup is not available in this session."
+
+    # ---- group mode ----
+    group_banner: str = "GROUP MODE · {count} PROFILES · {names}"
+    group_banner_loading: str = "GROUP MODE · RESOLVING {count} {noun}"
+    # Qt has no pluralisation and the count here is genuinely often one.
+    profile_noun_one: str = "PROFILE"
+    profile_noun_many: str = "PROFILES"
+    group_pending: str = (
+        "Group recommendations need a backend that ranks for several profiles "
+        "at once. Your own feed is shown until that lands."
+    )
+    group_partial: str = "{count} of the added profiles could not be loaded."
+    group_partial_one: str = "One added profile could not be loaded."
+    group_all_failed: str = (
+        "None of the added profiles could be loaded, so these are your own "
+        "recommendations."
+    )
+    filters_empty: str = (
+        "No anime match the current filters. Remove one to widen the feed."
+    )
+
+
+FILTER_TEXT = FilterTextCatalog()
+
+
+@dataclass(frozen=True)
+class CompareTextCatalog:
+    """Copy for the Friends surface."""
+
+    channel: str = "COMPARE // 相性"
+    hint: str = (
+        "Enter a MyAnimeList username to see how your taste lines up with "
+        "theirs."
+    )
+    username_label: str = "MAL USERNAME"
+    username_placeholder: str = "MyAnimeList username"
+    username_accessible: str = "MyAnimeList username to compare against"
+    username_required: str = "Enter a MyAnimeList username."
+    submit: str = "COMPARE"
+    submit_busy: str = "COMPARING…"
+    submit_accessible: str = "Compare your anime list with this profile"
+    friends_label: str = "YOUR FRIENDS"
+    friends_accessible: str = "Choose a friend from your public MyAnimeList friends list"
+    friends_placeholder: str = "Choose a friend…"
+    # A private friends list is not an error and must not read as one: the
+    # surface still works, by the route that was always there.
+    friends_private: str = (
+        "Your MyAnimeList friends list is not public, so it cannot be listed "
+        "here. Comparing by username works as normal."
+    )
+    friends_empty: str = (
+        "No public friends list available. Comparing by username works as "
+        "normal."
+    )
+    friends_unavailable: str = (
+        "Friends lists are not available yet. Comparing by username works as "
+        "normal."
+    )
+
+    legend: str = "COMPATIBILITY"
+    score_caption: str = "MATCH SCORE"
+    stat_total: str = "ANIME ON THEIR LIST"
+    stat_shared: str = "SHARED ANIME"
+    stat_both_rated: str = "BOTH RATED"
+    sample_stamp: str = "SAMPLE DATA"
+    sample_stamp_tooltip: str = (
+        "A bundled example comparison. Connect MyAnimeList to compare real "
+        "profiles."
+    )
+
+    # ---- states ----
+    idle_title: str = "Compare your taste"
+    # CHANGE [COPY-MATCHES-CONTROLS]: two versions, because the picker this
+    # sentence used to assume is not always on screen. When friends lists are
+    # unimplemented the control is hidden, and an empty state that opens with
+    # "Pick a friend" then sends the reader looking for something that is not
+    # there. Which one is shown is decided from the control's own visibility,
+    # so the copy cannot drift away from the interface again.
+    idle_message: str = (
+        "Pick a friend, or type any MyAnimeList username, to see where your "
+        "ratings agree and where they do not."
+    )
+    idle_message_no_friends: str = (
+        "Type any MyAnimeList username to see where your ratings agree and "
+        "where they do not."
+    )
+    loading_title: str = "Reading {username}'s list"
+    loading_message: str = "Fetching their ratings and lining them up with yours."
+    not_found_title: str = "No such profile"
+    not_found_message: str = (
+        "MyAnimeList has no user called {username}. Check the spelling and "
+        "try again."
+    )
+    private_title: str = "That list is private"
+    private_message: str = (
+        "{username} exists, but their anime list is not public, so there is "
+        "nothing to compare against."
+    )
+    network_title: str = "MyAnimeList is unreachable"
+    network_message: str = (
+        "AniRec could not reach MyAnimeList. Check your connection and try "
+        "again."
+    )
+    api_title: str = "MyAnimeList could not answer"
+    api_message: str = (
+        "The request was refused or timed out. This usually clears on its own. "
+        "Try again shortly."
+    )
+    not_connected_title: str = "Connect your account first"
+    not_connected_message: str = (
+        "Comparing profiles needs a MyAnimeList Client ID. Add one in "
+        "Settings, then come back."
+    )
+    backend_title: str = "Compatibility is not built yet"
+    backend_message: str = (
+        "Live compatibility is not available in this build. You can still "
+        "inspect the bundled sample comparison."
+    )
+    backend_sample_action: str = "Show a sample comparison"
+    retry: str = "Try again"
+    self_compare_title: str = "That is you"
+    self_compare_message: str = (
+        "Comparing a list with itself always agrees. Enter someone else's "
+        "username."
+    )
+    empty_section_default: str = "Nothing to show in this section."
+    section_count: str = "{count} TITLES"
+    section_count_one: str = "1 TITLE"
+
+
+COMPARE_TEXT = CompareTextCatalog()
+
+
+@dataclass(frozen=True)
+class ProfileTextCatalog:
+    """Copy for the Profile surface.
+
+    Section headings are written as instrument legends rather than as report
+    titles - "RATING DISTRIBUTION", not "Your rating distribution" - because
+    the whole page is one panel and a panel labels its readouts. The sentences
+    underneath are ordinary English: a legend says what a thing is, and the
+    line under it says what it means.
+    """
+
+    # Keep the channel technical and legible in the bundled display face.
+    # Decorative Japanese copy would be out of place here and the font does
+    # not promise CJK coverage, so it can degrade into missing-glyph boxes.
+    channel: str = "PROFILE // TASTE READOUT"
+    hint: str = "A portrait of your taste, read off the scores you have already given."
+    sample_stamp: str = "SAMPLE DATA"
+    sample_stamp_tooltip: str = (
+        "A bundled example profile. Connect MyAnimeList and generate "
+        "recommendations to see your own figures here."
+    )
+
+    # ---- the verdict ----
+    # CHANGE [READOUT-LEAD]: the page used to open on five equal readings and
+    # leave the reader to work out which one was about them. It opens on the
+    # one that is, in a sentence somebody would repeat.
+    verdict_legend: str = "THE READING"
+    verdict_prefix: str = "You are"
+    # Shown only when there is not enough scored history to read fairly.
+    verdict_plain_name: str = "still writing the profile"
+    verdict_plain_sentence: str = (
+        "There is not enough scored history yet to give your taste a fair "
+        "headline. A few more ratings will sharpen the picture."
+    )
+
+    receipts_legend: str = "THE RECEIPTS"
+    receipt_hype: str = "BIGGEST HYPE KILL"
+    receipt_gem: str = "DEEPEST CUT"
+    receipt_rewatch: str = "MOST REWATCHED"
+    receipt_rewatch_detail: str = "You have been back through it {watches}."
+    receipt_watches: str = "TIMES"
+    receipt_versus: str = "You said {you}. Everyone else said {community}."
+
+    # ---- the wink ----
+    # Named for what it is. Everything in it is derived rather than displayed,
+    # which is precisely why it cannot be read off a MyAnimeList profile.
+    unlisted_title: str = "NOT ON YOUR MAL PROFILE"
+    unlisted_description: str = (
+        "None of this is a number MyAnimeList shows you. It comes out of "
+        "comparing every score you have given against everyone else's."
+    )
+    # CHANGE [FUN-FACTS]: each fact is a card - a mark, the figure large, and
+    # a sentence under it - rather than a line of prose with a rule beside it.
+    # The value is the part somebody screenshots, so it is what the card is
+    # built around; the sentence explains it rather than containing it.
+    # CHANGE [EVIDENCE]: the caption says what the figure means; the evidence
+    # line under it says which anime produced it. Without the second line the
+    # reader's honest reaction to "your nemesis studio is Tezuka Productions"
+    # is "who?" - the claim is unfalsifiable and so it is not interesting.
+    evidence_versus: str = "{high}  ·  {low}"
+    evidence_title: str = "{title} {score}"
+    unlisted_nemesis_caption: str = "Your nemesis studio. {watched} watched, averaging {average}."
+    unlisted_trusted_caption: str = "The studio you trust most, at {average} across their work."
+    unlisted_divisive_caption: str = "Your most divisive genre. You either love it or you do not."
+    unlisted_golden_caption: str = "Your golden era, averaging {average}."
+    unlisted_season_caption: str = "You rate {season} premieres higher than any other season."
+    unlisted_gems_caption: str = "of your list is material almost nobody else has rated."
+    unlisted_hype_caption: str = "widely loved shows you rated well below the crowd."
+    unlisted_nemesis_legend: str = "NEMESIS"
+    unlisted_trusted_legend: str = "MOST TRUSTED"
+    unlisted_divisive_legend: str = "MOST DIVISIVE"
+    unlisted_golden_legend: str = "GOLDEN ERA"
+    unlisted_season_legend: str = "SEASON OF CHOICE"
+    unlisted_gems_legend: str = "DEEP CUTS"
+    unlisted_hype_legend: str = "HYPE KILLED"
+
+    instruments_title: str = "THE INSTRUMENT"
+    instruments_description: str = (
+        "Every reading behind the above, in full. Open whichever you want."
+    )
+
+    # ---- header ----
+    identity_legend: str = "READER"
+    member_since: str = "MAL MEMBER SINCE {year}"
+    member_since_unknown: str = "MAL MEMBER SINCE N/A"
+    stat_completed: str = "COMPLETED"
+    stat_episodes: str = "EPISODES"
+    stat_days: str = "DAYS"
+    stat_mean: str = "MEAN"
+    avatar_accessible: str = "{username}'s MyAnimeList avatar"
+    avatar_fallback_accessible: str = "{username}, no avatar set"
+
+    # ---- sections ----
+    fingerprint_title: str = "TASTE FINGERPRINT"
+    fingerprint_description: str = (
+        "How your scores sit against everyone else's. None of these is a "
+        "grade. They describe a reader; they do not rank one."
+    )
+    distribution_title: str = "RATING DISTRIBUTION"
+    distribution_description: str = "Every score you have given, and how often."
+    distribution_axis: str = "SCORE"
+    distribution_count: str = "TITLES"
+    distribution_mean: str = "MEAN"
+    distribution_median: str = "MEDIAN"
+    distribution_mode: str = "MODE"
+    distribution_scale_usage: str = "SCALE USAGE"
+    distribution_total: str = "RATED"
+
+    hot_takes_title: str = "HOT TAKES"
+    hot_takes_description: str = (
+        "Where your score and the community's are furthest apart."
+    )
+    hot_takes_higher: str = "YOU RATED HIGHER"
+    hot_takes_lower: str = "YOU RATED LOWER"
+    hot_takes_empty: str = "No large disagreements on record."
+
+    hype_killers_title: str = "HYPE KILLERS"
+    hype_killers_description: str = (
+        "Titles the community ranks near the top that you did not get on with."
+    )
+    hype_killed: str = "HYPE KILLED"
+    hype_killers_biggest: str = "BIGGEST CASUALTY"
+    hype_killers_empty: str = "Nothing highly ranked has been rated low."
+
+    hidden_gems_title: str = "HIDDEN GEMS"
+    hidden_gems_description: str = (
+        "Little-watched titles you scored well above the room."
+    )
+    hidden_gem_rate: str = "HIDDEN GEM RATE"
+    hidden_gems_deepest: str = "DEEPEST CUT"
+    hidden_gems_empty: str = "No obscure titles rated highly yet."
+
+    genre_title: str = "GENRE DNA"
+    genre_description: str = (
+        "What you watch, and how you score it. Select a genre to list the "
+        "titles behind its figures."
+    )
+    genre_best: str = "BEST MATCH"
+    genre_weakness: str = "QUESTIONABLE RELATIONSHIP"
+    genre_divisive: str = "MOST DIVISIVE"
+    genre_titles_heading: str = "{genre} // TITLES"
+    genre_titles_empty: str = "No titles recorded for this genre."
+    genre_watched: str = "WATCHED"
+    genre_average: str = "AVG"
+
+    studio_title: str = "STUDIO DNA"
+    studio_description: str = "The houses you keep going back to, for and against."
+    studio_most_watched: str = "MOST WATCHED"
+    studio_most_trusted: str = "MOST TRUSTED"
+    studio_nemesis: str = "STUDIO NEMESIS"
+    studio_titles: str = "TITLES"
+
+    era_title: str = "ERA PREFERENCES"
+    era_description: str = "When the anime you finish was made, and how it scored."
+    era_golden: str = "GOLDEN ERA"
+    era_season_heading: str = "SEASONAL TASTE"
+    era_season_scale: str = "SCALE"
+    era_season_choice: str = "SEASON OF CHOICE"
+
+    habits_title: str = "WATCHING HABITS"
+    habits_description: str = "What you do with a series once you have started it."
+    habits_rewatched: str = "MOST REWATCHED"
+
+    timeline_title: str = "TASTE THROUGH TIME"
+    timeline_description: str = "Your mean score, year by year."
+    timeline_trend: str = "RATING TREND"
+    timeline_axis_high: str = "HIGH"
+    timeline_axis_low: str = "LOW"
+
+    # ---- shared labels ----
+    you: str = "YOU"
+    community: str = "MAL"
+    delta: str = "GAP"
+    popularity: str = "POPULARITY"
+    rank: str = "RANK"
+    above_community: str = "ABOVE COMMUNITY"
+    below_community: str = "BELOW COMMUNITY"
+
+    # ---- states ----
+    section_error: str = "UNABLE TO LOAD {section}"
+    section_error_message: str = (
+        "This part of your profile could not be read. The rest of the page is "
+        "unaffected."
+    )
+    section_retry: str = "RETRY"
+    section_empty: str = "Not measured yet."
+    loading_title: str = "Reading your list"
+    loading_message: str = (
+        "Counting scores, lining them up against the community, and working "
+        "out what that says about you."
+    )
+    backend_title: str = "Your taste profile is not built yet"
+    backend_message: str = (
+        "Live profile statistics are not available in this build. You can "
+        "still inspect the bundled sample profile."
+    )
+    backend_sample_action: str = "Show a sample profile"
+    not_connected_title: str = "Connect your account first"
+    not_connected_message: str = (
+        "A taste profile is read from your MyAnimeList history. Add a Client "
+        "ID in Settings and sync your list, then come back."
+    )
+    network_title: str = "MyAnimeList is unreachable"
+    network_message: str = (
+        "AniRec could not reach MyAnimeList. Check your connection and try "
+        "again."
+    )
+    api_title: str = "MyAnimeList could not answer"
+    api_message: str = (
+        "The request was refused or timed out. This usually clears on its own. "
+        "Try again shortly."
+    )
+    private_title: str = "Your list is private"
+    private_message: str = (
+        "AniRec can only read a public list. Make yours public on "
+        "MyAnimeList, then try again."
+    )
+    empty_title: str = "Nothing to read yet"
+    empty_message: str = (
+        "A taste profile needs scored anime. Rate a few titles on "
+        "MyAnimeList, sync, and this page fills in."
+    )
+    retry: str = "Try again"
+
+
+PROFILE_TEXT = ProfileTextCatalog()
 
 DISCOVER_TEXT = DiscoverTextCatalog()
 SETTINGS_TEXT = SettingsTextCatalog()

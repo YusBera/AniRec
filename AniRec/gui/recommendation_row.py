@@ -25,10 +25,11 @@ from PySide6.QtWidgets import (
 
 from .design_tokens import RADIUS, SPACE
 from .cover_art import rounded_cover
+from .instrument_widgets import keep_crisp
 from .scaling import scaled
 from .recommendation_card import MEMORY_COVER_CACHE, open_mal_url
 from .recommendation_view_model import RecommendationViewModel
-from .resources import cover_placeholder_pixmap
+from .resources import cover_placeholder_pixmap, title_placeholder_pixmap
 
 
 # CHANGE [BUG7]: a 2:3 poster, matching the card and the source artwork.
@@ -79,6 +80,8 @@ class RecommendationRow(QFrame):
 
         self.cover_label = QLabel()
         self.cover_label.setObjectName("recommendationRowCover")
+        # Artwork is never rastered; see keep_crisp.
+        keep_crisp(self.cover_label)
         # CHANGE [BUG2]: the thumbnail scales with the GUI Scale setting.
         self.cover_label.setFixedSize(scaled(THUMBNAIL_SIZE), scaled(COVER_ROW_HEIGHT))
         self.cover_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -98,7 +101,24 @@ class RecommendationRow(QFrame):
         self.reason_label = QLabel(_truncate(model.reason or model.genres_text))
         self.reason_label.setObjectName("recommendationRowReason")
         self.reason_label.setWordWrap(True)
+        # CHANGE [ROW-DENSITY]: the row carried a title, one sentence and a
+        # single orphaned genre chip, then several centimetres of nothing.
+        # The card states the year, the run length, the studio and the MAL
+        # score; the list view is supposed to be the denser way to read the
+        # same feed and was showing strictly less. The facts go in the empty
+        # space that was already there.
+        self.facts_label = QLabel(_facts_line(model))
+        self.facts_label.setObjectName("recommendationRowFacts")
+        self.facts_label.setWordWrap(False)
+        # CHANGE [BUILD-QUIET]: only hidden when there is nothing to show.
+        # setVisible() on a child of a live parent forces a layout pass, and
+        # measured 24.7ms a call - the single most expensive line in this
+        # constructor. A label is visible by default, so the common path now
+        # makes no call at all.
+        if not self.facts_label.text():
+            self.facts_label.setVisible(False)
         text_column.addWidget(self.title_label)
+        text_column.addWidget(self.facts_label)
         text_column.addWidget(self.reason_label)
         layout.addLayout(text_column, 1)
 
@@ -125,7 +145,7 @@ class RecommendationRow(QFrame):
         self.like_button.setProperty("feedback", "liked")
         self.like_button.setCheckable(True)
         self.like_button.clicked.connect(lambda: self.liked_requested.emit(self.model))
-        self.dislike_button = QPushButton("Not for me")
+        self.dislike_button = QPushButton("Dislike")
         self.dislike_button.setObjectName("recommendationRowDislikeButton")
         self.dislike_button.setProperty("feedback", "disliked")
         self.dislike_button.setCheckable(True)
@@ -143,7 +163,17 @@ class RecommendationRow(QFrame):
     # -- cover ---------------------------------------------------------------
 
     def _show_placeholder(self) -> None:
-        placeholder = cover_placeholder_pixmap()
+        # CHANGE [PLATE-SIZE]: at the size it is drawn, not at the source
+        # artwork's. Called without one this renders 440x660 and then scales
+        # the result down to a 56x84 thumbnail - measured at 20ms of drawText
+        # per row, a third of the entire cost of building a list row, to
+        # produce pixels that are immediately thrown away.
+        placeholder = title_placeholder_pixmap(
+            self.model.display_title,
+            (scaled(THUMBNAIL_SIZE), scaled(COVER_ROW_HEIGHT)),
+        )
+        if placeholder.isNull():
+            placeholder = cover_placeholder_pixmap()
         if placeholder.isNull():
             self.cover_label.setText("")
             return
@@ -249,6 +279,24 @@ def _truncate(text: str | None, limit: int = REASON_CHARACTERS) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 1].rstrip() + "…"
+
+
+def _facts_line(model: RecommendationViewModel) -> str:
+    """The metadata band the card shows and the row was missing.
+
+    Only parts that actually exist are joined, so a title with no year and no
+    studio produces a shorter line rather than a row of "Not available".
+    """
+    parts: list[str] = []
+    if model.studios:
+        parts.append(model.studios[0])
+    if model.year is not None:
+        parts.append(str(model.year))
+    if model.episodes is not None:
+        parts.append(model.episodes_text)
+    if model.mal_score is not None:
+        parts.append(f"MAL {model.mal_score:.2f}")
+    return "  ·  ".join(parts)
 
 
 def _primary_tag(model: RecommendationViewModel) -> str:

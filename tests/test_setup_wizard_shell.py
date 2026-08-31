@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from AniRec.gui.main_window import MainWindow, PageId
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QDialog
 
 from AniRec.gui.setup_wizard import SetupWizard, WizardStep
@@ -64,6 +65,40 @@ def test_wizard_prevents_skipping_required_steps_and_preserves_page_instances(sy
     assert wizard.current_step is WizardStep.API
     assert wizard.pages[WizardStep.API] is api_page
     assert api_page.property("safeDraft") == "preserved-client-id"
+
+
+def test_wizard_fits_small_laptop_screen_and_keeps_pages_scrollable(system_temp_dir):
+    application = create_application([])
+    _profiles, onboarding = services(system_temp_dir)
+    available_size = QSize(800, 600)
+
+    wizard = SetupWizard(onboarding, available_screen_size=available_size)
+    wizard.show()
+    application.processEvents()
+
+    assert wizard.size() == QSize(600, 450)
+    assert wizard.width() <= int(available_size.width() * 0.75)
+    assert wizard.height() <= int(available_size.height() * 0.75)
+    assert wizard.minimumSize() == QSize(560, 360)
+    assert wizard.content_scroll.widget() is wizard.stack
+    assert (
+        wizard.content_scroll.horizontalScrollBarPolicy()
+        is Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    assert (
+        wizard.content_scroll.verticalScrollBarPolicy()
+        is Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    )
+    wizard.close()
+
+
+def test_wizard_keeps_its_native_size_on_a_roomy_screen(system_temp_dir):
+    create_application([])
+    _profiles, onboarding = services(system_temp_dir)
+
+    wizard = SetupWizard(onboarding, available_screen_size=QSize(1920, 1080))
+
+    assert wizard.size() == QSize(760, 520)
 
 
 def test_cancel_does_not_mark_partial_setup_complete(system_temp_dir):

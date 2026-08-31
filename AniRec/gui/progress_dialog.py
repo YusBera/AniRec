@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .instrument_widgets import Scanlines
 from ..errors import UserFacingError
 from ..models import PipelineProgress
 from .texts import PROGRESS_STEP_TEXT, UI_TEXT
@@ -39,6 +40,9 @@ class OperationProgressDialog(QDialog):
         self._completed_successfully = False
         self._success_close_delay_ms = max(0, int(success_close_delay_ms))
         self.setObjectName("operationProgressDialog")
+        # CHANGE [CRT]: the raster, so this reads as part of the same
+        # machine. Installed last in __init__ so it sits above the
+        # dialog's own children; it re-raises itself when more arrive.
         self.setWindowTitle(UI_TEXT.progress_dialog_title)
         self.setModal(False)
         self.setMinimumWidth(420)
@@ -71,6 +75,8 @@ class OperationProgressDialog(QDialog):
         controller.error_occurred.connect(self._on_error)
         controller.cancelled.connect(self._on_cancelled)
         controller.finished.connect(self._on_finished)
+        self.scanlines = Scanlines(self)
+        self.scanlines.raise_()
 
     def apply_progress(self, progress: PipelineProgress) -> None:
         self.step_label.setText(

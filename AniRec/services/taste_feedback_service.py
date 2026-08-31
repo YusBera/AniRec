@@ -29,6 +29,31 @@ def _clamp_adjustment(value: float) -> float:
     )
 
 
+def _joined_reason(reason: str | None, clause: str, learned) -> str:
+    """Fold what feedback taught us into the engine's sentence, not beside it.
+
+    The engine writes "Matches your interests in A, B and C." Feedback adds a
+    second list of the same kind, so it belongs inside that sentence as
+    another clause. When the engine said nothing, or said something this
+    cannot be grafted onto, the clause becomes a sentence of its own rather
+    than being dropped.
+    """
+    base = (reason or "").strip()
+    # A term the engine already named does not get named twice. This is what
+    # made the doubled sentence so obviously redundant: both halves listed
+    # Action and Historical, in a space that only had room for one of them.
+    folded = base.casefold()
+    learned = [term for term in learned if term.casefold() not in folded]
+    terms = " and ".join(learned)
+    if not terms:
+        return base
+    if base.endswith("."):
+        base = base[:-1]
+    if base:
+        return f"{base}, and {clause} {terms}."
+    return f"{clause[0].upper()}{clause[1:]} {terms}.".replace("Your", "Based on your", 1)
+
+
 class TasteFeedbackService:
     """Turn explicit feedback into bounded genre affinities and visible reranking."""
 
@@ -71,12 +96,17 @@ class TasteFeedbackService:
             reason = recommendation.reason
             positive = [genre for genre, value in matches if value > 0]
             negative = [genre for genre, value in matches if value < 0]
+            # CHANGE [ONE-SENTENCE]: this used to prepend a second sentence to
+            # the reason the engine had already written, so a card read
+            # "Boosted by your likes in Action, Historical. Matches your
+            # interests in Bandai Namco Picture…" - two sentences making the
+            # same argument, in a two-line reservation that then cut the
+            # second one mid-word. The clauses are joined into one sentence
+            # instead, which says strictly more than either did and fits.
             if positive:
-                learned = ", ".join(positive[:2])
-                reason = f"Boosted by your likes in {learned}. {reason or ''}".strip()
+                reason = _joined_reason(reason, "your likes in", positive[:2])
             elif negative:
-                learned = ", ".join(negative[:2])
-                reason = f"Ranked lower from your feedback in {learned}. {reason or ''}".strip()
+                reason = _joined_reason(reason, "your feedback in", negative[:2])
             personalized.append(
                 replace(recommendation, match_score=round(match_score, 2), reason=reason)
             )

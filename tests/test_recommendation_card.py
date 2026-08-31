@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QSizePolicy
 from AniRec.gui.recommendation_card import (
     COVER_HEIGHT,
     COVER_WIDTH,
+    MEMORY_COVER_CACHE,
     RecommendationCard,
     open_mal_url,
 )
@@ -92,9 +93,18 @@ def test_the_review_decision_sits_above_the_supporting_detail():
 
     assert card.sizePolicy().verticalPolicy() is QSizePolicy.Policy.Maximum
     assert row_of(card.title_label) < row_of(card.like_button)
-    assert row_of(card.like_button) == row_of(card.dislike_button)
+    # CHANGE [ACTION-ROW]: the three verdicts a reader has about a
+    # recommendation - yes, later, no - are one row, in the order somebody
+    # decides them. Watch Later used to sit two rows down with unrelated
+    # controls in between, which put the most likely answer of the three
+    # furthest from the other two.
+    assert (
+        row_of(card.like_button)
+        == row_of(card.watch_later_button)
+        == row_of(card.dislike_button)
+    )
     for later in (card.mal_score_label, card.meta_label, card.reason_label,
-                  card.details_button, card.watch_later_button):
+                  card.details_button):
         assert row_of(card.like_button) < row_of(later)
 
 
@@ -126,3 +136,68 @@ def test_mal_button_opens_only_safe_numeric_anime_https_url():
         "https://myanimelist.net/anime/1/Fixture",
         opener=lambda url: isinstance(url, QUrl),
     )
+
+
+def large_png_bytes(width=450, height=700):
+    """A poster far bigger than the frame, with detail on the top edge."""
+    image = QImage(width, height, QImage.Format.Format_RGB32)
+    image.fill(0xFF3A1C18)
+    for y in range(height // 10):
+        for x in range(width):
+            image.setPixel(x, y, 0xFFD9A441)
+    array = QByteArray()
+    buffer = QBuffer(array)
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buffer, "PNG")
+    buffer.close()
+    return bytes(array.data())
+
+
+def test_a_cached_cover_is_fitted_to_the_frame_not_cropped_by_it():
+    """Addresses: the covers that came back cropped after a scroll.
+
+    The memory cache holds the original at full resolution on purpose, so a
+    GUI scale change can re-fit from it instead of enlarging a shrunken copy.
+    ``request_cover`` used to hand that original straight to the cover label,
+    which is a fixed 132x198 with no scaledContents - so Qt drew a 450x700
+    image at full size and clipped it to the label. A centre crop: the top of
+    the title lockup and both side edges were gone, the rounded corners with
+    them, and ``_source_cover`` was never set so a later rescale fell back to
+    the placeholder.
+
+    It only showed once a cover had been cached, which is why it looked like
+    an intermittent fault rather than a fitting bug.
+    """
+    create_application([])
+    MEMORY_COVER_CACHE.clear()
+
+    first = RecommendationCard(model())
+    assert first.set_cover_data(large_png_bytes())
+    fitted = first.cover_label.pixmap()
+
+    # A second card for the same title takes the cached path.
+    second = RecommendationCard(model())
+    second.request_cover()
+    cached = second.cover_label.pixmap()
+
+    assert not cached.isNull()
+    assert (cached.width(), cached.height()) == (fitted.width(), fitted.height())
+    assert cached.width() == second.cover_label.width()
+    assert cached.height() == second.cover_label.height()
+
+    # The top band survives across the full width: nothing was cropped off it.
+    image = cached.toImage()
+    band = [
+        image.pixelColor(x, 2)
+        for x in range(4, cached.width() - 4, 4)
+    ]
+    assert band, "no samples taken"
+    assert all(
+        pixel.red() > 150 and pixel.green() > 110 and pixel.blue() < 120
+        for pixel in band
+    ), "the top of the artwork was cut away"
+
+    # And the original is kept, so a scale change can re-fit from it.
+    assert second._source_cover is not None
+    assert second._source_cover.width() == 450
+    MEMORY_COVER_CACHE.clear()

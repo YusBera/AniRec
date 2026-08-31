@@ -1,6 +1,7 @@
 """Regenerate the packaged Windows icon from the tracked SVG.
 
-Run after changing ``AniRec/gui/resources/icons/anirec.svg`` so the .ico stays
+Run after changing ``AniRec/gui/resources/icons/anirec.svg`` (or the compact
+``anirec-mark-a.svg`` used for the 16 and 24px frames) so the .ico stays
 a faithful rendering of it:
 
     .\\.venv\\Scripts\\python.exe .\\scripts\\build_icon.py
@@ -32,19 +33,28 @@ from AniRec.gui_main import create_application  # noqa: E402
 
 # The sizes Windows picks between for the taskbar, alt-tab, and file listings.
 ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
-SOURCE = REPOSITORY_ROOT / "AniRec" / "gui" / "resources" / "icons" / "anirec.svg"
-TARGET = REPOSITORY_ROOT / "AniRec" / "gui" / "resources" / "icons" / "anirec.ico"
+_ICONS = REPOSITORY_ROOT / "AniRec" / "gui" / "resources" / "icons"
+SOURCE = _ICONS / "anirec.svg"
+# Small frames are drawn from the one-letter mark. Two letterforms inside 16px
+# gives each about four pixels of stem and the pair turns to mush, which is why
+# Windows icons have always carried simplified artwork at the small sizes
+# rather than one drawing scaled down seven times.
+COMPACT_SOURCE = _ICONS / "anirec-mark-a.svg"
+COMPACT_UP_TO = 24
+TARGET = _ICONS / "anirec.ico"
 
 
-def render(source: Path) -> list[tuple[int, bytes]]:
+def render(source: Path, compact: Path | None = None) -> list[tuple[int, bytes]]:
     from PySide6.QtCore import QSize, Qt
     from PySide6.QtGui import QIcon
 
     icon = QIcon(str(source))
+    small = QIcon(str(compact)) if compact and compact.is_file() else icon
     frames: list[tuple[int, bytes]] = []
     with tempfile.TemporaryDirectory(prefix="anirec-icon-") as work:
         for size in ICON_SIZES:
-            pixmap = icon.pixmap(QSize(size, size))
+            chosen = small if size <= COMPACT_UP_TO else icon
+            pixmap = chosen.pixmap(QSize(size, size))
             if pixmap.isNull():
                 raise SystemExit(f"could not render {source} at {size}px")
             if pixmap.width() != size:
@@ -79,11 +89,19 @@ def build_ico(frames: list[tuple[int, bytes]]) -> bytes:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=SOURCE)
+    parser.add_argument("--compact", type=Path, default=COMPACT_SOURCE)
+    parser.add_argument(
+        "--no-compact",
+        action="store_true",
+        help="Render every frame from --source, including 16 and 24px.",
+    )
     parser.add_argument("--output", type=Path, default=TARGET)
     arguments = parser.parse_args()
 
     create_application([])
-    frames = render(arguments.source)
+    frames = render(
+        arguments.source, None if arguments.no_compact else arguments.compact
+    )
     payload = build_ico(frames)
     arguments.output.write_bytes(payload)
     print(

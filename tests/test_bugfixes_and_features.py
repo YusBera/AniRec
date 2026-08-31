@@ -10,7 +10,12 @@ from AniRec.errors import UserFacingError
 from AniRec.gui.gradient_picker import GradientPicker
 from AniRec.gui.main_window import MainWindow
 from AniRec.gui.match_badge import BAR_HEIGHT, MatchBadge, should_show_badge
-from AniRec.gui.recommendation_card import CARD_WIDTH, COVER_WIDTH, RecommendationCard
+from AniRec.gui.recommendation_card import (
+    CARD_MAX_WIDTH,
+    CARD_WIDTH,
+    COVER_WIDTH,
+    RecommendationCard,
+)
 from AniRec.gui.scaling import GUI_SCALE_CHOICES, scaled, set_gui_scale
 from AniRec.gui.theme import ThemeManager
 from AniRec.gui_main import create_application
@@ -62,7 +67,10 @@ def test_a_failure_is_reported_on_the_surface_not_in_a_window(window):
     window._on_operation_error("more-recommendations:p1", error)
 
     assert window.error_dialogs == {}
-    assert "Could not reach MyAnimeList" in window.discover_page.status_label.text()
+    # The sentence lives on the message label; the STATE field beside it
+    # reports the state, not the sentence.
+    assert "Could not reach MyAnimeList" in window.discover_page.message_label.text()
+    assert window.discover_page.status_label.text() == "FAULT"
 
 
 def test_a_retry_is_still_available_after_a_failure(window):
@@ -136,7 +144,11 @@ def test_the_card_and_its_portrait_resize_together(factor):
     model = recommendation_view_models(SampleDataService().load().recommendations)[0]
     card = RecommendationCard(model)
 
-    assert card.width() == scaled(CARD_WIDTH)
+    # Cards flex to fill their grid column, so a single pinned width is no
+    # longer the thing that scales - the bounds are. Both ends move with the
+    # GUI scale, and the portrait moves with them.
+    assert card.minimumWidth() == scaled(CARD_WIDTH)
+    assert card.maximumWidth() == scaled(CARD_MAX_WIDTH)
     assert card.cover_label.width() == scaled(COVER_WIDTH)
 
 
@@ -240,12 +252,18 @@ def test_a_preview_is_told_apart_from_a_commit():
 # ---------------------------------------------------------------------------
 
 
-def test_the_badge_shows_a_whole_percentage():
+def test_the_badge_shows_the_same_precision_as_every_other_readout():
+    """CHANGE [PRECISION]: the badge used to round to a whole number.
+
+    The row, the table and the score inspector all print a tenth, so the
+    same title read 95% on its card and 94.6% one click away, in an
+    application whose entire claim is that its score means something.
+    """
     create_application([])
     badge = MatchBadge(94.6)
 
     assert badge.percentage == pytest.approx(94.6)
-    assert "95 percent" in badge.accessibleName()
+    assert "94.6 percent" in badge.accessibleName()
 
 
 def test_the_badge_is_hidden_when_there_is_no_score():
@@ -295,9 +313,14 @@ def test_the_match_bar_spans_the_bottom_of_the_portrait(window):
 
     assert badge is not None
     assert badge.parent() is cover
-    # Spans the portrait, inset from its rounded corners.
-    assert badge.width() > cover.width() * 0.8
-    assert badge.y() + badge.height() <= cover.height()
+    # CHANGE [SCRIM]: the plate used to be inset six pixels from the bottom
+    # and each side, so a margin of artwork showed around it and the readout
+    # floated on a rectangle instead of sitting on the picture. It is flush
+    # to the portrait's lower edge now, which is a stricter claim than the
+    # ">80% of the width, somewhere in the lower half" this used to make.
+    assert badge.x() == 0
+    assert badge.width() == cover.width()
+    assert badge.y() + badge.height() == cover.height()
     assert badge.y() > cover.height() // 2
 
 
