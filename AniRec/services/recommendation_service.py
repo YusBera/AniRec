@@ -15,7 +15,13 @@ try:
         handle_missing_scores_with_genre_medians,
     )
     from ..models import PipelineSettings
-    from ..recommendation_system import rank_recommendations
+    from ..scoring.contracts import (
+        RankingEngine,
+        RankingEngineMetadata,
+        RankingParameters,
+        RankingRequest,
+    )
+    from ..scoring.engines import HeuristicRankingEngine
     from ..scoring.serialization import profile_to_frame
     from ..scoring.taste import build_taste_profile
 except ImportError:  # Compatibility with the S01 top-level test import path.
@@ -26,7 +32,13 @@ except ImportError:  # Compatibility with the S01 top-level test import path.
         handle_missing_scores_with_genre_medians,
     )
     from models import PipelineSettings
-    from recommendation_system import rank_recommendations
+    from scoring.contracts import (
+        RankingEngine,
+        RankingEngineMetadata,
+        RankingParameters,
+        RankingRequest,
+    )
+    from scoring.engines import HeuristicRankingEngine
     from scoring.serialization import profile_to_frame
     from scoring.taste import build_taste_profile
 
@@ -36,8 +48,16 @@ class RecommendationService:
         self,
         *,
         random_int: Callable[[int, int], int] = random.randint,
+        ranker: RankingEngine | None = None,
     ) -> None:
         self._random_int = random_int
+        self._ranker = ranker if ranker is not None else HeuristicRankingEngine()
+        self._last_ranking_metadata: RankingEngineMetadata | None = None
+
+    @property
+    def last_ranking_metadata(self) -> RankingEngineMetadata | None:
+        """Provenance from the latest completed ranking operation."""
+        return self._last_ranking_metadata
 
     def impute_missing_scores(self, completed: pd.DataFrame) -> pd.DataFrame:
         medians = calculate_genre_medians(completed)
@@ -79,16 +99,29 @@ class RecommendationService:
             if settings.seed is not None
             else self._random_int(1, 1_000_000)
         )
-        return rank_recommendations(
-            candidates,
-            genre_importance,
-            num_recommendations=settings.recommendation_count,
-            top_anime_count=settings.candidate_pool_size,
-            randomness_factor=settings.randomness_factor,
-            random_state=random_state,
-            genre_adjustments=genre_adjustments,
-            excluded_mal_ids=excluded_mal_ids,
-            excluded_titles=excluded_titles,
-            minimum_mean_score=settings.minimum_mean_score,
-            collaborative_scores=collaborative_scores,
+        request = RankingRequest(
+            candidates=tuple(candidates.to_dict("records")),
+            taste_profile=tuple(genre_importance.to_dict("records")),
+            candidate_columns=tuple(str(column) for column in candidates.columns),
+            profile_columns=tuple(str(column) for column in genre_importance.columns),
+            parameters=RankingParameters(
+                recommendation_count=settings.recommendation_count,
+                candidate_pool_size=settings.candidate_pool_size,
+                randomness_factor=settings.randomness_factor,
+                random_seed=random_state,
+                minimum_mean_score=settings.minimum_mean_score,
+            ),
+            taste_adjustments=genre_adjustments or {},
+            excluded_mal_ids=frozenset(excluded_mal_ids),
+            excluded_titles=frozenset(excluded_titles),
+            collaborative_scores=collaborative_scores or {},
         )
+        result = self._ranker.rank(request)
+        self._last_ranking_metadata = result.metadata
+        ranked = pd.DataFrame.from_records(
+            result.ranked_candidates,
+            columns=list(result.columns) or None,
+        )
+        ranked.attrs["ranking_engine"] = result.metadata
+        ranked.attrs["ranking_warnings"] = result.warnings
+        return ranked
