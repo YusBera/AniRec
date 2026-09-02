@@ -361,7 +361,7 @@ def test_a_vote_does_not_tear_down_the_feed(window):
     RecommendationCard.__init__ = counting
     try:
         card = next(iter(feed._cards_by_key.values()))
-        card.like_button.click()
+        card.not_interested_button.click()
     finally:
         RecommendationCard.__init__ = original
 
@@ -408,13 +408,12 @@ def test_the_header_folds_away_while_browsing(window):
 
 
 def test_the_feedback_actions_are_colour_coded():
-    """BUG7: Like and Not for me looked identical until after being pressed."""
+    """BUG7: the actions looked identical until after being pressed."""
     from AniRec.gui.qss_builder import build_stylesheet
 
     sheet = build_stylesheet("dark")
 
-    assert 'QPushButton[feedback="liked"]:hover' in sheet
-    assert 'QPushButton[feedback="disliked"]:hover' in sheet
+    assert 'QPushButton[feedback="not-interested"]:hover' in sheet
     assert 'QPushButton[savedAction="true"]:hover' in sheet
 
 

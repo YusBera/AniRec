@@ -276,9 +276,19 @@ def test_public_client_id_marks_mal_connected_and_update_button_runs_real_sync_w
     window.close()
 
 
-def test_each_vote_reranks_remaining_feed_and_moves_reviewed_anime_to_folder(
+def test_setting_aside_files_the_anime_without_reranking_what_is_left(
     system_temp_dir,
 ):
+    """A filter must not pretend to be a rating.
+
+    This test used to assert the opposite: liking "Fantasy signal" boosted the
+    Fantasy genre, which lifted "Fantasy candidate" (75) above "Drama leader"
+    (80), and the reordering was the point. That behaviour is gone with the
+    like button. Setting a title aside says nothing about genre, so the two
+    that remain must still be in plain score order - which is the guarantee
+    worth pinning, because silently reranking on a filter is the exact
+    mistake the old vote made.
+    """
     application = create_application([])
     profiles = ProfileService(root_override=system_temp_dir)
     profile = profiles.create_profile("fixture-user")
@@ -312,15 +322,18 @@ def test_each_vote_reranks_remaining_feed_and_moves_reviewed_anime_to_folder(
         recommendation_state_service=state,
     )
 
-    window.recommendations_page._cards_by_key["mal:1"].like_button.click()
+    window.recommendations_page._cards_by_key["mal:1"].not_interested_button.click()
     application.processEvents()
 
     titles = [
         model.display_title for model in window.recommendations_page.visible_models
     ]
-    assert titles == ["Fantasy candidate", "Drama leader"]
+    assert titles == ["Drama leader", "Fantasy candidate"]
     assert "mal:1" not in window.recommendations_page._cards_by_key
-    assert window.recommendations_page.liked_folder_action.text() == "Liked (1)"
+    assert (
+        window.recommendations_page.not_interested_folder_action.text()
+        == "Not interested (1)"
+    )
     window.close()
 
 

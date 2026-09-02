@@ -48,10 +48,8 @@ class RecommendationRow(QFrame):
 
     selection_requested = Signal(object)
     details_requested = Signal(object)
-    hide_requested = Signal(object)
+    not_interested_requested = Signal(object)
     watch_later_requested = Signal(object)
-    liked_requested = Signal(object)
-    disliked_requested = Signal(object)
     cover_requested = Signal(str)
 
     def __init__(
@@ -140,24 +138,37 @@ class RecommendationRow(QFrame):
         tag_column.addWidget(self.genre_tag, 0, Qt.AlignmentFlag.AlignRight)
         layout.addLayout(tag_column)
 
-        self.like_button = QPushButton("Like")
-        self.like_button.setObjectName("recommendationRowLikeButton")
-        self.like_button.setProperty("feedback", "liked")
-        self.like_button.setCheckable(True)
-        self.like_button.clicked.connect(lambda: self.liked_requested.emit(self.model))
-        self.dislike_button = QPushButton("Dislike")
-        self.dislike_button.setObjectName("recommendationRowDislikeButton")
-        self.dislike_button.setProperty("feedback", "disliked")
-        self.dislike_button.setCheckable(True)
-        self.dislike_button.clicked.connect(
-            lambda: self.disliked_requested.emit(self.model)
+        # CHANGE [NO-VERDICTS]: the row carried Like and Dislike and no way
+        # to save anything, which left the list view able to express only the
+        # opinion a reader cannot yet hold and not the one action they can.
+        # The signal for it was already declared here and already wired on the
+        # page; only the button was missing.
+        self.watch_later_button = QPushButton("Watch Later")
+        self.watch_later_button.setObjectName("recommendationRowWatchLaterButton")
+        self.watch_later_button.setProperty("savedAction", True)
+        self.watch_later_button.setCheckable(True)
+        self.watch_later_button.clicked.connect(
+            lambda: self.watch_later_requested.emit(self.model)
+        )
+        self.not_interested_button = QPushButton("Not interested")
+        self.not_interested_button.setObjectName(
+            "recommendationRowNotInterestedButton"
+        )
+        self.not_interested_button.setProperty("feedback", "not-interested")
+        self.not_interested_button.setCheckable(True)
+        self.not_interested_button.clicked.connect(
+            lambda: self.not_interested_requested.emit(self.model)
         )
         self.details_button = QPushButton("Details")
         self.details_button.setProperty("buttonRole", "secondary")
         self.details_button.clicked.connect(
             lambda: self.details_requested.emit(self.model)
         )
-        for button in (self.like_button, self.dislike_button, self.details_button):
+        for button in (
+            self.watch_later_button,
+            self.not_interested_button,
+            self.details_button,
+        ):
             layout.addWidget(button)
 
     # -- cover ---------------------------------------------------------------
@@ -239,16 +250,26 @@ class RecommendationRow(QFrame):
         hidden: bool,
         watch_later: bool,
         actions_enabled: bool,
-        liked: bool = False,
-        disliked: bool = False,
     ) -> None:
-        self.like_button.setChecked(liked)
-        self.dislike_button.setChecked(disliked)
-        self.like_button.setEnabled(actions_enabled)
-        self.dislike_button.setEnabled(actions_enabled)
-        self.setProperty(
-            "tasteState", "liked" if liked else "disliked" if disliked else ""
+        self.watch_later_button.setChecked(bool(watch_later))
+        self.not_interested_button.setChecked(bool(hidden))
+        self.watch_later_button.setEnabled(actions_enabled)
+        self.not_interested_button.setEnabled(actions_enabled)
+        # CHANGE [NO-VERDICTS]: the label no longer grows when the state
+        # changes. "Remove from Watch Later" is twice the width of "Watch
+        # Later", so a saved row pushed the whole action column left and the
+        # list stopped lining up down the page. The button is checkable: the
+        # checked state says it is saved, and the accessible name says what
+        # pressing it does.
+        self.watch_later_button.setAccessibleName(
+            "Remove from Watch Later" if watch_later else "Save to Watch Later"
         )
+        self.not_interested_button.setAccessibleName(
+            "Show this recommendation again" if hidden else "Not interested"
+        )
+        for button in (self.watch_later_button, self.not_interested_button):
+            button.setToolTip(button.accessibleName())
+        self.setProperty("tasteState", "not-interested" if hidden else "")
         self.setProperty("hiddenItem", bool(hidden))
         self.setProperty("watchLater", bool(watch_later))
         self.style().unpolish(self)

@@ -15,12 +15,23 @@ except ImportError:  # Compatibility with legacy top-level imports.
     from infrastructure.paths import profile_dir
 
 
-RECOMMENDATION_STATE_SCHEMA_VERSION = 2
+RECOMMENDATION_STATE_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
 class RecommendationFeedback:
-    """One explicit user preference tied to a stable MyAnimeList anime ID."""
+    """One explicit user preference tied to a stable MyAnimeList anime ID.
+
+    Dormant since schema 3. No control writes one of these any more - the
+    like and dislike buttons that did are gone, and Not interested writes to
+    ``hidden_mal_ids`` instead. The record, ``set_feedback`` and the two id
+    properties below are kept because the ranking engine still accepts a
+    taste-adjustment map at its boundary and a future model may want to fill
+    it from something better earned than a click on a poster. Loading a
+    schema 1 or 2 profile migrates the old records out, so in practice the
+    collection is always empty and the adjustments it produces are always
+    ``{}``.
+    """
 
     mal_id: int
     sentiment: str
@@ -114,16 +125,33 @@ class RecommendationLocalState:
         if not isinstance(payload, dict):
             raise ValueError("Recommendation state root must be an object.")
         schema_version = payload.get("schema_version")
-        if schema_version not in {1, RECOMMENDATION_STATE_SCHEMA_VERSION}:
+        if schema_version not in {1, 2, RECOMMENDATION_STATE_SCHEMA_VERSION}:
             raise ValueError("Unsupported recommendation state schema version.")
+        stored_feedback = tuple(
+            RecommendationFeedback.from_storage_dict(item)
+            for item in (payload.get("feedback") or ())
+        )
+        hidden = set(payload.get("hidden_mal_ids") or ())
+        # Schema 3 retires explicit like and dislike. A dislike was already an
+        # exclusion in everything but name - it was unioned with the hidden set
+        # everywhere it was read - so it migrates into that set and keeps the
+        # user's intent. A like cannot migrate anywhere honest: it recorded an
+        # opinion about a poster, formed before the anime was watched, and
+        # there is no longer a control that could take it back. Dropping it is
+        # the only reading that does not leave a permanent unremovable vote in
+        # the taste model.
+        if schema_version in {1, 2}:
+            hidden.update(
+                record.mal_id
+                for record in stored_feedback
+                if record.sentiment == "disliked"
+            )
+            stored_feedback = ()
         return cls(
-            hidden_mal_ids=frozenset(payload.get("hidden_mal_ids") or ()),
+            hidden_mal_ids=frozenset(hidden),
             watch_later_mal_ids=frozenset(payload.get("watch_later_mal_ids") or ()),
             show_hidden=bool(payload.get("show_hidden", False)),
-            feedback=tuple(
-                RecommendationFeedback.from_storage_dict(item)
-                for item in (payload.get("feedback") or ())
-            ),
+            feedback=stored_feedback,
         )
 
 

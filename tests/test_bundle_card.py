@@ -170,11 +170,9 @@ def test_entries_inside_a_bundle_carry_no_controls_of_their_own():
     card.set_actions_visible(False)
 
     for button in (
-        card.like_button,
-        card.dislike_button,
+        card.not_interested_button,
         card.watch_later_button,
         card.details_button,
         card.mal_button,
-        card.hide_button,
     ):
         assert not button.isVisible()

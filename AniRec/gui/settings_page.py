@@ -278,7 +278,7 @@ class SettingsPage(QWidget):
         self.default_sort_input.addItem("MAL score", "mal-score")
         self.default_sort_input.addItem("Airing year", "year")
         self.default_sort_input.addItem("Alphabetical", "alphabetical")
-        self.include_hidden_input = QCheckBox("Include hidden recommendations")
+        self.include_hidden_input = QCheckBox("Include anime marked Not interested")
         self.include_nsfw_input = QCheckBox("Include NSFW anime")
         # One control replaces the candidate pool size, the randomness factor
         # and the deterministic seed. Those are properties of the sampler, not
@@ -312,7 +312,7 @@ class SettingsPage(QWidget):
         form.addRow("BATCH SIZE", self.recommendation_count_input)
         form.addRow("MIN MAL SCORE", self.minimum_score_input)
         form.addRow("DEFAULT SORT", self.default_sort_input)
-        form.addRow("HIDDEN ITEMS", self.include_hidden_input)
+        form.addRow("NOT INTERESTED", self.include_hidden_input)
         form.addRow("MAL CONTENT", self.include_nsfw_input)
 
         # Kept for round tripping and for the developer tools view; they are no

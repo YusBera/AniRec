@@ -45,7 +45,6 @@ from ..models import Recommendation
 from ..services import (
     CoverImageResult,
     CoverImageService,
-    RecommendationFeedback,
     RecommendationLocalState,
     RecommendationStateService,
 )
@@ -195,25 +194,6 @@ def _toggle_in_memory(
     current = set(getattr(state, field))
     current.add(mal_id) if wanted else current.discard(mal_id)
     return replace(state, **{field: frozenset(current)})
-
-
-def _feedback_in_memory(
-    state: RecommendationLocalState,
-    mal_id: int,
-    sentiment: str | None,
-    *,
-    genres: tuple[str, ...],
-    title: str,
-) -> RecommendationLocalState:
-    """Record or clear one vote, without persisting."""
-    kept = [record for record in state.feedback if record.mal_id != mal_id]
-    if sentiment is not None:
-        kept.append(
-            RecommendationFeedback(
-                mal_id=mal_id, sentiment=sentiment, genres=genres, title=title
-            )
-        )
-    return replace(state, feedback=tuple(kept))
 
 
 # Long enough to read as a transition, short enough not to delay the switch.
@@ -729,15 +709,16 @@ class RecommendationExplorerPage(QWidget):
 
         # Kept as a compatibility hook for earlier local state tests; visible
         # navigation is provided by the library tabs below.
-        self.taste_folders_button = QPushButton("Taste folders · 0 liked · 0 disliked")
+        self.taste_folders_button = QPushButton("Collections · 0 not interested")
         self.taste_folders_button.setObjectName("recommendationTasteFoldersButton")
         self.taste_folders_button.setVisible(False)
         self.taste_folders_menu = QMenu(self.taste_folders_button)
         self.recommendations_folder_action = self.taste_folders_menu.addAction(
             "Recommendations"
         )
-        self.liked_folder_action = self.taste_folders_menu.addAction("Liked (0)")
-        self.disliked_folder_action = self.taste_folders_menu.addAction("Disliked (0)")
+        self.not_interested_folder_action = self.taste_folders_menu.addAction(
+            "Not interested (0)"
+        )
         self.taste_folders_button.setMenu(self.taste_folders_menu)
         self.more_button = QPushButton("Recommend 5 more")
         self.more_button.setObjectName("recommendationMoreButton")
@@ -868,9 +849,8 @@ class RecommendationExplorerPage(QWidget):
         self.library_tab_group.setExclusive(True)
         for state, label in (
             ("all", "FOR YOU"),
-            ("liked", "LIKED"),
-            ("disliked", "DISLIKED"),
             ("watch-later", "WATCH LATER"),
+            ("not-interested", "NOT INTERESTED"),
         ):
             button = QPushButton(f"{label}  0")
             button.setObjectName(f"recommendationLibraryTab-{state}")
@@ -917,10 +897,12 @@ class RecommendationExplorerPage(QWidget):
         self.state_filter.setObjectName("recommendationStateFilter")
         self.state_filter.addItem("Recommendations", "all")
         self.state_filter.addItem("Watch Later", "watch-later")
-        self.state_filter.addItem("Liked folder", "liked")
-        self.state_filter.addItem("Disliked folder", "disliked")
+        self.state_filter.addItem("Not interested", "not-interested")
         self.state_filter.setVisible(False)
-        self.show_hidden_checkbox = QCheckBox("Show hidden")
+        # CHANGE [NO-VERDICTS]: this used to say "Show hidden", from when
+        # hiding was a separate act from dismissing. There is one list now,
+        # and the checkbox says which one it brings back into the feed.
+        self.show_hidden_checkbox = QCheckBox("Show not interested")
         self.show_hidden_checkbox.setObjectName("recommendationShowHidden")
         self.show_hidden_checkbox.setEnabled(False)
         view_row.addWidget(self.show_hidden_checkbox)
@@ -985,20 +967,14 @@ class RecommendationExplorerPage(QWidget):
         selected_actions.addStretch()
         self.watch_later_selected_button = QPushButton("Watch Later")
         self.watch_later_selected_button.setObjectName("recommendationWatchLaterSelected")
-        self.hide_selected_button = QPushButton("Hide")
-        self.hide_selected_button.setObjectName("recommendationHideSelected")
-        self.like_selected_button = QPushButton("Like")
-        self.like_selected_button.setObjectName("recommendationLikeSelected")
-        self.like_selected_button.setProperty("feedback", "liked")
-        self.like_selected_button.setCheckable(True)
-        self.dislike_selected_button = QPushButton("Dislike")
-        self.dislike_selected_button.setObjectName("recommendationDislikeSelected")
-        self.dislike_selected_button.setProperty("feedback", "disliked")
-        self.dislike_selected_button.setCheckable(True)
-        selected_actions.addWidget(self.like_selected_button)
-        selected_actions.addWidget(self.dislike_selected_button)
+        self.not_interested_selected_button = QPushButton("Not interested")
+        self.not_interested_selected_button.setObjectName(
+            "recommendationNotInterestedSelected"
+        )
+        self.not_interested_selected_button.setProperty("feedback", "not-interested")
+        self.not_interested_selected_button.setCheckable(True)
         selected_actions.addWidget(self.watch_later_selected_button)
-        selected_actions.addWidget(self.hide_selected_button)
+        selected_actions.addWidget(self.not_interested_selected_button)
         self.selected_actions_frame.setVisible(False)
         root.addWidget(self.selected_actions_frame)
 
@@ -1118,16 +1094,16 @@ class RecommendationExplorerPage(QWidget):
         self.refill_button.setMaximumWidth(240)
         self.refill_button.setVisible(False)
         self.refill_button.setEnabled(False)
-        self.browse_liked_button = QPushButton("Review liked anime")
-        self.browse_liked_button.setObjectName("recommendationBrowseLikedButton")
-        self.browse_liked_button.setProperty("buttonRole", "secondary")
-        self.browse_liked_button.setMaximumWidth(220)
-        self.browse_liked_button.setVisible(False)
+        self.browse_saved_button = QPushButton("Review saved anime")
+        self.browse_saved_button.setObjectName("recommendationBrowseSavedButton")
+        self.browse_saved_button.setProperty("buttonRole", "secondary")
+        self.browse_saved_button.setMaximumWidth(220)
+        self.browse_saved_button.setVisible(False)
         empty_actions = QHBoxLayout()
         empty_actions.setSpacing(8)
         empty_actions.addStretch()
         empty_actions.addWidget(self.clear_filters_button)
-        empty_actions.addWidget(self.browse_liked_button)
+        empty_actions.addWidget(self.browse_saved_button)
         empty_actions.addWidget(self.refill_button)
         empty_actions.addStretch()
         panel_layout.addWidget(
@@ -1178,28 +1154,19 @@ class RecommendationExplorerPage(QWidget):
         self.watch_later_selected_button.clicked.connect(
             lambda: self._toggle_watch_later(self.selected_model())
         )
-        self.hide_selected_button.clicked.connect(
+        self.not_interested_selected_button.clicked.connect(
             lambda: self._toggle_hidden(self.selected_model())
-        )
-        self.like_selected_button.clicked.connect(
-            lambda: self._toggle_feedback(self.selected_model(), "liked")
-        )
-        self.dislike_selected_button.clicked.connect(
-            lambda: self._toggle_feedback(self.selected_model(), "disliked")
         )
         self.more_button.clicked.connect(self.more_requested.emit)
         self.refill_button.clicked.connect(self.refill_requested.emit)
-        self.browse_liked_button.clicked.connect(
-            lambda: self._select_state_filter("liked")
+        self.browse_saved_button.clicked.connect(
+            lambda: self._select_state_filter("watch-later")
         )
         self.recommendations_folder_action.triggered.connect(
             lambda: self._select_state_filter("all")
         )
-        self.liked_folder_action.triggered.connect(
-            lambda: self._select_state_filter("liked")
-        )
-        self.disliked_folder_action.triggered.connect(
-            lambda: self._select_state_filter("disliked")
+        self.not_interested_folder_action.triggered.connect(
+            lambda: self._select_state_filter("not-interested")
         )
         self.filter_toggle_button.toggled.connect(self._set_filters_visible)
 
@@ -1312,28 +1279,21 @@ class RecommendationExplorerPage(QWidget):
             self._select_state_filter(self._visible_states[0])
 
     def _update_library_tabs(self) -> None:
-        reviewed = self.local_state.liked_mal_ids | self.local_state.disliked_mal_ids
         for_you = sum(
             1
             for model in self._models
-            if model.mal_id not in reviewed
-            and (
-                self.local_state.show_hidden
-                or model.mal_id not in self.local_state.hidden_mal_ids
-            )
+            if model.mal_id not in self.local_state.hidden_mal_ids
         )
         counts = {
             "all": for_you,
-            "liked": len(self.local_state.liked_mal_ids),
-            "disliked": len(self.local_state.disliked_mal_ids),
             "watch-later": len(self.local_state.watch_later_mal_ids),
+            "not-interested": len(self.local_state.hidden_mal_ids),
         }
         # Qt has no text-transform, so the case lives in the string.
         labels = {
             "all": "FOR YOU",
-            "liked": "LIKED",
-            "disliked": "DISLIKED",
             "watch-later": "WATCH LATER",
+            "not-interested": "NOT INTERESTED",
         }
         current_state = self.state_filter.currentData()
         for state, button in self.library_tabs.items():
@@ -1701,48 +1661,48 @@ class RecommendationExplorerPage(QWidget):
 
     def _apply_query(self) -> None:
         state_filter = self.state_filter.currentData()
-        reviewed_ids = (
-            self.local_state.liked_mal_ids | self.local_state.disliked_mal_ids
-        )
+        # CHANGE [NO-VERDICTS]: the Not interested collection exists to show
+        # exactly the titles the hidden gate removes, so the gate cannot run
+        # on it - applying it there emptied the tab that was meant to be the
+        # way back.
+        showing_not_interested = state_filter == "not-interested"
         state_filtered = tuple(
             model
             for model in self._models
             if (
-                self.local_state.show_hidden
+                showing_not_interested
+                or self.local_state.show_hidden
                 or model.mal_id not in self.local_state.hidden_mal_ids
-            )
-            and (
-                state_filter != "all"
-                or model.mal_id not in reviewed_ids
             )
             and (
                 state_filter != "watch-later"
                 or model.mal_id in self.local_state.watch_later_mal_ids
             )
-            and (state_filter != "liked" or model.mal_id in self.local_state.liked_mal_ids)
             and (
-                state_filter != "disliked"
-                or model.mal_id in self.local_state.disliked_mal_ids
+                not showing_not_interested
+                or model.mal_id in self.local_state.hidden_mal_ids
             )
         )
         self._visible_models = filter_and_sort_recommendations(
             state_filtered, self._filters(), self._sort_mode()
         )
-        # One register for the row: this sits immediately beside the feedback
-        # summary ("SAMPLE · 0 LIKED · 0 PASSED"), and the two were sentence
-        # case and caps in the same face on the same baseline.
+        # One register for the row: this sits immediately beside the summary
+        # ("SAMPLE · 0 SAVED · 0 SET ASIDE"), and the two were sentence case
+        # and caps in the same face on the same baseline.
         #
         # On a collection tab it reports SHOWN rather than naming the
         # collection again. The tab already carries the collection's total and
-        # the summary carries the vote counts; repeating "LIKED" here put the
-        # same number on screen three times. SHOWN is also the more useful
-        # fact, because it is the count after the active filters.
-        if state_filter in ("liked", "disliked", "watch-later"):
+        # the summary carries the rest; repeating the name here put the same
+        # number on screen three times. SHOWN is also the more useful fact,
+        # because it is the count after the active filters.
+        # The summary immediately to the right already reports how many are
+        # set aside. Naming it here too put the same number on screen twice,
+        # side by side, which is the exact repetition the collection tabs were
+        # written to avoid.
+        if state_filter in ("watch-later", "not-interested"):
             count_text = f"{len(self._visible_models)} SHOWN"
         else:
-            count_text = (
-                f"{len(self._visible_models)} UNREVIEWED · {len(reviewed_ids)} FILED"
-            )
+            count_text = f"{len(self._visible_models)} IN FEED"
         self.result_count_label.setText(count_text)
         self._update_library_tabs()
         visible_keys = {self._key_by_model[id(model)] for model in self._visible_models}
@@ -1781,20 +1741,19 @@ class RecommendationExplorerPage(QWidget):
     def _show_current_view(self) -> None:
         state_filter = self.state_filter.currentData()
         model_ids = {model.mal_id for model in self._models}
-        reviewed_ids = (
-            self.local_state.liked_mal_ids | self.local_state.disliked_mal_ids
-        )
-        if state_filter == "liked":
-            collection_ids = model_ids & self.local_state.liked_mal_ids
-        elif state_filter == "disliked":
-            collection_ids = model_ids & self.local_state.disliked_mal_ids
+        if state_filter == "not-interested":
+            collection_ids = model_ids & self.local_state.hidden_mal_ids
         elif state_filter == "watch-later":
             collection_ids = model_ids & self.local_state.watch_later_mal_ids
         else:
-            collection_ids = model_ids - reviewed_ids
+            collection_ids = model_ids - self.local_state.hidden_mal_ids
         has_collection_items = bool(collection_ids)
-        has_hidden_items = bool(collection_ids & self.local_state.hidden_mal_ids)
-        self.show_hidden_checkbox.setVisible(has_hidden_items)
+        # The collection that is made of hidden titles does not also need a
+        # checkbox offering to reveal them.
+        self.show_hidden_checkbox.setVisible(
+            state_filter != "not-interested"
+            and bool(model_ids & self.local_state.hidden_mal_ids)
+        )
 
         if not self._visible_models:
             # Keep the Cards/List/Table affordance in a stable location on
@@ -1808,26 +1767,22 @@ class RecommendationExplorerPage(QWidget):
                 has_source
                 and state_filter == "all"
                 and not self._has_active_filters()
-                and bool(
-                    self.local_state.liked_mal_ids
-                    | self.local_state.disliked_mal_ids
-                )
+                and bool(self.local_state.hidden_mal_ids)
             )
             if exhausted:
                 title = "You’re all caught up"
-                icon = "like-active"
+                icon = "folder-watch-later"
                 message = (
-                    "Every current pick has been reviewed. Generate 10 fresh anime "
-                    "from your updated taste model, or revisit the choices you saved."
+                    "Every current pick has been dealt with. Generate 10 fresh "
+                    "anime, or revisit what you saved for later."
                 )
-            elif state_filter == "liked" and not self._has_active_filters():
-                title = "No liked anime yet"
-                icon = "folder-liked"
-                message = "Anime you like will stay here so you can inspect or change the vote later."
-            elif state_filter == "disliked" and not self._has_active_filters():
-                title = "Nothing filed as Disliked"
-                icon = "folder-disliked"
-                message = "Anime marked Not for me will stay here and can be moved back at any time."
+            elif state_filter == "not-interested" and not self._has_active_filters():
+                title = "Nothing set aside yet"
+                icon = "folder-not-interested"
+                message = (
+                    "Anime you mark Not interested stay here, out of the feed, "
+                    "and can be brought back at any time."
+                )
             elif state_filter == "watch-later" and not self._has_active_filters():
                 title = "Your Watch Later list is empty"
                 icon = "folder-watch-later"
@@ -1847,8 +1802,8 @@ class RecommendationExplorerPage(QWidget):
             self.empty_label.setText(message)
             self.refill_button.setVisible(exhausted)
             self.clear_filters_button.setVisible(has_source and self._has_active_filters())
-            self.browse_liked_button.setVisible(
-                exhausted and bool(self.local_state.liked_mal_ids)
+            self.browse_saved_button.setVisible(
+                exhausted and bool(self.local_state.watch_later_mal_ids)
             )
             self.content_stack.setCurrentIndex(self.empty_index)
             return
@@ -1856,7 +1811,7 @@ class RecommendationExplorerPage(QWidget):
         self.filter_toggle_button.setVisible(True)
         self.refill_button.setVisible(False)
         self.clear_filters_button.setVisible(False)
-        self.browse_liked_button.setVisible(False)
+        self.browse_saved_button.setVisible(False)
         self.content_stack.setCurrentIndex(
             {
                 RecommendationViewMode.CARDS: self.card_index,
@@ -1919,8 +1874,6 @@ class RecommendationExplorerPage(QWidget):
                 hidden=model.mal_id in self.local_state.hidden_mal_ids,
                 watch_later=model.mal_id in self.local_state.watch_later_mal_ids,
                 actions_enabled=self.can_review and model.mal_id is not None,
-                liked=model.mal_id in self.local_state.liked_mal_ids,
-                disliked=model.mal_id in self.local_state.disliked_mal_ids,
             )
             row.set_cover_visible(self.show_covers)
             row.show()
@@ -1941,12 +1894,8 @@ class RecommendationExplorerPage(QWidget):
             lambda _model, selected_key=key: self.select_key(selected_key)
         )
         row.details_requested.connect(self._open_details)
-        row.hide_requested.connect(self._toggle_hidden)
+        row.not_interested_requested.connect(self._toggle_hidden)
         row.watch_later_requested.connect(self._toggle_watch_later)
-        row.liked_requested.connect(lambda model: self._toggle_feedback(model, "liked"))
-        row.disliked_requested.connect(
-            lambda model: self._toggle_feedback(model, "disliked")
-        )
         row.cover_requested.connect(
             lambda url, selected_key=key: self._request_cover(selected_key, url)
         )
@@ -2085,8 +2034,6 @@ class RecommendationExplorerPage(QWidget):
                 hidden=model.mal_id in self.local_state.hidden_mal_ids,
                 watch_later=model.mal_id in self.local_state.watch_later_mal_ids,
                 actions_enabled=self.can_review and model.mal_id is not None,
-                liked=model.mal_id in self.local_state.liked_mal_ids,
-                disliked=model.mal_id in self.local_state.disliked_mal_ids,
             )
             card.set_cover_visible(self.show_covers)
             card.set_badge_colours(*_badge_colours())
@@ -2111,12 +2058,8 @@ class RecommendationExplorerPage(QWidget):
             lambda _model, selected_key=key: self.select_key(selected_key)
         )
         card.details_requested.connect(self._open_details)
-        card.hide_requested.connect(self._toggle_hidden)
+        card.not_interested_requested.connect(self._toggle_hidden)
         card.watch_later_requested.connect(self._toggle_watch_later)
-        card.liked_requested.connect(lambda model: self._toggle_feedback(model, "liked"))
-        card.disliked_requested.connect(
-            lambda model: self._toggle_feedback(model, "disliked")
-        )
         card.cover_requested.connect(
             lambda url, selected_key=key: self._request_cover(selected_key, url)
         )
@@ -2350,10 +2293,8 @@ class RecommendationExplorerPage(QWidget):
     def _update_local_action_state(self) -> None:
         model = self.selected_model()
         enabled = self.profile_id is not None and model is not None and model.mal_id is not None
-        self.hide_selected_button.setEnabled(enabled)
         self.watch_later_selected_button.setEnabled(enabled)
-        self.like_selected_button.setEnabled(enabled)
-        self.dislike_selected_button.setEnabled(enabled)
+        self.not_interested_selected_button.setEnabled(enabled)
         self._update_selected_actions_visibility()
         if model is not None:
             self.selected_label.setText(model.display_title)
@@ -2361,9 +2302,9 @@ class RecommendationExplorerPage(QWidget):
                 self.selected_label.setToolTip("")
             else:
                 reason = (
-                    "Connect a MyAnimeList profile to save votes"
+                    "Connect a MyAnimeList profile to keep your lists"
                     if self.profile_id is None
-                    else "This title has no MyAnimeList entry to vote on"
+                    else "This title has no MyAnimeList entry to file"
                 )
                 self.selected_label.setText(f"{model.display_title} · {reason}")
                 self.selected_label.setToolTip(reason)
@@ -2371,34 +2312,19 @@ class RecommendationExplorerPage(QWidget):
             self.selected_label.setText("")
             self.selected_label.setToolTip("")
         if model is None:
-            self.hide_selected_button.setText("Hide")
             self.watch_later_selected_button.setText("Watch Later")
-            self.like_selected_button.setText("Like")
-            self.dislike_selected_button.setText("Dislike")
-            self.like_selected_button.setChecked(False)
-            self.dislike_selected_button.setChecked(False)
+            self.not_interested_selected_button.setText("Not interested")
+            self.not_interested_selected_button.setChecked(False)
             return
-        self.hide_selected_button.setText(
-            "Unhide" if model.mal_id in self.local_state.hidden_mal_ids else "Hide"
-        )
         self.watch_later_selected_button.setText(
             "Remove from Watch Later"
             if model.mal_id in self.local_state.watch_later_mal_ids
             else "Watch Later"
         )
-        liked = model.mal_id in self.local_state.liked_mal_ids
-        disliked = model.mal_id in self.local_state.disliked_mal_ids
-        self.like_selected_button.setChecked(liked)
-        self.dislike_selected_button.setChecked(disliked)
-        self.like_selected_button.setText(
-            "Remove like" if liked else "Move to Liked" if disliked else "Like"
-        )
-        self.dislike_selected_button.setText(
-            "Remove dislike"
-            if disliked
-            else "Move to Disliked"
-            if liked
-            else "Dislike"
+        not_interested = model.mal_id in self.local_state.hidden_mal_ids
+        self.not_interested_selected_button.setChecked(not_interested)
+        self.not_interested_selected_button.setText(
+            "Show again" if not_interested else "Not interested"
         )
 
     def _update_selected_actions_visibility(self) -> None:
@@ -2421,8 +2347,10 @@ class RecommendationExplorerPage(QWidget):
                 model.mal_id,
                 wanted,
             )
+        self._update_feedback_summary()
         self._apply_query()
         self._sync_detail_local_state()
+        self.feedback_changed.emit(self.local_state)
 
     def _toggle_watch_later(self, model: RecommendationViewModel | None) -> None:
         if not self.can_review or model is None or model.mal_id is None:
@@ -2441,66 +2369,32 @@ class RecommendationExplorerPage(QWidget):
         self._apply_query()
         self._sync_detail_local_state()
 
-    def _toggle_feedback(
-        self, model: RecommendationViewModel | None, sentiment: str
-    ) -> None:
-        if not self.can_review or model is None or model.mal_id is None:
-            return
-        active_ids = (
-            self.local_state.liked_mal_ids
-            if sentiment == "liked"
-            else self.local_state.disliked_mal_ids
-        )
-        next_sentiment = None if model.mal_id in active_ids else sentiment
-        if self.profile_id is None:
-            self.local_state = _feedback_in_memory(
-                self.local_state,
-                model.mal_id,
-                next_sentiment,
-                genres=model.genres,
-                title=model.display_title,
-            )
-        else:
-            self.local_state = self.state_service.set_feedback(
-                self.profile_id,
-                model.mal_id,
-                next_sentiment,
-                genres=model.genres,
-                title=model.display_title,
-            )
-        self._update_feedback_summary()
-        self._apply_query()
-        self._sync_detail_local_state()
-        self.feedback_changed.emit(self.local_state)
-
     def _update_feedback_summary(self) -> None:
-        likes = len(self.local_state.liked_mal_ids)
-        dislikes = len(self.local_state.disliked_mal_ids)
+        saved = len(self.local_state.watch_later_mal_ids)
+        set_aside = len(self.local_state.hidden_mal_ids)
         # CHANGE [READOUT]: these were paragraph-length sentences written for
         # a full-width band. On the control bar that band collapsed into, the
         # longest of them ran off the end mid-word. They are status readouts
         # now: same facts, told the way the rest of the bar tells them.
+        #
+        # CHANGE [NO-VERDICTS]: and they no longer report votes, because
+        # there are none. What is left to count is what the reader filed:
+        # kept for later, or taken out of the feed.
         if not self.can_review:
-            text = "NO PROFILE · REVIEWING DISABLED"
+            text = "NO PROFILE · LISTS DISABLED"
         elif self.profile_id is None:
-            # Sample data. Reviewing works and reshapes the feed, but the
-            # result is not kept, so say so rather than implying it is saved.
-            text = (
-                f"SAMPLE · {likes} LIKED · {dislikes} PASSED "
-                "· CONNECT TO KEEP"
-            )
-        elif not likes and not dislikes:
+            # Sample data. Filing works and reshapes the feed, but the result
+            # is not kept, so say so rather than implying it is saved.
+            text = f"SAMPLE · {saved} SAVED · {set_aside} SET ASIDE · CONNECT TO KEEP"
+        elif not saved and not set_aside:
             # Named for what is actually tested - a saved profile - rather
             # than for a "model" this application does not have.
-            text = "PROFILE READY · VOTE TO SHAPE THE FEED"
+            text = "PROFILE READY · SAVE OR SET ASIDE TO SHAPE THE FEED"
         else:
-            text = f"VOTES SAVED · {likes} LIKED · {dislikes} PASSED"
+            text = f"LISTS SAVED · {saved} SAVED · {set_aside} SET ASIDE"
         self.feedback_summary_label.setText(text)
-        self.taste_folders_button.setText(
-            f"Taste folders · {likes} liked · {dislikes} disliked"
-        )
-        self.liked_folder_action.setText(f"Liked ({likes})")
-        self.disliked_folder_action.setText(f"Disliked ({dislikes})")
+        self.taste_folders_button.setText(f"Collections · {set_aside} not interested")
+        self.not_interested_folder_action.setText(f"Not interested ({set_aside})")
         self._update_library_tabs()
 
     def _open_selected_details(self) -> None:
@@ -2513,19 +2407,13 @@ class RecommendationExplorerPage(QWidget):
         if self.detail_dialog is None:
             self.detail_dialog = RecommendationDetailDialog(self)
             self.detail_dialog.cover_requested.connect(self._request_detail_cover)
-            self.detail_dialog.hide_requested.connect(self._toggle_hidden)
+            self.detail_dialog.not_interested_requested.connect(self._toggle_hidden)
             self.detail_dialog.watch_later_requested.connect(self._toggle_watch_later)
             self.detail_dialog.previous_requested.connect(
                 lambda: self._step_detail(-1)
             )
             self.detail_dialog.next_requested.connect(
                 lambda: self._step_detail(1)
-            )
-            self.detail_dialog.liked_requested.connect(
-                lambda model: self._toggle_feedback(model, "liked")
-            )
-            self.detail_dialog.disliked_requested.connect(
-                lambda model: self._toggle_feedback(model, "disliked")
             )
         self._set_detail_model(model)
         self.detail_dialog.show()
@@ -2578,8 +2466,6 @@ class RecommendationExplorerPage(QWidget):
             hidden=mal_id in self.local_state.hidden_mal_ids,
             watch_later=mal_id in self.local_state.watch_later_mal_ids,
             actions_enabled=self.can_review and mal_id is not None,
-            liked=mal_id in self.local_state.liked_mal_ids,
-            disliked=mal_id in self.local_state.disliked_mal_ids,
         )
 
     def _request_detail_cover(self, url: str) -> None:

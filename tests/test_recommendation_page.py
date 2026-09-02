@@ -238,14 +238,17 @@ def test_profile_switch_isolates_local_state_and_missing_mal_id_disables_actions
     assert "Alpha" in titles(page.visible_models)
     page.set_recommendations((Recommendation(Anime("No MAL identity")),))
     page.select_key("local:0:no mal identity")
-    assert not page.hide_selected_button.isEnabled()
+    assert not page.not_interested_selected_button.isEnabled()
     assert not page.watch_later_selected_button.isEnabled()
     page.close()
 
 
-def test_feedback_moves_cards_between_real_taste_folders_and_updates_live_counts(
-    system_temp_dir,
-):
+def test_not_interested_moves_a_card_into_its_collection_and_back(system_temp_dir):
+    """Setting a title aside must be reversible from the collection it lands in.
+
+    This is the whole safety of a one-click exclusion: it leaves the feed
+    immediately, it is still findable, and the same control brings it back.
+    """
     application = create_application([])
     service = RecommendationStateService(root_override=system_temp_dir)
     page = RecommendationExplorerPage(state_service=service)
@@ -255,53 +258,35 @@ def test_feedback_moves_cards_between_real_taste_folders_and_updates_live_counts
     page.feedback_changed.connect(changed.append)
 
     card = page._cards_by_key["mal:1"]
-    card.like_button.click()
+    card.not_interested_button.click()
     application.processEvents()
-    assert service.load("profile-a").liked_mal_ids == frozenset((1,))
+    assert service.load("profile-a").hidden_mal_ids == frozenset((1,))
     # The summary is a status readout now, so its case is presentation.
     # The invariant is that it reports the count.
-    assert "1 liked" in page.feedback_summary_label.text().casefold()
+    assert "1 set aside" in page.feedback_summary_label.text().casefold()
     assert "Alpha" not in titles(page.visible_models)
-    assert page.liked_folder_action.text() == "Liked (1)"
+    assert page.not_interested_folder_action.text() == "Not interested (1)"
     assert changed
 
-    page.library_tabs["liked"].click()
+    page.library_tabs["not-interested"].click()
     application.processEvents()
     assert titles(page.visible_models) == ["Alpha"]
-    # CHANGE [ICON-VERDICTS]: the verdict row is glyphs, so the state a label
-    # used to spell out lives in the accessible name - which is also the only
-    # place a screen reader could ever have read it from.
+    # CHANGE [ICON-VERDICTS]: the row is glyphs, so the state a label used to
+    # spell out lives in the accessible name - which is also the only place a
+    # screen reader could ever have read it from.
     assert (
-        page._cards_by_key["mal:1"].like_button.accessibleName() == "Remove this like"
+        page._cards_by_key["mal:1"].not_interested_button.accessibleName()
+        == "Show this recommendation again"
     )
-    assert (
-        page._cards_by_key["mal:1"].dislike_button.accessibleName()
-        == "Move to Disliked"
-    )
-    page._cards_by_key["mal:1"].dislike_button.click()
-    application.processEvents()
-    state = service.load("profile-a")
-    assert state.liked_mal_ids == frozenset()
-    assert state.disliked_mal_ids == frozenset((1,))
-    assert not page.visible_models
-    assert page.liked_folder_action.text() == "Liked (0)"
-    assert page.disliked_folder_action.text() == "Disliked (1)"
 
-    page.library_tabs["disliked"].click()
+    page._cards_by_key["mal:1"].not_interested_button.click()
     application.processEvents()
-    assert titles(page.visible_models) == ["Alpha"]
-    assert page._cards_by_key["mal:1"].like_button.accessibleName() == "Move to Liked"
-    assert (
-        page._cards_by_key["mal:1"].dislike_button.accessibleName()
-        == "Remove this dislike"
-    )
-    page._cards_by_key["mal:1"].dislike_button.click()
+    assert service.load("profile-a").hidden_mal_ids == frozenset()
+    assert page.not_interested_folder_action.text() == "Not interested (0)"
     page.library_tabs["all"].click()
     application.processEvents()
     assert "Alpha" in titles(page.visible_models)
-    assert service.load("profile-a").disliked_mal_ids == frozenset()
-    assert page.state_filter.findData("liked") >= 0
-    assert page.state_filter.findData("disliked") >= 0
+    assert page.state_filter.findData("not-interested") >= 0
     page.close()
 
 
@@ -316,15 +301,16 @@ def test_exhausted_recommendations_feed_offers_exact_ten_pick_refill(system_temp
     requested = []
     page.refill_requested.connect(lambda: requested.append(10))
 
+    page._toggle_watch_later(page.visible_models[0])
     while page.visible_models:
-        page._toggle_feedback(page.visible_models[0], "liked")
+        page._toggle_hidden(page.visible_models[0])
     application.processEvents()
 
     assert page.content_stack.currentIndex() == page.empty_index
     assert page.empty_title_label.text() == "You’re all caught up"
     assert "Generate 10 fresh anime" in page.empty_label.text()
     assert page.refill_button.isVisibleTo(page.empty_widget)
-    assert page.browse_liked_button.isVisibleTo(page.empty_widget)
+    assert page.browse_saved_button.isVisibleTo(page.empty_widget)
     assert page.refill_button.isEnabled()
     page.refill_button.click()
     assert requested == [10]
@@ -347,7 +333,7 @@ def test_visible_library_tabs_allow_watch_later_to_be_reviewed_and_removed(
     page.show()
     application.processEvents()
 
-    assert set(page.library_tabs) == {"all", "liked", "disliked", "watch-later"}
+    assert set(page.library_tabs) == {"all", "watch-later", "not-interested"}
     assert all(button.isVisibleTo(page) for button in page.library_tabs.values())
     assert not page.selected_actions_frame.isVisibleTo(page)
 
@@ -380,7 +366,7 @@ def test_library_never_enters_the_discover_autoload_state(system_temp_dir):
     page = RecommendationExplorerPage(
         state_service=RecommendationStateService(root_override=system_temp_dir)
     )
-    page.set_visible_states(("liked", "watch-later", "disliked"))
+    page.set_visible_states(("watch-later", "not-interested"))
     page.set_more_available(True)
     page.set_more_running(True)
 

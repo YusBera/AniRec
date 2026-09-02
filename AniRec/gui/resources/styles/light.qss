@@ -184,10 +184,10 @@ QFrame#stripDivider { background: #A8B4A0; border: none; }
    pills on a surface that had otherwise become an instrument. Labels are
    pinned by tests, so the shift is carried entirely by the typeface, the
    tracking and the corners. */
-QPushButton[feedback="liked"], QPushButton[feedback="disliked"],
+QPushButton[feedback="not-interested"],
 QPushButton[savedAction="true"], QPushButton[viewToggle="true"],
 QPushButton#recommendationDetailsButton, QPushButton#recommendationMoreButton,
-QPushButton#recommendationHideButton, QPushButton#recommendationMalButton,
+QPushButton#recommendationMalButton,
 QPushButton#recommendationFilterToggle {
     font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 7.4pt; font-weight: 700;
     letter-spacing: 1px; border-radius: 0;
@@ -261,23 +261,18 @@ QPushButton[buttonRole="link"]:hover { color: #634B14; background: transparent; 
 QPushButton[buttonRole="danger"] { background: #FAEAE8; border-color: #E0AFA9; color: #96301F; }
 /* CHANGE [BUG7]: the feedback actions carried no colour of their own, so a
    Like and a Not for me looked identical until after they were pressed. They
-   now preview their meaning on hover, in the greens and reds the active theme
-   already defines, so the colour follows light, dark, OLED and gradient
-   without a second palette. */
-QPushButton[feedback="liked"]:hover {
-    background: #E3F1E8; border-color: #A5CDB4; color: #1B6340;
-}
-QPushButton[feedback="liked"]:checked {
-    background: #E3F1E8; border-color: #A5CDB4; color: #1B6340;
-}
-QPushButton[feedback="liked"]:checked:hover { border-color: #1B6340; }
-QPushButton[feedback="disliked"]:hover {
+   now preview their meaning on hover, in the reds the active theme already
+   defines, so the colour follows light, dark, OLED and gradient without a
+   second palette.
+   CHANGE [NO-VERDICTS]: only the negative half survives - the greens went
+   with the like button. */
+QPushButton[feedback="not-interested"]:hover {
     background: #FAEAE8; border-color: #E0AFA9; color: #96301F;
 }
-QPushButton[feedback="disliked"]:checked {
+QPushButton[feedback="not-interested"]:checked {
     background: #FAEAE8; border-color: #E0AFA9; color: #96301F;
 }
-QPushButton[feedback="disliked"]:checked:hover { border-color: #96301F; }
+QPushButton[feedback="not-interested"]:checked:hover { border-color: #96301F; }
 QPushButton[savedAction="true"]:hover {
     background: #DFEEEC; border-color: #A6CBC6; color: #235C56;
 }
@@ -499,8 +494,7 @@ QFrame[recommendationCard="true"] {
     border: 1px solid #C6CFBE; border-radius: 2px;
 }
 QFrame[recommendationCard="true"]:hover { background: #FAFBF5; border-color: #7A5D1C; }
-QFrame[recommendationCard="true"][tasteState="liked"] { border-color: #A5CDB4; }
-QFrame[recommendationCard="true"][tasteState="disliked"] { border-color: #E0AFA9; }
+QFrame[recommendationCard="true"][tasteState="not-interested"] { border-color: #E0AFA9; }
 QFrame[recommendationCard="true"]:focus, QFrame[recommendationCard="true"][selected="true"] {
     border: 2px solid #2C7C74;
 }
@@ -624,8 +618,7 @@ QFrame[recommendationRow="true"] {
     background: #F4F6EF; border: 1px solid #C6CFBE; border-radius: 2px;
 }
 QFrame[recommendationRow="true"]:hover { background: #FAFBF5; border-color: #7A5D1C; }
-QFrame[recommendationRow="true"][tasteState="liked"] { border-color: #A5CDB4; }
-QFrame[recommendationRow="true"][tasteState="disliked"] { border-color: #E0AFA9; }
+QFrame[recommendationRow="true"][tasteState="not-interested"] { border-color: #E0AFA9; }
 QFrame[recommendationRow="true"]:focus,
 QFrame[recommendationRow="true"][selected="true"] { border: 2px solid #2C7C74; }
 QLabel#recommendationRowCover { background: #D8DED0; border-radius: 1px; }
@@ -1495,8 +1488,8 @@ QPushButton:disabled, QPushButton[buttonRole="primary"]:disabled,
 QPushButton[buttonRole="secondary"]:disabled, QPushButton[buttonRole="ghost"]:disabled,
 QPushButton[buttonRole="link"]:disabled, QPushButton[buttonRole="danger"]:disabled,
 QPushButton[libraryTab="true"]:disabled, QPushButton[viewToggle="true"]:disabled,
-QPushButton[savedAction="true"]:disabled, QPushButton[feedback="liked"]:disabled,
-QPushButton[feedback="disliked"]:disabled, QPushButton[navItem="true"]:disabled {
+QPushButton[savedAction="true"]:disabled,
+QPushButton[feedback="not-interested"]:disabled, QPushButton[navItem="true"]:disabled {
     background: #E3E7DD; color: #97A294;
     border-color: #D5DCCC;
 }

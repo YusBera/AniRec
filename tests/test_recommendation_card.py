@@ -92,20 +92,16 @@ def test_the_review_decision_sits_above_the_supporting_detail():
         raise AssertionError(f"{widget} is not in the card layout")
 
     assert card.sizePolicy().verticalPolicy() is QSizePolicy.Policy.Maximum
-    assert row_of(card.title_label) < row_of(card.like_button)
-    # CHANGE [ACTION-ROW]: the three verdicts a reader has about a
-    # recommendation - yes, later, no - are one row, in the order somebody
-    # decides them. Watch Later used to sit two rows down with unrelated
-    # controls in between, which put the most likely answer of the three
-    # furthest from the other two.
-    assert (
-        row_of(card.like_button)
-        == row_of(card.watch_later_button)
-        == row_of(card.dislike_button)
-    )
+    assert row_of(card.title_label) < row_of(card.watch_later_button)
+    # CHANGE [NO-VERDICTS]: the two decisions a reader can actually make from
+    # a card - keep this, or stop showing it - are one row, in the order
+    # somebody reaches them. Watch Later used to sit two rows down with
+    # unrelated controls in between, which put the likelier of the two
+    # furthest away.
+    assert row_of(card.watch_later_button) == row_of(card.not_interested_button)
     for later in (card.mal_score_label, card.meta_label, card.reason_label,
                   card.details_button):
-        assert row_of(card.like_button) < row_of(later)
+        assert row_of(card.watch_later_button) < row_of(later)
 
 
 def test_card_requests_cover_lazily_and_uses_placeholder_for_corrupt_bytes():

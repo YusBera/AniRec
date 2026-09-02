@@ -332,10 +332,8 @@ class RecommendationCard(QFrame):
     cover_requested = Signal(str)
     details_requested = Signal(object)
     selection_requested = Signal(object)
-    hide_requested = Signal(object)
+    not_interested_requested = Signal(object)
     watch_later_requested = Signal(object)
-    liked_requested = Signal(object)
-    disliked_requested = Signal(object)
 
     def __init__(
         self,
@@ -501,22 +499,22 @@ class RecommendationCard(QFrame):
         # CHANGE [BUG7]: the single-line labels were cut off mid-word at the
         # card edge with no ellipsis, which reads as text running into the
         # border rather than as text that continues elsewhere.
-        self.like_button = QPushButton("Like")
-        self.like_button.setObjectName("recommendationLikeButton")
-        self.like_button.setProperty("feedback", "liked")
-        self.like_button.setCheckable(True)
-        self.like_button.clicked.connect(lambda: self.liked_requested.emit(self.model))
-        # CHANGE [ACTION-ROW]: "Not for me" was the longest label in the
-        # smallest box in the interface, and it bought nothing over the plain
-        # word - the softening read as hedging rather than as kindness. The
-        # width it frees is what lets Watch Later come up out of the second
-        # row and join the pair it belongs with.
-        self.dislike_button = QPushButton("Dislike")
-        self.dislike_button.setObjectName("recommendationDislikeButton")
-        self.dislike_button.setProperty("feedback", "disliked")
-        self.dislike_button.setCheckable(True)
-        self.dislike_button.clicked.connect(
-            lambda: self.disliked_requested.emit(self.model)
+        # CHANGE [NO-VERDICTS]: Like is gone and Dislike is now Not
+        # interested. A card is read before the anime is watched, so the only
+        # opinion available at this moment is about the pitch - the poster,
+        # the title, the genres - and not about the show. Like asked for a
+        # verdict nobody was in a position to give, then spent it as though
+        # it were one, and nothing could ever take it back.
+        #
+        # What remains is the judgement a card can actually support: not
+        # this, do not offer it again. It is a filter, not a rating, and it
+        # says nothing to the taste model.
+        self.not_interested_button = QPushButton("Not interested")
+        self.not_interested_button.setObjectName("recommendationNotInterestedButton")
+        self.not_interested_button.setProperty("feedback", "not-interested")
+        self.not_interested_button.setCheckable(True)
+        self.not_interested_button.clicked.connect(
+            lambda: self.not_interested_requested.emit(self.model)
         )
         # CHANGE [BUG2]: shorter labels. At 75% GUI scale the card is 168px
         # wide and the previous wording clipped mid-word ("iew Detail").
@@ -524,12 +522,12 @@ class RecommendationCard(QFrame):
         self.details_button.setProperty("buttonRole", "ghost")
         self.details_button.setAccessibleName("View full details for this anime")
         self.details_button.clicked.connect(lambda: self.details_requested.emit(self.model))
-        self.hide_button = QPushButton("Hide")
+        # CHANGE [NO-VERDICTS]: the separate Hide control is gone. It
+        # excluded a title from future recommendations, which is precisely
+        # what Not interested now says out loud, and two controls that do the
+        # same thing on one small card is worse than one that says what it
+        # means.
         self._hidden_state = False
-        self._hide_tooltip = "Hide this recommendation"
-        self.hide_button.setObjectName("recommendationHideButton")
-        self.hide_button.setProperty("buttonRole", "ghost")
-        self.hide_button.clicked.connect(lambda: self.hide_requested.emit(self.model))
         self.watch_later_button = QPushButton("Later")
         self.watch_later_button.setObjectName("recommendationWatchLaterButton")
         self.watch_later_button.setProperty("savedAction", True)
@@ -547,13 +545,14 @@ class RecommendationCard(QFrame):
         )
         # Identity first, then the decision, then the supporting detail.
         #
-        # A 2:3 poster plus six buttons cannot fit the default window: a whole
+        # A 2:3 poster plus the buttons cannot fit the default window: a whole
         # card measures around 565px against roughly 448px of visible feed, and
         # shrinking the cover far enough to close that gap would leave artwork
         # too small to recognise. So the ordering decides what falls below the
-        # fold. Reviewing a pick is the core loop, so Like and Not for me sit
-        # directly under the title where the eye already is, and the metadata
-        # a user reads only when undecided moves beneath them.
+        # fold. Deciding on a pick is the core loop, so Watch Later and Not
+        # interested sit directly under the title where the eye already is,
+        # and the metadata a user reads only when undecided moves beneath
+        # them.
         # CHANGE [BUG2]: the cover is narrower than the card, and adding it
         # without an alignment left it against the left margin. Centre it.
         layout.addWidget(self.cover_label, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -578,29 +577,25 @@ class RecommendationCard(QFrame):
         feedback_row.setHorizontalSpacing(scaled(SPACE['sm']))
         feedback_row.setColumnStretch(0, 1)
         feedback_row.setColumnStretch(1, 1)
-        feedback_row.setColumnStretch(2, 1)
-        # CHANGE [ACTION-ROW]: Watch Later joins the pair it belongs with.
-        # The three verdicts a reader has about a recommendation - yes, later,
-        # no - were split across two rows with unrelated controls between
-        # them, so the most likely answer of the three ("not now, but keep
-        # it") was also the furthest away. They read left to right in the
-        # order somebody actually decides.
+        # CHANGE [ACTION-ROW]: Watch Later belongs beside the other decision,
+        # not two rows below it with unrelated controls in between - which is
+        # where the likelier of the two used to sit. They read left to right
+        # in the order somebody actually reaches them.
         # CHANGE [ICON-VERDICTS]: glyphs, not words. "Watch Later" needs 63px
-        # of text and a three-up row gives about 62px at the widest card and
-        # 32px at the narrowest, so the label could not fit at any size - it
-        # was shipping as "Later", which is the one of the three verdicts
-        # whose meaning the abbreviation actually damages.
+        # of text and the row gave about 62px at the widest card and 32px at
+        # the narrowest, so the label could not fit at any size - it was
+        # shipping as "Later", the one abbreviation here that damages the
+        # meaning of what it labels.
         #
-        # Three things keep this from being three unlabelled mystery boxes.
-        # Each carries its own colour, so like and dislike are not one control
-        # drawn twice. Each keeps a real accessible name and a tooltip, since
-        # a glyph with neither is invisible to a keyboard or a screen reader.
-        # And the checked state swaps to the filled variant of the same icon,
-        # so the state does not rest on colour alone.
+        # CHANGE [NO-VERDICTS]: two controls, not three. With Like gone the
+        # row is no longer a verdict at all - it is "keep this" and "stop
+        # showing me this", which is the whole of what a reader can decide
+        # from a card. Each still carries its own colour, a real accessible
+        # name and a tooltip, and the checked state still swaps to the filled
+        # variant of the glyph so state never rests on colour alone.
         for column, button, icon, tip in (
-            (0, self.like_button, "like", "Like this"),
-            (1, self.watch_later_button, "watch-later", "Save for later"),
-            (2, self.dislike_button, "dislike", "Not for you"),
+            (0, self.watch_later_button, "watch-later", "Save for later"),
+            (1, self.not_interested_button, "not-interested", "Not interested"),
         ):
             self._make_grid_cell(button)
             button.setProperty("verdictIcon", icon)
@@ -649,7 +644,6 @@ class RecommendationCard(QFrame):
         for button, icon, tip in (
             (self.details_button, "details-inspector", "Open the full breakdown"),
             (self.mal_button, "external-mal", "Open on MyAnimeList"),
-            (self.hide_button, "hide", "Hide this recommendation"),
         ):
             button.setText("")
             button.setIcon(themed_ui_icon(icon))
@@ -921,15 +915,15 @@ class RecommendationCard(QFrame):
             return
         self.cover_requested.emit(self.model.cover_url)
 
-    # Which palette role each verdict is drawn in. Like and dislike carry
-    # their own colour so the pair is not one control twice; Watch Later is
-    # deliberately neutral, because "keep this for now" is not a verdict and
-    # should not compete with the two that are.
+    # Which palette role each control is drawn in. Not interested keeps the
+    # danger colour because it is the one action here that changes what the
+    # feed will offer again; Watch Later stays neutral, since "keep this for
+    # now" decides nothing and should not compete with it.
     _VERDICT_ROLES = {
-        "like": "resolvedSuccess",
-        "dislike": "resolvedDanger",
+        "not-interested": "resolvedDanger",
         "watch-later": "resolvedTextSubtle",
     }
+
 
     def _refresh_verdict_icons(self) -> None:
         """Draw each verdict in its own colour, filled when it is the answer.
@@ -938,7 +932,7 @@ class RecommendationCard(QFrame):
         so which one is chosen does not rest on colour alone - the shape
         changes too, which is what makes it readable without colour vision.
         """
-        for button in (self.like_button, self.watch_later_button, self.dislike_button):
+        for button in (self.watch_later_button, self.not_interested_button):
             name = button.property("verdictIcon")
             if not name:
                 continue
@@ -958,18 +952,13 @@ class RecommendationCard(QFrame):
         hidden: bool,
         watch_later: bool,
         actions_enabled: bool,
-        liked: bool = False,
-        disliked: bool = False,
     ) -> None:
-        # Hide is an icon control now, so its state is carried by the tooltip
-        # and the accessible name rather than by a word that no longer fits.
+        # CHANGE [NO-VERDICTS]: "hidden" and "not interested" are one state
+        # now, so the button reports it directly instead of a second control
+        # shadowing it.
         self._hidden_state = bool(hidden)
-        hide_label = "Unhide this recommendation" if hidden else "Hide this recommendation"
-        self.hide_button.setAccessibleName(hide_label)
-        self._hide_tooltip = hide_label
         self.watch_later_button.setChecked(watch_later)
-        self.like_button.setChecked(liked)
-        self.dislike_button.setChecked(disliked)
+        self.not_interested_button.setChecked(self._hidden_state)
         # CHANGE [ICON-VERDICTS]: what the labels used to say now lives in the
         # accessible name, which is the only place a glyph can carry it. These
         # are the strings a screen reader reads and the tooltip shows, so the
@@ -977,46 +966,26 @@ class RecommendationCard(QFrame):
         self.watch_later_button.setAccessibleName(
             "Remove from Watch Later" if watch_later else "Save for later"
         )
-        self.like_button.setAccessibleName(
-            "Remove this like"
-            if liked
-            else "Move to Liked"
-            if disliked
-            else "Like this"
-        )
-        self.dislike_button.setAccessibleName(
-            "Remove this dislike"
-            if disliked
-            else "Move to Disliked"
-            if liked
-            else "Not for you"
+        self.not_interested_button.setAccessibleName(
+            "Show this recommendation again"
+            if self._hidden_state
+            else "Not interested"
         )
         self._refresh_verdict_icons()
-        taste_state = "liked" if liked else "disliked" if disliked else "unreviewed"
-        self.setProperty("tasteState", taste_state)
+        self.setProperty(
+            "tasteState", "not-interested" if self._hidden_state else "unreviewed"
+        )
         self.style().unpolish(self)
         self.style().polish(self)
-        self.hide_button.setEnabled(actions_enabled)
         self.watch_later_button.setEnabled(actions_enabled)
-        self.like_button.setEnabled(actions_enabled)
-        self.dislike_button.setEnabled(actions_enabled)
+        self.not_interested_button.setEnabled(actions_enabled)
         reason = "Connect or select a profile to manage local recommendation lists."
-        self.hide_button.setToolTip(self._hide_tooltip if actions_enabled else reason)
         self.watch_later_button.setToolTip("" if actions_enabled else reason)
-        self.like_button.setToolTip(
+        self.not_interested_button.setToolTip(
             (
-                "Remove this like and return the anime to For You."
-                if liked
-                else "Move this anime to Liked and update the taste model."
-            )
-            if actions_enabled
-            else reason
-        )
-        self.dislike_button.setToolTip(
-            (
-                "Remove this dislike and return the anime to For You."
-                if disliked
-                else "Move this anime to Disliked and update the taste model."
+                "Show this anime in For You again."
+                if self._hidden_state
+                else "Stop recommending this anime. It stays in Not interested."
             )
             if actions_enabled
             else reason
@@ -1030,8 +999,8 @@ class RecommendationCard(QFrame):
 
         CHANGE [BUNDLE]: inside an opened series bundle the entries are the
         evidence and the bundle's own panel is where anything gets decided.
-        Repeating Like / Not for me on five entry cards puts ten controls in
-        one panel and leaves the eye nowhere to rest.
+        Repeating the actions on five entry cards fills one panel with
+        controls and leaves the eye nowhere to rest.
 
         The card is reused rather than a second, simpler card being written
         for the purpose: the cover fitting, the match plate, the line budgets
@@ -1039,12 +1008,10 @@ class RecommendationCard(QFrame):
         drift away from them the first time one of them changed.
         """
         for button in (
-            self.like_button,
-            self.dislike_button,
+            self.not_interested_button,
             self.watch_later_button,
             self.details_button,
             self.mal_button,
-            self.hide_button,
         ):
             button.setVisible(visible)
 

@@ -23,7 +23,7 @@ def test_state_is_schema_versioned_sorted_and_round_trips_atomically(system_temp
 
     payload = json.loads(service.path("profile-a").read_text(encoding="utf-8"))
     assert payload == {
-        "schema_version": 2,
+        "schema_version": 3,
         "hidden_mal_ids": [10, 30],
         "watch_later_mal_ids": [10, 20],
         "show_hidden": True,

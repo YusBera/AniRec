@@ -99,7 +99,7 @@ def test_each_row_sits_at_the_same_place_in_every_card(system_temp_dir):
         "match_label",
         "title_label",
         "secondary_title_label",
-        "like_button",
+        "watch_later_button",
         "mal_score_label",
         "details_button",
         "mal_button",

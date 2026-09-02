@@ -181,7 +181,7 @@ def nav_icon_name(page_id: PageId) -> str:
 
 # Collections shown on each surface.
 DISCOVER_STATES = ("all",)
-LIBRARY_STATES = ("liked", "watch-later", "disliked")
+LIBRARY_STATES = ("watch-later", "not-interested")
 
 
 class SystemReadout(QFrame):
@@ -1187,14 +1187,15 @@ class MainWindow(QMainWindow):
         if self.worker_controller.is_running(key):
             return False
         state = self.recommendation_state_service.load(self.active_profile.profile_id)
-        # Generation stays feedback-neutral on purpose. TasteFeedbackService
-        # applies votes once, on the display path, so that a like is not counted
-        # both in the stored score and again when the feed is rendered.
+        # CHANGE [NO-VERDICTS]: there is one exclusion set now. Dislikes used
+        # to be a second one that had to be unioned in here and everywhere else
+        # it was read; they have been folded into the hidden set, which is what
+        # Not interested writes to.
         worker = RecommendationWorker(
             self.pipeline_orchestrator,
             self.active_profile.username,
             self.settings_service.load().pipeline,
-            excluded_mal_ids=state.disliked_mal_ids | state.hidden_mal_ids,
+            excluded_mal_ids=state.hidden_mal_ids,
         )
         try:
             self.worker_controller.start(key, worker)
@@ -1229,7 +1230,7 @@ class MainWindow(QMainWindow):
             self.active_profile.username,
             self.settings_service.load().pipeline,
             existing_recommendations=existing.recommendations,
-            excluded_mal_ids=state.disliked_mal_ids | state.hidden_mal_ids,
+            excluded_mal_ids=state.hidden_mal_ids,
             count=self._last_more_count,
         )
         try:

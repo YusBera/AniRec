@@ -296,10 +296,8 @@ class BundleInfoBlock(QFrame):
     which is what lets the entry cards go back to being posters.
     """
 
-    liked = Signal(object)
-    disliked = Signal(object)
+    not_interested = Signal(object)
     watch_later = Signal(object)
-    hidden = Signal(object)
 
     def __init__(self, bundle: BundleViewModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -355,36 +353,35 @@ class BundleInfoBlock(QFrame):
         layout.addWidget(self.reason_label)
         layout.addStretch(1)
 
-        # The same four decisions a single card offers, at franchise scale.
+        # CHANGE [NO-VERDICTS]: the same decisions a single card offers, at
+        # franchise scale - and a card now offers two, not four. "Like the
+        # franchise" was the strongest claim in the interface and the one
+        # least supported by anything the reader had seen; Dislike and Hide
+        # were the same exclusion written twice. Saving the franchise for
+        # later is what is left to emphasise, so it takes the primary role
+        # the like button used to hold.
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(scaled(SPACE["sm"]))
-        self.dislike_button = QPushButton("Dislike")
-        self.dislike_button.setObjectName("bundleDislikeButton")
-        self.dislike_button.setProperty("feedback", "disliked")
-        self.later_button = QPushButton("Later")
+        self.not_interested_button = QPushButton("Not interested")
+        self.not_interested_button.setObjectName("bundleNotInterestedButton")
+        self.not_interested_button.setProperty("feedback", "not-interested")
+        self.later_button = QPushButton("Save the franchise for later")
         self.later_button.setObjectName("bundleLaterButton")
         self.later_button.setProperty("savedAction", True)
-        self.hide_button = QPushButton("Hide")
-        self.hide_button.setObjectName("bundleInfoHideButton")
-        self.hide_button.setProperty("buttonRole", "ghost")
-        self.like_button = QPushButton("Like the franchise")
-        self.like_button.setObjectName("bundleLikeButton")
-        self.like_button.setProperty("buttonRole", "primary")
+        self.later_button.setProperty("buttonRole", "primary")
         for button, stretch in (
-            (self.dislike_button, 3),
-            (self.later_button, 2),
-            (self.hide_button, 2),
-            (self.like_button, 4),
+            (self.not_interested_button, 3),
+            (self.later_button, 4),
         ):
             button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             actions.addWidget(button, stretch)
         layout.addLayout(actions)
 
-        self.like_button.clicked.connect(lambda: self.liked.emit(self.bundle))
-        self.dislike_button.clicked.connect(lambda: self.disliked.emit(self.bundle))
+        self.not_interested_button.clicked.connect(
+            lambda: self.not_interested.emit(self.bundle)
+        )
         self.later_button.clicked.connect(lambda: self.watch_later.emit(self.bundle))
-        self.hide_button.clicked.connect(lambda: self.hidden.emit(self.bundle))
 
     def refresh_track(self) -> None:
         """Re-read the palette after a theme change.

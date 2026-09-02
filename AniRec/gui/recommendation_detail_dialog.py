@@ -46,10 +46,8 @@ NO_GENRE_CONTRIBUTIONS = "No score contribution breakdown is available."
 
 class RecommendationDetailDialog(QDialog):
     cover_requested = Signal(str)
-    hide_requested = Signal(object)
+    not_interested_requested = Signal(object)
     watch_later_requested = Signal(object)
-    liked_requested = Signal(object)
-    disliked_requested = Signal(object)
     previous_requested = Signal()
     next_requested = Signal()
 
@@ -244,26 +242,6 @@ class RecommendationDetailDialog(QDialog):
         score_layout.addLayout(sum_row)
         inspector_column.addWidget(self.score_bench)
 
-        feedback = QHBoxLayout()
-        feedback.setSpacing(SPACE["sm"])
-        self.like_button = QPushButton("Like")
-        self.like_button.setObjectName("recommendationDetailLikeButton")
-        self.like_button.setProperty("feedback", "liked")
-        self.like_button.setCheckable(True)
-        self.like_button.clicked.connect(
-            lambda: self.model is not None and self.liked_requested.emit(self.model)
-        )
-        self.dislike_button = QPushButton("Dislike")
-        self.dislike_button.setObjectName("recommendationDetailDislikeButton")
-        self.dislike_button.setProperty("feedback", "disliked")
-        self.dislike_button.setCheckable(True)
-        self.dislike_button.clicked.connect(
-            lambda: self.model is not None and self.disliked_requested.emit(self.model)
-        )
-        feedback.addWidget(self.like_button, 1)
-        feedback.addWidget(self.dislike_button, 1)
-        inspector_column.addLayout(feedback)
-
         utilities = QHBoxLayout()
         utilities.setSpacing(SPACE["xs"])
         self.watch_later_button = QPushButton("Watch Later")
@@ -278,16 +256,25 @@ class RecommendationDetailDialog(QDialog):
         self.mal_button.setObjectName("recommendationDetailMalButton")
         self.mal_button.setProperty("buttonRole", "link")
         self.mal_button.clicked.connect(self._open_mal)
-        self.hide_button = QPushButton("Hide")
-        self.hide_button.setObjectName("recommendationDetailHideButton")
-        self.hide_button.setProperty("buttonRole", "link")
-        self.hide_button.clicked.connect(
-            lambda: self.model is not None and self.hide_requested.emit(self.model)
+        # CHANGE [NO-VERDICTS]: the breakdown's own Like / Dislike pair is
+        # gone with the rest of them, and Hide has taken their place under its
+        # honest name. This is the surface where a reader has just read the
+        # whole case for a recommendation, so it is the most likely place for
+        # them to decide against it.
+        self.not_interested_button = QPushButton("Not interested")
+        self.not_interested_button.setObjectName(
+            "recommendationDetailNotInterestedButton"
+        )
+        self.not_interested_button.setProperty("feedback", "not-interested")
+        self.not_interested_button.setCheckable(True)
+        self.not_interested_button.clicked.connect(
+            lambda: self.model is not None
+            and self.not_interested_requested.emit(self.model)
         )
         utilities.addWidget(self.watch_later_button)
+        utilities.addWidget(self.not_interested_button)
         utilities.addStretch()
         utilities.addWidget(self.mal_button)
-        utilities.addWidget(self.hide_button)
         inspector_column.addLayout(utilities)
         inspector_column.addStretch()
         hero.addLayout(inspector_column, 1)
@@ -472,30 +459,17 @@ class RecommendationDetailDialog(QDialog):
         hidden: bool,
         watch_later: bool,
         actions_enabled: bool,
-        liked: bool = False,
-        disliked: bool = False,
     ) -> None:
-        self.hide_button.setText("Unhide" if hidden else "Hide")
         self.watch_later_button.setText(
             "Remove saved" if watch_later else "Watch Later"
         )
         self.watch_later_button.setChecked(watch_later)
-        self.hide_button.setEnabled(actions_enabled)
         self.watch_later_button.setEnabled(actions_enabled)
-        self.like_button.setChecked(liked)
-        self.dislike_button.setChecked(disliked)
-        self.like_button.setText(
-            "Remove like" if liked else "Move to Liked" if disliked else "Like"
+        self.not_interested_button.setChecked(bool(hidden))
+        self.not_interested_button.setText(
+            "Show again" if hidden else "Not interested"
         )
-        self.dislike_button.setText(
-            "Remove dislike"
-            if disliked
-            else "Move to Disliked"
-            if liked
-            else "Dislike"
-        )
-        self.like_button.setEnabled(actions_enabled)
-        self.dislike_button.setEnabled(actions_enabled)
+        self.not_interested_button.setEnabled(actions_enabled)
 
     def set_cover_visible(self, visible: bool) -> None:
         self.cover_label.setVisible(visible)
