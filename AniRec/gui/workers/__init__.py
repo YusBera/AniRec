@@ -5,6 +5,7 @@ from .controller import OperationAlreadyRunningError, WorkerController
 from .operations import (
     ApiConnectionWorker,
     CoverDownloadWorker,
+    ListSyncWorker,
     OAuthWorker,
     OperationKind,
     MoreRecommendationsWorker,
@@ -22,6 +23,7 @@ __all__ = [
     "BaseWorker",
     "ApiConnectionWorker",
     "CoverDownloadWorker",
+    "ListSyncWorker",
     "OAuthWorker",
     "OperationAlreadyRunningError",
     "OperationKind",

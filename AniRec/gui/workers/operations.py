@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 
 from ...application.pipeline import OAUTH_STEP_ID, STEP_LABELS, PipelineOrchestrator
@@ -20,6 +21,10 @@ from ...services.auth_service import AuthService
 from .base import BaseWorker
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 class OperationKind(str, Enum):
     SYNC = "sync"
     RECOMMENDATION = "recommendation"
@@ -29,6 +34,7 @@ class OperationKind(str, Enum):
     COVER = "cover"
     PROFILE_LOOKUP = "profile-lookup"
     MORE_RECOMMENDATIONS = "more-recommendations"
+    LIST_SYNC = "list-sync"
 
 
 def operation_key(kind: OperationKind | str, profile_id: str) -> str:
@@ -59,6 +65,50 @@ class SyncWorker(BaseWorker):
             self.username,
             self.settings,
             progress_callback=self.report_progress,
+            cancellation_token=self.cancellation_token,
+        )
+
+
+class ListSyncWorker(BaseWorker):
+    """Walk the changed head of a MyAnimeList list off the interface thread.
+
+    Carries no policy of its own. The service decides what a completion means
+    and the window decides what to do about it; this exists because the walk
+    is network-bound and must not block a launch.
+    """
+
+    def __init__(
+        self,
+        sync_service,
+        profile_id: str,
+        username: str,
+        *,
+        watch_later_mal_ids=frozenset(),
+        clock=None,
+        access_token: str | None = None,
+        client_id: str | None = None,
+        include_nsfw: bool = False,
+        **worker_options,
+    ) -> None:
+        super().__init__(**worker_options)
+        self.sync_service = sync_service
+        self.profile_id = profile_id
+        self.username = username
+        self.watch_later_mal_ids = frozenset(watch_later_mal_ids)
+        self._clock = clock or _utc_now_iso
+        self.access_token = access_token
+        self.client_id = client_id
+        self.include_nsfw = include_nsfw
+
+    def execute(self) -> object:
+        return self.sync_service.sync(
+            self.profile_id,
+            self.username,
+            watch_later_mal_ids=self.watch_later_mal_ids,
+            synced_at=self._clock(),
+            access_token=self.access_token,
+            client_id=self.client_id,
+            include_nsfw=self.include_nsfw,
             cancellation_token=self.cancellation_token,
         )
 

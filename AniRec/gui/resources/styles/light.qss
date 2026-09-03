@@ -123,6 +123,7 @@ QFrame#connectionStatusBar {
     border-bottom: 1px solid #C6CFBE; border-radius: 0;
 }
 QFrame#demoBanner { background: transparent; border: none; }
+QFrame#syncNotice { background: transparent; border: none; }
 QLabel#activeProfileLabel {
     background: transparent; color: #4C5B50; border: none;
     padding: 0; font-family: "IBM Plex Mono", "Cascadia Mono", "Consolas", "DejaVu Sans Mono", monospace; font-size: 8.3pt;
@@ -143,6 +144,11 @@ QFrame#malStatusIndicator[connected="true"] {
     background: #1B6340; border-color: #A5CDB4;
 }
 QLabel#demoBannerText { color: #5E4813; font-weight: 600; }
+/* The sync notice reports something that already happened, so it is drawn in
+   the same colour as a saved item rather than in the accent the sample banner
+   uses to call for a connection. Two amber lines on one strip would compete
+   for the same attention, and only one of them is asking for anything. */
+QLabel#syncNoticeText { color: #235C56; font-weight: 600; }
 
 /* Discover header strip: channel legend, machine state, run control. */
 /* One header instrument: an outer frame, two lines, one hairline between
@@ -224,6 +230,7 @@ QPushButton#tastePanelToggle {
     letter-spacing: 1.5px;
 }
 QFrame#demoBanner QPushButton { padding: 5px 12px; min-height: 16px; }
+QFrame#syncNotice QPushButton { padding: 5px 12px; min-height: 16px; }
 
 QPushButton {
     background: #FAFBF5;

@@ -12,6 +12,13 @@ from .data_management_service import (
     DataDeletionScope,
     DataManagementService,
 )
+from .mal_sync_service import (
+    MalListEntry,
+    MalSyncService,
+    MalSyncState,
+    SyncedCompletion,
+    reconcile,
+)
 from .onboarding_service import OnboardingService
 from .profile_service import ProfileService
 from .recommendation_service import RecommendationService
@@ -44,6 +51,9 @@ __all__ = [
     "DataDeletionReceipt",
     "DataDeletionScope",
     "DataManagementService",
+    "MalListEntry",
+    "MalSyncService",
+    "MalSyncState",
     "OnboardingService",
     "ProfileService",
     "RecommendationService",
@@ -57,5 +67,7 @@ __all__ = [
     "ResultService",
     "SampleDataService",
     "SettingsService",
+    "SyncedCompletion",
     "TokenStore",
+    "reconcile",
 ]

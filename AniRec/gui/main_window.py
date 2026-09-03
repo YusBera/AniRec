@@ -66,6 +66,8 @@ from ..models import AppSettings, PipelineResult, UserProfile
 from ..services import (
     AuthService,
     DataManagementService,
+    MalSyncService,
+    MalSyncState,
     OnboardingService,
     ProfileService,
     ProfileStatisticsService,
@@ -124,10 +126,13 @@ from .system_log import SystemLog
 from .setup_wizard import SetupWizard
 from .texts import COMPARE_TEXT, FILTER_TEXT, UI_TEXT, WIZARD_TEXT
 from .theme import ThemeManager
+from .sync_notice import SyncNotice, open_mal_entry
 from .workers import (
     CoverDownloadWorker,
+    ListSyncWorker,
     MoreRecommendationsWorker,
     OperationAlreadyRunningError,
+    OperationKind,
     RecommendationWorker,
     SyncWorker,
     WorkerController,
@@ -329,6 +334,7 @@ class MainWindow(QMainWindow):
         auth_service: AuthService | None = None,
         pipeline_orchestrator: PipelineOrchestrator | None = None,
         recommendation_state_service: RecommendationStateService | None = None,
+        mal_sync_service: MalSyncService | None = None,
         settings_service: SettingsService | None = None,
         token_store: TokenStore | None = None,
         data_management_service: DataManagementService | None = None,
@@ -345,6 +351,7 @@ class MainWindow(QMainWindow):
         self.recommendation_state_service = (
             recommendation_state_service or RecommendationStateService()
         )
+        self.mal_sync_service = mal_sync_service or MalSyncService()
         self.taste_feedback_service = TasteFeedbackService()
         self.settings_service = settings_service or SettingsService()
         self.token_store = token_store or TokenStore()
@@ -572,6 +579,16 @@ class MainWindow(QMainWindow):
         if stats:
             self._log("engine", f"taste vector restored · {len(stats)} genres")
         self.advanced_operations_page.set_profile(profile)
+        # CHANGE [MAL-SYNC]: the strip reports what the previous walk found
+        # before a new one is started, so reopening the application shows the
+        # standing notice immediately rather than only after a round trip.
+        self.sync_notice.set_state(
+            self.mal_sync_service.load(profile.profile_id)
+            if profile is not None
+            else None
+        )
+        if profile is not None and current_profile_id != previous_profile_id:
+            self._start_list_sync()
         self._refresh_compare_context()
         self.settings_page.set_context(profile)
         settings = self.settings_service.load()
@@ -991,6 +1008,14 @@ class MainWindow(QMainWindow):
         self.demo_banner.setVisible(False)
         self.connection_status.attach_notice(self.demo_banner)
 
+        # CHANGE [MAL-SYNC]: what a sync found, on the strip rather than in a
+        # modal. The anime was finished days ago; that earns a line, not an
+        # interruption on launch.
+        self.sync_notice = SyncNotice()
+        self.sync_notice.dismissed.connect(self._acknowledge_sync_notice)
+        self.sync_notice.rate_requested.connect(open_mal_entry)
+        self.connection_status.attach_notice(self.sync_notice)
+
         self.page_stack = QStackedWidget()
         self.page_stack.setObjectName("pageStack")
         # The dashboard and genre analysis still exist as widgets; they are now
@@ -1295,6 +1320,98 @@ class MainWindow(QMainWindow):
         if library is not None:
             library.set_bundle_context({}, (), enabled=False)
 
+    # -- MyAnimeList list sync ------------------------------------------
+
+    def _start_list_sync(self) -> bool:
+        """Walk the changed head of the active profile's list.
+
+        Best effort by design. A sync is something the reader did not ask for,
+        so every reason not to run one - no profile, no credentials, a walk
+        already in flight - is a quiet return rather than a message. What it
+        finds is worth a line; what stops it starting is not.
+        """
+        profile = self.active_profile
+        if profile is None or self.demo_mode or not profile.username:
+            return False
+        credentials = self._sync_credentials()
+        if credentials is None:
+            return False
+        key = operation_key(OperationKind.LIST_SYNC, profile.profile_id)
+        if self.worker_controller.is_running(key):
+            return False
+        state = self.recommendation_state_service.load(profile.profile_id)
+        worker = ListSyncWorker(
+            self.mal_sync_service,
+            profile.profile_id,
+            profile.username,
+            watch_later_mal_ids=state.watch_later_mal_ids,
+            **credentials,
+        )
+        try:
+            self.worker_controller.start(key, worker)
+        except OperationAlreadyRunningError:
+            return False
+        return True
+
+    def _sync_credentials(self) -> dict[str, str] | None:
+        """Prefer the public Client ID, the same way the pipeline does.
+
+        Reading somebody's public list needs no token. Falling back to one
+        when it happens to be stored keeps a private list working without
+        making a token a precondition for the feature.
+        """
+        try:
+            settings = self.settings_service.load()
+        except (AniRecError, OSError, TypeError, ValueError):
+            return None
+        client_id = (getattr(settings, "client_id", "") or "").strip()
+        if client_id:
+            return {"client_id": client_id}
+        profile = self.active_profile
+        if profile is None:
+            return None
+        try:
+            token = self.token_store.load(profile.profile_id)
+        except (AniRecError, OSError, TypeError, ValueError):
+            return None
+        access_token = getattr(token, "access_token", None) if token else None
+        if access_token:
+            return {"access_token": access_token}
+        return None
+
+    def _apply_sync_result(self, profile_id: str, result: object) -> None:
+        """Fold a completed walk into the local lists and the strip.
+
+        The removal is silent on purpose. Watch Later means "I still intend to
+        watch this", and a title that has been finished no longer qualifies -
+        asking permission to agree with the reader's own list would be a
+        prompt with one sensible answer.
+        """
+        state, watched = result
+        for mal_id in sorted(watched):
+            self.recommendation_state_service.set_watch_later(profile_id, mal_id, False)
+        if watched:
+            self._log("sync", f"watch later cleared · {len(watched)} watched")
+            # Before the notice, not after. refresh_dashboard re-reads the
+            # stored sync state onto the strip, so setting the notice first
+            # meant the refresh immediately overwrote it - harmless while the
+            # two agree, and a silently blank strip the moment they do not.
+            self.refresh_dashboard()
+        self.sync_notice.set_state(state)
+
+    def _acknowledge_sync_notice(self) -> None:
+        profile = self.active_profile
+        if profile is None:
+            self.sync_notice.set_state(None)
+            return
+        state = self.mal_sync_service.acknowledge(
+            profile.profile_id,
+            [item.mal_id for item in self.mal_sync_service.load(
+                profile.profile_id
+            ).unacknowledged],
+        )
+        self.sync_notice.set_state(state)
+
     def _publish_studio_names(self) -> None:
         """Tell the taste sentence which of its ranked terms are studios.
 
@@ -1465,6 +1582,14 @@ class MainWindow(QMainWindow):
             self.recommendations_page.set_more_running(False)
 
     def _on_operation_result(self, operation_key: str, result: object) -> None:
+        if operation_key.startswith(f"{OperationKind.LIST_SYNC.value}:"):
+            profile_id = operation_key.partition(":")[2]
+            if (
+                self.active_profile is not None
+                and profile_id == self.active_profile.profile_id
+            ):
+                self._apply_sync_result(profile_id, result)
+            return
         if isinstance(result, CoverImageResult):
             url = self._aux_cover_operations.pop(operation_key, None)
             if url is not None:
