@@ -1100,6 +1100,7 @@ class RecommendationCard(QFrame):
             source = QPixmap(scaled(COVER_WIDTH), scaled(COVER_HEIGHT))
             source.fill(Qt.GlobalColor.transparent)
         self._source_cover = source
+        self.cover_label.mark_placeholder()
         self._show_cover(source)
 
     def _rescale_cover(self) -> None:

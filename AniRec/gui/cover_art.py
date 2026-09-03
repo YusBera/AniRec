@@ -120,6 +120,21 @@ class CoverLabel(QLabel):
     ``setPixmap``: re-fitting after a resize or a GUI-scale change also sets a
     pixmap, and dissolving then would be motion attached to no event.
 
+    CHANGE [PLACEHOLDER-OVER-ART]: it does not dissolve away a placeholder.
+    A crossfade holds both images on screen at once for its whole duration,
+    and reordering the two draws cannot change that - any two-layer alpha
+    composite is the same blend either way round. So for 220ms after every
+    cover lands, the generated initial plate really is sitting over the
+    artwork it stood in for. One at a time that reads as a resolve; scrolling
+    quickly lands a screenful at once and it reads as the placeholders being
+    painted on top of the real images.
+
+    A placeholder is scaffolding rather than a picture of anything, so there
+    is nothing to dissolve *from*: it is taken away the instant real artwork
+    exists. The dissolve is kept for artwork replacing artwork, which is what
+    the detail view does when it upgrades to the large cover, and which is
+    the case it was written for.
+
     Paint-only. ``pixmap()`` returns the incoming artwork the moment it is
     set, so anything reading the label sees the new cover immediately and only
     the drawing lags.
@@ -131,6 +146,12 @@ class CoverLabel(QLabel):
         super().__init__(parent)
         self._outgoing: QPixmap | None = None
         self._armed = False
+        # Two states, not one: what is on screen now, and what the next
+        # setPixmap is about to put there. Collapsing them into a single flag
+        # means the call that installs the placeholder consumes it, and the
+        # call that replaces it never sees it.
+        self._showing_placeholder = False
+        self._pending_placeholder = False
         self._mix = 0.0
         self._fade = QVariantAnimation(self)
         self._fade.setDuration(self.FADE_MS)
@@ -145,6 +166,15 @@ class CoverLabel(QLabel):
         """The next pixmap is newly arrived artwork, so dissolve into it."""
         self._armed = True
 
+    def mark_placeholder(self) -> None:
+        """Say that what is on screen now is a stand-in, not artwork.
+
+        Anything set after this replaces it outright. The caller marks it
+        rather than the label guessing, because only the caller knows whether
+        the pixmap it is handing over is a real cover.
+        """
+        self._pending_placeholder = True
+
     def _on_mix(self, value) -> None:
         try:
             self._mix = max(0.0, min(1.0, float(value)))
@@ -158,11 +188,32 @@ class CoverLabel(QLabel):
         self.update()
 
     def setPixmap(self, pixmap: QPixmap) -> None:  # noqa: N802 - Qt API
-        if self._armed and not self.pixmap().isNull() and not pixmap.isNull():
+        incoming_is_placeholder = self._pending_placeholder
+        replacing_placeholder = self._showing_placeholder
+        self._showing_placeholder = incoming_is_placeholder
+        self._pending_placeholder = False
+        # A dissolve needs a real picture on both sides of it. Neither a
+        # placeholder being taken away nor one being put back is a moment
+        # worth softening, and softening the first is what put the plate on
+        # top of the artwork.
+        should_fade = (
+            self._armed
+            and not replacing_placeholder
+            and not incoming_is_placeholder
+            and not self.pixmap().isNull()
+            and not pixmap.isNull()
+        )
+        if should_fade:
             self._outgoing = self.pixmap()
             self._mix = 1.0
             self._fade.stop()
             self._fade.start()
+        else:
+            # Any fade still running belonged to the pixmap being replaced,
+            # so it has nothing left to dissolve towards.
+            self._fade.stop()
+            self._outgoing = None
+            self._mix = 0.0
         self._armed = False
         super().setPixmap(pixmap)
 
