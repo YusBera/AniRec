@@ -383,6 +383,17 @@ class AppSettings:
     gui_scale: float = 1.0
     show_covers: bool = True
     recommendation_view_mode: str = "cards"
+    # Opt-in, and off by default. Opening a profile is somebody asking for
+    # their library, so the sync that runs then is part of the request. A
+    # timer firing an hour later is not - that is the application reaching
+    # out to a third party on its own initiative, which is a thing to be
+    # granted rather than assumed.
+    #
+    # Added without bumping SETTINGS_SCHEMA_VERSION on purpose. The loader
+    # rejects any version it does not recognise, so a bump would make every
+    # existing settings file unreadable; an additive field with a default
+    # reads out of an older file exactly as it should.
+    background_sync_enabled: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "client_id", _optional_text(self.client_id))
@@ -396,6 +407,9 @@ class AppSettings:
         )
         object.__setattr__(
             self, "include_hidden_recommendations", bool(self.include_hidden_recommendations)
+        )
+        object.__setattr__(
+            self, "background_sync_enabled", bool(self.background_sync_enabled)
         )
         object.__setattr__(self, "theme", (_optional_text(self.theme) or "system").casefold())
         object.__setattr__(
@@ -438,6 +452,7 @@ class AppSettings:
             "gui_scale": self.gui_scale,
             "show_covers": self.show_covers,
             "recommendation_view_mode": self.recommendation_view_mode,
+            "background_sync_enabled": self.background_sync_enabled,
         }
 
     def to_diagnostic_dict(self) -> dict[str, Any]:
@@ -458,6 +473,7 @@ class AppSettings:
             "gui_scale": self.gui_scale,
             "show_covers": self.show_covers,
             "recommendation_view_mode": self.recommendation_view_mode,
+            "background_sync_enabled": self.background_sync_enabled,
         }
 
     @classmethod
@@ -488,6 +504,7 @@ class AppSettings:
             gui_scale=data.get("gui_scale", 1.0),
             show_covers=bool(data.get("show_covers", True)),
             recommendation_view_mode=data.get("recommendation_view_mode") or "cards",
+            background_sync_enabled=bool(data.get("background_sync_enabled", False)),
         )
 
 

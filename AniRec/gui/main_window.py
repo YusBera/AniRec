@@ -188,6 +188,10 @@ def nav_icon_name(page_id: PageId) -> str:
 DISCOVER_STATES = ("all",)
 LIBRARY_STATES = ("watch-later", "not-interested")
 
+# How often the opt-in repeat asks MyAnimeList what changed. See the timer's
+# construction for why this number and not a smaller one.
+BACKGROUND_SYNC_INTERVAL_MS = 30 * 60 * 1000
+
 
 class SystemReadout(QFrame):
     """A fixed set of key/value rows reporting live application state.
@@ -352,6 +356,16 @@ class MainWindow(QMainWindow):
             recommendation_state_service or RecommendationStateService()
         )
         self.mal_sync_service = mal_sync_service or MalSyncService()
+        # CHANGE [MAL-SYNC]: the opt-in repeat. Thirty minutes is chosen
+        # against what is actually being waited for: somebody finishing an
+        # anime and marking it on MyAnimeList in a browser while AniRec is
+        # open beside it. Hourly is slow enough that the notice arrives after
+        # they have stopped caring; every few minutes spends a rate-limited
+        # API on an event that happens once a week. The timer is created
+        # stopped and only ever started by the setting.
+        self.background_sync_timer = QTimer(self)
+        self.background_sync_timer.setInterval(BACKGROUND_SYNC_INTERVAL_MS)
+        self.background_sync_timer.timeout.connect(self._start_list_sync)
         self.taste_feedback_service = TasteFeedbackService()
         self.settings_service = settings_service or SettingsService()
         self.token_store = token_store or TokenStore()
@@ -433,9 +447,16 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, lambda: self.open_setup_wizard(force=False))
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        # Stop the repeat before the workers are torn down. A tick that lands
+        # mid-shutdown would start a walk against services that are on their
+        # way out, and the window it reports to is already closing.
+        self.background_sync_timer.stop()
         if self.worker_controller.shutdown():
             event.accept()
         else:
+            # The close was refused, so the repeat has to come back with the
+            # window it belongs to.
+            self.set_background_sync(self.settings_service.load().background_sync_enabled)
             event.ignore()
 
     def show_operation_progress(self, operation_key: str) -> OperationProgressDialog:
@@ -1172,6 +1193,7 @@ class MainWindow(QMainWindow):
         for view in (self.recommendations_page, self.library_page):
             view.view_mode_changed.connect(self._persist_view_mode)
         # CHANGE [BUG2]: rebuild the sized widgets when the GUI scale changes.
+        self.settings_page.background_sync_changed.connect(self.set_background_sync)
         self.settings_page.gui_scale_changed.connect(self._on_gui_scale_changed)
         self.settings_page.show_covers_changed.connect(self._on_show_covers_changed)
         for view in self._recommendation_views():
@@ -1399,6 +1421,21 @@ class MainWindow(QMainWindow):
             self.refresh_dashboard()
         self.sync_notice.set_state(state)
 
+    def set_background_sync(self, enabled: bool) -> None:
+        """Start or stop the opt-in repeat.
+
+        Turning it on does not fire a walk immediately. The activation sync
+        has already run for this profile, so an extra request here would buy
+        nothing but a second call to the same endpoint.
+        """
+        if enabled:
+            if not self.background_sync_timer.isActive():
+                self.background_sync_timer.start()
+                self._log("sync", "background list sync armed · every 30 min")
+        elif self.background_sync_timer.isActive():
+            self.background_sync_timer.stop()
+            self._log("sync", "background list sync stopped")
+
     def _acknowledge_sync_notice(self) -> None:
         profile = self.active_profile
         if profile is None:
@@ -1459,6 +1496,7 @@ class MainWindow(QMainWindow):
                 gradient_end=settings.gradient_end,
             )
         self._retint_icons()
+        self.set_background_sync(settings.background_sync_enabled)
         profile_page = getattr(self, "profile_page", None)
         if profile_page is not None:
             profile_page.apply_scale()

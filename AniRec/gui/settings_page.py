@@ -79,6 +79,7 @@ class SettingsPage(QWidget):
     profile_changed = Signal(object)
     show_hidden_changed = Signal(bool)
     show_covers_changed = Signal(bool)
+    background_sync_changed = Signal(bool)
     local_data_reset = Signal()
 
     API_TEST_KEY = "settings-api-test:global"
@@ -280,6 +281,21 @@ class SettingsPage(QWidget):
         self.default_sort_input.addItem("Alphabetical", "alphabetical")
         self.include_hidden_input = QCheckBox("Include anime marked Not interested")
         self.include_nsfw_input = QCheckBox("Include NSFW anime")
+        # Named for what it does rather than for the machinery. "Background
+        # sync" says nothing about who is contacted or what is read; this
+        # says both, and says it only reads.
+        self.background_sync_input = QCheckBox(
+            "Check MyAnimeList for anime you have finished, while AniRec is open"
+        )
+        self.background_sync_input.setObjectName("settingsBackgroundSync")
+        background_sync_hint = QLabel(
+            "Off by default. AniRec already checks once when you open a "
+            "profile. This keeps checking every 30 minutes, so a title you "
+            "finish elsewhere leaves your Watch Later list without a restart. "
+            "It only reads your list and never writes to your account."
+        )
+        background_sync_hint.setObjectName("settingsDataScopeHint")
+        background_sync_hint.setWordWrap(True)
         # One control replaces the candidate pool size, the randomness factor
         # and the deterministic seed. Those are properties of the sampler, not
         # decisions a person can reason about, so they are derived from this
@@ -314,6 +330,8 @@ class SettingsPage(QWidget):
         form.addRow("DEFAULT SORT", self.default_sort_input)
         form.addRow("NOT INTERESTED", self.include_hidden_input)
         form.addRow("MAL CONTENT", self.include_nsfw_input)
+        form.addRow("KEEP IN SYNC", self.background_sync_input)
+        form.addRow("", background_sync_hint)
 
         # Kept for round tripping and for the developer tools view; they are no
         # longer surfaced as separate questions to answer.
@@ -661,6 +679,7 @@ class SettingsPage(QWidget):
         )
         self.include_hidden_input.setChecked(settings.include_hidden_recommendations)
         self.include_nsfw_input.setChecked(pipeline.include_nsfw)
+        self.background_sync_input.setChecked(settings.background_sync_enabled)
         self.client_id_input.setText(settings.client_id or "")
         self.client_secret_input.clear()
         self.client_secret_input.setPlaceholderText(
@@ -702,6 +721,7 @@ class SettingsPage(QWidget):
             pipeline=pipeline,
             default_recommendation_sort=self.default_sort_input.currentData(),
             include_hidden_recommendations=self.include_hidden_input.isChecked(),
+            background_sync_enabled=self.background_sync_input.isChecked(),
             theme=self.theme_input.currentData(),
             gradient_start=self.gradient_picker.start,
             gradient_end=self.gradient_picker.end,
@@ -779,6 +799,7 @@ class SettingsPage(QWidget):
         )
         self.settings_saved.emit(settings)
         self.show_hidden_changed.emit(settings.include_hidden_recommendations)
+        self.background_sync_changed.emit(settings.background_sync_enabled)
         return True
 
     def refresh_profiles(self) -> None:
