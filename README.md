@@ -1,6 +1,6 @@
 # AniRec
 
-AniRec 1.3.0 is an open-source Windows desktop application that turns a MyAnimeList history into anime recommendations you can actually interrogate. Every score comes with a breakdown that adds up to it. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
+AniRec 1.4.0 is an open-source Windows desktop application that turns a MyAnimeList history into anime recommendations you can actually interrogate. Every score comes with a breakdown that adds up to it. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
 
 AniRec is unofficial and is not affiliated with or endorsed by MyAnimeList.
 
@@ -112,7 +112,7 @@ The script builds [AniRec.spec](AniRec.spec) with PyInstaller and produces:
 dist\AniRec\AniRec.exe
 ```
 
-The `onedir` package includes the original application icon, light/dark QSS, placeholders, asset licensing, GPL-3.0 license, Qt runtime, and Python dependencies. `build/` and `dist/` are generated locally and ignored by Git. A `onefile` build is intentionally not shipped in 1.2.2.
+The `onedir` package includes the original application icon, light/dark QSS, placeholders, asset licensing, GPL-3.0 license, Qt runtime, and Python dependencies. `build/` and `dist/` are generated locally and ignored by Git. A `onefile` build is intentionally not shipped in 1.4.0.
 
 ## Command-line interface
 
@@ -165,7 +165,7 @@ AniRec stores writable data outside the program and repository under:
 | `cache\covers\` | Validated downloaded cover images |
 | `logs\` | Rotating, secret-redacted diagnostic logs |
 
-Client Secrets and OAuth tokens are protected by the current Windows user account and filesystem permissions, but 1.2.2 does not use Windows Credential Manager or another encrypted secret vault. Use **Settings → Data Management** for scoped cache, cover, or local-data deletion. Deletion requires an exact validated target and never follows an outside path.
+Client Secrets and OAuth tokens are protected by the current Windows user account and filesystem permissions, but 1.4.0 does not use Windows Credential Manager or another encrypted secret vault. Use **Settings → Data Management** for scoped cache, cover, or local-data deletion. Deletion requires an exact validated target and never follows an outside path.
 
 ## Tests
 
@@ -236,10 +236,10 @@ AniRec is licensed under the [GNU General Public License v3.0](LICENSE).
 - Desktop GUI contribution: a PySide6 interface built on the original AniRec project
 - Original GUI assets and their licensing: [AniRec/gui/resources/ASSET_LICENSES.md](AniRec/gui/resources/ASSET_LICENSES.md)
 
-## Known limitations in 1.3.0
+## Known limitations in 1.4.0
 
 - The collaborative signal uses MyAnimeList's own recommendation edges. It is optional, cached, and absent by default until a run has walked the graph.
 - Live recommendations require a user-provided MyAnimeList Client ID and Secret, and a public anime list.
-- 1.3.0 was exercised on the development Windows 11 machine; a second Windows 10/11 computer acceptance run is still required.
+- 1.4.0 was exercised on the development Windows 11 machine; a second Windows 10/11 computer acceptance run is still required.
 - The package is unsigned and distributed as `onedir`; there is no installer, auto-update, code signing, or `onefile` artifact.
 - Local secrets are not stored in an encrypted operating-system credential vault.

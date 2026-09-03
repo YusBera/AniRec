@@ -5,6 +5,79 @@ Packaging and acceptance evidence for superseded versions is in [release/HISTORY
 
 ---
 
+## 1.4.0
+
+AniRec 1.4.0 focuses on a denser, more useful profile, smoother desktop
+interaction, safer presentation of local data, and a technology-neutral
+connection point for the future learned recommender. The active recommendation
+formula remains unchanged in this release.
+
+### A profile built around evidence
+
+- My Profile now leads with a concise reading and presents its supporting
+  statistics as one responsive board of facts.
+- Seventeen distinct marks make the profile sections easier to scan, while
+  title evidence lets readers inspect the anime behind individual claims.
+- Profile instruments use independent columns, so one expanded section no
+  longer forces its neighbor to leave an equally large blank area.
+- Community alignment is now a continuous taste-overlap reading. Every score
+  difference contributes instead of passing or failing a rigid one-point test.
+- Readers near the middle of every measured axis receive an honest balanced
+  identity instead of being described as unremarkable.
+
+### A clearer recommendation feed
+
+- Related franchise entries can fold into one card when graph context is
+  available, without hiding which entries the reader has already completed.
+- Recommendation cards use larger artwork, clearer verdict controls, stable
+  match precision, accessible names, and title-specific placeholders when an
+  image is unavailable.
+- Profile and comparison artwork now uses the shared bounded cover worker.
+- Library-only views no longer trigger Discover's automatic refill behavior.
+
+### Smoother desktop behavior
+
+- First-run setup fits within 75 percent of the usable screen and keeps long
+  pages scrollable on laptop displays.
+- Profile expansion settles its layout before painting, avoiding the visible
+  down-and-up flicker.
+- Profile results are reused when returning to an unchanged profile instead of
+  rebuilding the entire page.
+- Shared transition effects use shorter eased motion, repaint smaller regions,
+  and respect the reduced-motion setting.
+- Concurrent background operations no longer make the system busy indicator
+  clear while another operation is still running.
+
+### Ready for a future learned ranker
+
+- The current heuristic scorer now sits behind portable ranking request and
+  result contracts.
+- Ranking provenance records engine, feature-schema, explanation, timing, and
+  fallback information.
+- A typed fallback router can return to the current scorer when a future model
+  artifact is missing or incompatible, without hiding programming errors.
+- No neural runtime or trained model is included, and recommendation output is
+  intentionally unchanged.
+
+### Privacy and safety
+
+- Documentation capture runs against isolated temporary application data and
+  clears API fields before screenshots are written.
+- Repository checks cover credential signatures in text and binary assets and
+  reject developer-specific absolute paths.
+- Destructive local-data controls are visually separated from reversible cache
+  actions.
+
+### Known limitations
+
+- The neural recommendation model is not included.
+- Compare compatibility remains sample-backed until a live comparison provider
+  is implemented.
+- The Windows package is unsigned and distributed as `onedir`.
+- A second Windows 10 or 11 computer acceptance run is still required.
+
+---
+
 ## 1.3.0
 
 AniRec 1.3.0 rebuilds how recommendations are calculated, explained, and
