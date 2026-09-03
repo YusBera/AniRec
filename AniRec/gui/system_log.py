@@ -163,6 +163,25 @@ class SystemLog(QFrame):
         self.summary = QLabel("")
         self.summary.setObjectName("systemLogSummary")
         self.summary.setWordWrap(True)
+        # CHANGE [RAIL-JUMP]: neither of the two panels may have an opinion
+        # about how wide the rail is.
+        #
+        # The rail is deliberately elastic - 214 to 238 - so that nav labels
+        # can claim the slack when the GUI scale makes them wider. The
+        # console was claiming it instead: a QPlainTextEdit asks for about
+        # 280px by default, so opening the console pushed the rail from 214
+        # straight to its 238 maximum, took 24px off the content beside it,
+        # and reflowed the entire card grid sideways. Measured: stack width
+        # 1017 collapsed, 993 expanded, on one click of a control that is
+        # supposed to reveal a log.
+        #
+        # Ignored plus a zero minimum is the same treatment the card action
+        # buttons get, and for the same reason: the container decides the
+        # width, not the text inside it.
+        self.summary.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred
+        )
+        self.summary.setMinimumWidth(0)
         self.summary.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
@@ -184,6 +203,10 @@ class SystemLog(QFrame):
         # viewer: enough lines to see what just happened, scrollable for the
         # rest, and never so tall that it competes with the navigation above.
         self.view.setFixedHeight(LOG_HEIGHT)
+        self.view.setSizePolicy(
+            QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed
+        )
+        self.view.setMinimumWidth(0)
         self.view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.view.setVisible(False)
         layout.addWidget(self.view)
