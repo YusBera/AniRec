@@ -22,6 +22,26 @@ except ImportError:  # Compatibility with the S01 top-level test import path.
     from models import Anime, GenreStat, PipelineResult, Recommendation
 
 
+# Deliberately un-storable. ``paths._PROFILE_ID_PATTERN`` requires a profile
+# ID to begin with an alphanumeric, so ``profile_dir("__sample__")`` raises
+# rather than returning a directory. That is the intended design and not an
+# oversight to be worked around:
+#
+# * the sample library is read-only demonstration data, and a profile
+#   directory is the one place AniRec writes a user's real votes, tokens and
+#   generated results. Giving demonstration data somewhere to write would
+#   make "is this a real library or the demo?" a question answered by
+#   inspecting file contents rather than by the type of thing it is;
+# * the leading-underscore rejection is a path-traversal guard shared by
+#   every profile-scoped path. Relaxing it so one sentinel value can pass
+#   would weaken a security invariant to buy a feature nobody asked for.
+#
+# The consequence is that sample mode is *ephemeral*: votes live in the
+# client for as long as it is open and are never persisted. Both frontends
+# implement exactly that, independently and identically - the desktop through
+# ``MainWindow._enter_demo_mode``'s ``set_ephemeral(True)``, and the HTTP API
+# through ``FeedResponse.ephemeral``, which tells its client to own the votes
+# itself. ``tests/test_ephemeral_profile_semantics.py`` locks this down.
 SAMPLE_PROFILE_ID = "__sample__"
 SAMPLE_USERNAME = "Sample library"
 SAMPLE_RESOURCE = "gui/resources/sample/sample_library.json"
@@ -35,9 +55,20 @@ class SampleDataService:
 
     @property
     def profile_id(self) -> str:
+        """The sentinel ID for demonstration data.
+
+        Never valid as a storage location - see the note on
+        ``SAMPLE_PROFILE_ID``. Callers use it to *recognise* sample mode, not
+        to address a directory.
+        """
         return SAMPLE_PROFILE_ID
 
     def is_sample_profile(self, profile_id: object) -> bool:
+        """Whether this ID names demonstration data rather than a real profile.
+
+        The single test both frontends use to decide that nothing may be
+        written for the library currently on screen.
+        """
         return str(profile_id) == SAMPLE_PROFILE_ID
 
     def load(self) -> PipelineResult | None:

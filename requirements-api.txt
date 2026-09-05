@@ -1,0 +1,5 @@
+-r requirements.txt
+# The HTTP boundary. Kept in its own file so the desktop application and its
+# packaged build do not acquire a web framework they never import.
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0

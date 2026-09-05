@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import pytest
 
-from AniRec.gui.compatibility import UnavailableReason
+from AniRec.presentation.compatibility import UnavailableReason
 from AniRec.gui.main_window import MainWindow, PAGE_DEFINITIONS, PageId
 from AniRec.gui.profile_page import ProfilePage, VerdictRow
-from AniRec.gui.taste_profile import (
+from AniRec.presentation.taste_profile import (
     RatingBucket,
     RatingDistribution,
     SampleTasteProfileProvider,
@@ -197,7 +197,7 @@ def test_a_section_with_no_data_reads_as_absent_rather_than_broken(
     """An absence and a fault must not look the same."""
     from dataclasses import replace
 
-    from AniRec.gui.taste_profile import GenreDNA
+    from AniRec.presentation.taste_profile import GenreDNA
 
     page = ProfilePage()
     page.show_profile(replace(sample_profile, genres=GenreDNA()))
@@ -361,7 +361,7 @@ def test_the_shell_wires_the_sample_but_ships_the_refusing_provider(application)
 
 
 def test_a_genre_pressed_on_the_profile_filters_discover_and_goes_there(application):
-    from AniRec.gui.discover_filters import FilterKind
+    from AniRec.presentation.filters import FilterKind
 
     window = MainWindow()
     window.profile_page.metadata_filter_requested.emit(FilterKind.GENRE, "Psychological")

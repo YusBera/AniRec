@@ -216,7 +216,7 @@ def test_a_fingerprint_module_parents_its_label_before_showing_it(system_temp_di
     decides it.
     """
     from AniRec.gui.profile_page import FingerprintModule
-    from AniRec.gui.taste_profile import FingerprintReading
+    from AniRec.presentation.taste_profile import FingerprintReading
 
     application = create_application([])
     guard = stray_window_guard.install(application, log=False)

@@ -1,0 +1,489 @@
+/* The Discover surface.
+ *
+ * The two layout facts worth measuring at the decision gate:
+ *
+ * 1. The feed grid is four declarations. Qt's ReflowGrid
+ *    (profile_page.py:151) is ~186 lines: a resizeEvent, manual column
+ *    arithmetic, column containers, widget re-parenting and deleteLater
+ *    teardown on every relayout.
+ *
+ * 2. Cards are equal height per row for free. The Qt version needed
+ *    tests/test_card_grid_geometry.py because "cards sized themselves to
+ *    their own content, so a wrapped title made one card taller than its
+ *    neighbours". Grid rows are uniform by default; there is nothing to fix.
+ */
+
+.discover {
+  padding-block: var(--space-lg) var(--space-3xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* ---------- title strip ---------- */
+
+.titlebar {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+.titlebar-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  flex-wrap: wrap;
+  padding-block: var(--space-sm);
+}
+.wordmark {
+  font-family: var(--font-display);
+  font-size: calc(var(--type-xl) * 1rem);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+.wordmark span {
+  color: var(--accent);
+}
+.titlebar .tags {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+/* ---------- controls ---------- */
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+.controls > * {
+  background: var(--surface);
+}
+@media (max-width: 900px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+.control-group {
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.control-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.control-head .line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.term-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 92px;
+  overflow-y: auto;
+}
+
+.sort-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-height: 26px;
+}
+
+/* ---------- status strip ---------- */
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+.statusbar .spacer {
+  flex: 1;
+}
+.statusbar .count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.statusbar .count b {
+  color: var(--accent);
+  font-weight: var(--weight-medium);
+}
+
+.progress-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+}
+.progress-track {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.progress-track > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s steps(6, end);
+}
+.progress-track.indeterminate > i {
+  width: 28%;
+  animation: sweep 1.1s steps(9, end) infinite;
+}
+@keyframes sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(360%); }
+}
+
+/* ---------- the feed grid ---------- */
+
+.feed {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
+  gap: var(--space-md);
+}
+
+/* ---------- card ---------- Qt: recommendation_card.py, 1125 lines */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  /* Rows are uniform, so a card fills its cell rather than sizing to content.
+     This is the whole of the fix that test_card_grid_geometry.py exists for. */
+  height: 100%;
+  animation: card-in 0.3s steps(5, end) backwards;
+  transition: border-color 0.12s steps(3, end);
+}
+.card:hover {
+  border-color: var(--border-strong);
+}
+.card[data-hidden="true"] {
+  opacity: 0.42;
+}
+
+@keyframes card-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.card-art {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  background: var(--well);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+/* The placeholder is underneath rather than replaced, so artwork resolves into
+   the space its stand-in held instead of dissolving over it.
+   The artwork must be positioned too: the placeholder is absolute, so a static
+   image paints *below* it and every card reads "No artwork" while showing
+   none. That is the same fault as commit 7b08442 on the Qt side, arrived at
+   from the opposite direction - worth recording, because it says the mistake
+   is in the idea of a stand-in layer rather than in either toolkit. */
+.card-art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 1;
+  animation: art-in 0.35s steps(6, end);
+}
+@keyframes art-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.card-art .placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-disabled);
+  font-family: var(--font-display);
+  font-size: calc(var(--type-xs) * 0.85rem);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--surface-sunken) 0 6px,
+    var(--well) 6px 12px
+  );
+}
+
+.card-rank {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  padding: 2px 6px 3px;
+  background: var(--well);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-display);
+  font-size: calc(var(--type-xs) * 0.82rem);
+  letter-spacing: 0.1em;
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-sm);
+  flex: 1;
+}
+
+.card-title {
+  font-size: calc(var(--type-md) * 1rem);
+  color: var(--text-strong);
+  line-height: 1.3;
+  /* Qt: ElidingLabel and ClampedLabel, two QLabel subclasses. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-secondary {
+  font-size: calc(var(--type-xs) * 1rem);
+  color: var(--text-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-figures {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding-top: 2px;
+}
+.card-match {
+  font-family: var(--font-display);
+  font-size: calc(var(--type-2xl) * 1rem);
+  font-weight: var(--weight-bold);
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.card-match i {
+  font-style: normal;
+  font-size: 0.4em;
+  margin-left: 2px;
+  color: var(--accent-soft);
+}
+.card-match[data-available="false"] {
+  color: var(--text-disabled);
+  text-shadow: none;
+}
+.card-mal {
+  text-align: right;
+  font-size: calc(var(--type-xs) * 1rem);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-sm);
+  font-size: calc(var(--type-xs) * 0.95rem);
+  color: var(--text-subtle);
+}
+
+.card-reason {
+  font-size: calc(var(--type-xs) * 1rem);
+  color: var(--text-muted);
+  /* Two reserved lines, blank when there is nothing to say rather than filled
+     with a sentence announcing an absence. */
+  min-height: 2.7em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+.card-actions button {
+  background: var(--surface);
+  padding: 5px 2px 6px;
+  font-family: var(--font-display);
+  font-size: calc(var(--type-xs) * 0.8rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  transition: color 0.1s steps(2, end), background-color 0.1s steps(2, end);
+}
+.card-actions button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.card-actions button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+.card-actions button[data-action="hide"][aria-pressed="true"] {
+  color: var(--danger-text);
+  background: var(--danger-bg);
+}
+.card-actions button[data-action="later"][aria-pressed="true"] {
+  color: var(--saved-text);
+  background: var(--saved-bg);
+}
+
+/* ---------- breakdown ---------- */
+
+.breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 4px;
+}
+.breakdown-row {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 7px;
+  font-size: calc(var(--type-xs) * 0.95rem);
+  animation: slip 0.3s steps(5, end) backwards;
+}
+@keyframes slip {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.breakdown-row .swatch {
+  width: 8px;
+  height: 8px;
+}
+.breakdown-row .swatch[data-tone="a"] { background: var(--accent); }
+.breakdown-row .swatch[data-tone="b"] { background: var(--accent-soft); }
+.breakdown-row .swatch[data-tone="c"] { background: var(--accent-muted); }
+.breakdown-row .swatch[data-tone="x"] { background: var(--busy-border); }
+.breakdown-row .name {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.breakdown-row .val {
+  text-align: right;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.breakdown-sum {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) 44px;
+  gap: 7px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  font-size: calc(var(--type-xs) * 0.95rem);
+}
+.breakdown-sum .k {
+  grid-column: 1 / 3;
+  font-family: var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+.breakdown-sum .v {
+  grid-column: 3;
+  text-align: right;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- states ---------- */
+
+.state-panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: var(--space-2xl) var(--space-lg);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.state-panel h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: calc(var(--type-lg) * 1rem);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.04em;
+  color: var(--text-strong);
+}
+.state-panel p {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--text-muted);
+}
+.state-panel[data-tone="error"] {
+  border-color: var(--danger-border);
+}
+
+/* Skeletons. Stepped, like everything else - a smooth shimmer would be the
+   one modern-web gesture in the whole interface. */
+.skeleton {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  height: 100%;
+  min-height: 340px;
+  animation: blink 1.4s steps(2, end) infinite;
+}
+.skeleton .art {
+  aspect-ratio: 2 / 3;
+  background: var(--well);
+  border-bottom: 1px solid var(--border);
+}
+.skeleton .line {
+  height: 8px;
+  margin: var(--space-sm);
+  background: var(--surface-raised);
+}
+.skeleton .line.short {
+  width: 45%;
+}
+@keyframes blink {
+  0%, 60% { opacity: 1; }
+  61%, 100% { opacity: 0.62; }
+}

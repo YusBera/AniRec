@@ -21,6 +21,10 @@ logs/
 build/
 dist/
 release/
+# API sidecar build output (PyInstaller). Same reasoning as build/ and dist/:
+# generated locally, ~130 MB, never reviewed.
+build-api/
+dist-api/
 /tmp/
 *_Profile/
 *Profile/

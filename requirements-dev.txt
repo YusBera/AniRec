@@ -1,3 +1,7 @@
 -r requirements.txt
+-r requirements-api.txt
 pytest>=8.3,<9.0
 pytest-xdist>=3.8,<4.0
+# TestClient's transport. Needed to exercise the HTTP boundary without
+# binding a port.
+httpx>=0.27,<1.0

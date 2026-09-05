@@ -84,7 +84,7 @@ from ..services import (
 from .advanced_operations_page import AdvancedOperationsPage
 from .about_page import AboutPage
 from .compare_page import ComparePage
-from .compatibility import (
+from ..presentation.compatibility import (
     CompatibilityUnavailable,
     SampleCompatibilityProvider,
     UnavailableCompatibilityProvider,
@@ -93,7 +93,7 @@ from .compatibility import (
 from .discover_page import DiscoverPage
 from .profile_lookup import ProfileLookupService
 from .profile_page import ProfilePage
-from .taste_profile import (
+from ..presentation.taste_profile import (
     LocalTasteProfileProvider,
     SampleTasteProfileProvider,
     TasteProfileProvider,

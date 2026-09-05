@@ -319,6 +319,18 @@ Known, deliberate, and fair game:
   `border_strong` blends toward the base line colour.
 - The card still reserves an **empty line for the secondary title** when there is none.
 
+### Settled — do not re-litigate
+
+Attempted or considered and rejected with reasons. Reopen only with new evidence.
+
+- **Spin box stepper styling.** Tried and reverted: styling the sub-control suppressed
+  Qt's chevrons and left two blank blocks. The platform steppers are plain, but they
+  are steppers.
+- **Hiding secondary card actions behind an overflow.** It would reduce visible
+  targets, but it buries the Score Inspector — the one thing this product needs people
+  to discover. The hierarchy was fixed by demoting actions to text instead: only Like
+  and Not for me keep button weight.
+
 ---
 
 ## Where things live
@@ -333,6 +345,9 @@ Known, deliberate, and fair game:
 | `AniRec/gui/resources/icons/ui/` | the interface icon set (spec in `docs/design/ICON_HANDOFF.md`) |
 | `scripts/build_theme.py` | regenerates the packaged stylesheets |
 | `scripts/capture_docs_screenshots.py` | deterministic renders from sample data |
-| `docs/design/CONVERSION_TEARDOWN.md` | the audit this direction came out of |
-The landing pages are `docs/landing/index.html` (Scoring Bench) and
-`docs/landing/workstation.html` (the workstation alternative the app now follows).
+| `AniRec/presentation/` | Qt-free view models, filter vocabulary and read models |
+| `AniRec/gui/css_tokens.py` | the same tokens, emitted as CSS for the React frontend |
+The landing pages are `docs/landing/index.html` (Scoring Bench, the published page)
+and `docs/landing/workstation.html` (the direction the application itself follows).
+They disagree on purpose and have not been reconciled; see
+[MIGRATION_HANDOFF.md](MIGRATION_HANDOFF.md) before changing either.

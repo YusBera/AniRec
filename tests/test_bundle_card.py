@@ -14,7 +14,7 @@ from AniRec.gui.bundle_card import (
     BundleCard,
     BundleInfoBlock,
 )
-from AniRec.gui.bundle_view_model import BundleViewModel
+from AniRec.presentation.bundle_view_model import BundleViewModel
 from AniRec.gui.design_tokens import SPACE
 from AniRec.gui.recommendation_card import (
     CARD_WIDTH,
@@ -22,7 +22,7 @@ from AniRec.gui.recommendation_card import (
     COVER_WIDTH,
     RecommendationCard,
 )
-from AniRec.gui.recommendation_view_model import RecommendationViewModel
+from AniRec.presentation.recommendation_view_model import RecommendationViewModel
 from AniRec.gui_main import create_application
 from AniRec.models import Anime, Recommendation
 

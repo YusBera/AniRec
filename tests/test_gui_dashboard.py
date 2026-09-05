@@ -12,7 +12,7 @@ from AniRec.gui.home_page import (
     ACTION_VIEW_GENRES,
 )
 from AniRec.gui.main_window import MainWindow, PageId
-from AniRec.gui.taste_profile import SampleTasteProfileProvider
+from AniRec.presentation.taste_profile import SampleTasteProfileProvider
 from AniRec.gui.texts import DASHBOARD_TEXT
 from AniRec.gui_main import create_application
 from AniRec.infrastructure.csv_storage import CsvStorage

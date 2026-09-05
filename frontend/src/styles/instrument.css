@@ -1,0 +1,346 @@
+/* The instrument vocabulary.
+ *
+ * Ported from docs/landing/workstation.html, which is where this design
+ * language was first realised. The Qt equivalents are named beside each part
+ * so the comparison at the decision gate is checkable rather than asserted.
+ *
+ * The governing aesthetic rule, and the one thing most easily lost: motion is
+ * STEPPED. `steps(n, end)` everywhere, never a smooth cubic-bezier. A needle
+ * on a measuring instrument jumps between graduations; a value that eases
+ * smoothly into place reads as a modern web animation and breaks the illusion
+ * that the number was measured rather than designed.
+ */
+
+/* ---------- labels ---------- */
+
+.lbl {
+  font-family: var(--font-display);
+  font-size: calc(var(--type-xs) * 0.86rem);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+.lbl-strong {
+  color: var(--text-muted);
+}
+
+/* ---------- panel ---------- Qt: InstrumentPanel(QFrame), 22 lines + paintEvent */
+
+.panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  min-height: 26px;
+  padding: var(--space-hair) var(--space-sm) 3px;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-head .name {
+  font-family: var(--font-display);
+  font-size: calc(var(--type-xs) * 0.95rem);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.panel-body {
+  padding: var(--space-md);
+}
+
+/* ---------- led ---------- Qt: StatusLight(QWidget), 300 lines incl. a shared
+   class-level QTimer flicker driver for all instances. */
+
+.led {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--focus);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--focus) 50%, transparent);
+  vertical-align: middle;
+  flex: none;
+}
+.led.amber {
+  background: var(--accent);
+  box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.led.off {
+  background: var(--border-strong);
+  box-shadow: none;
+}
+.led.live {
+  animation: led-pulse 2s steps(2, end) infinite;
+}
+
+@keyframes led-pulse {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0.35;
+  }
+}
+
+/* ---------- calibration strip ---------- Qt: QPainter.drawLine loops in
+   InstrumentPanel.paintEvent and SteppedSlider.paintEvent. */
+
+.ticks {
+  height: 7px;
+  background-image:
+    repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px 40px),
+    repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px 8px);
+  background-size:
+    100% 7px,
+    100% 4px;
+  background-repeat: no-repeat;
+}
+
+/* ---------- tags ---------- */
+
+.tag {
+  border: 1px solid var(--border-strong);
+  padding: 2px 7px 3px;
+  font-family: var(--font-display);
+  font-size: calc(var(--type-xs) * 0.82rem);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.tag.on {
+  color: var(--accent);
+  border-color: var(--accent-muted);
+}
+.tag.warn {
+  color: var(--warning-text);
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+}
+
+/* ---------- score rail ---------- Qt: ScoreTrack(QWidget), a paintEvent plus a
+   QVariantAnimation plus a _set_reveal slot plus a manual reduced-motion and
+   visibility guard, per instance. Here: a flex row and one keyframe. */
+
+.rail {
+  position: relative;
+  display: flex;
+  height: 18px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+/* The shared cell grid, punched across every segment at once so the cells line
+   up between contributions instead of each segment having its own rhythm. */
+.rail::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0 5px, var(--surface) 5px 7px);
+}
+
+.rail-seg {
+  height: 100%;
+  transform-origin: left center;
+  animation: rail-fill 0.5s steps(12, end) backwards;
+}
+.rail-seg[data-tone="a"] { background: var(--accent); }
+.rail-seg[data-tone="b"] { background: var(--accent-soft); }
+.rail-seg[data-tone="c"] { background: var(--accent-muted); }
+/* Aqua, and only for the community term. The palette's rule: brass is yours,
+   aqua is everyone else. Losing this makes the rail unreadable without a
+   legend, which is the one thing the score breakdown must never need. */
+.rail-seg[data-tone="x"] { background: var(--busy-border); }
+
+@keyframes rail-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.rail-mini {
+  position: relative;
+  height: 7px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.rail-mini::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 3px, var(--surface) 3px 5px);
+}
+.rail-mini > i {
+  display: block;
+  height: 100%;
+  animation: rail-fill 0.4s steps(8, end) backwards;
+}
+
+/* ---------- readouts ---------- Qt: ReadoutPair(QWidget) + two QLabels */
+
+.readout {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.readout .value {
+  font-family: var(--font-display);
+  font-size: calc(var(--type-lg) * 1rem);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+  line-height: 1.1;
+}
+.readout .value[data-tone="you"] { color: var(--accent); }
+.readout .value[data-tone="them"] { color: var(--focus); }
+.readout .value[data-tone="absent"] { color: var(--text-disabled); }
+
+/* ---------- stepped slider ---------- Qt: SteppedSlider(QSlider) + a paintEvent
+   drawing graduations by hand. */
+
+.stepped {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.stepped input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+.stepped input[type="range"]::-webkit-slider-runnable-track {
+  height: 10px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  /* The graduations, as a background rather than as drawn lines. */
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--border-strong) 0 1px,
+    transparent 1px 10%
+  );
+}
+.stepped input[type="range"]::-moz-range-track {
+  height: 10px;
+  background: var(--well);
+  border: 1px solid var(--border);
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--border-strong) 0 1px,
+    transparent 1px 10%
+  );
+}
+.stepped input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 7px;
+  height: 18px;
+  margin-top: -5px;
+  background: var(--accent);
+  border: 1px solid var(--accent-contrast);
+  border-radius: var(--radius-sm);
+}
+.stepped input[type="range"]::-moz-range-thumb {
+  width: 7px;
+  height: 18px;
+  background: var(--accent);
+  border: 1px solid var(--accent-contrast);
+  border-radius: var(--radius-sm);
+}
+.stepped-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: calc(var(--type-xs) * 0.82rem);
+  letter-spacing: 0.1em;
+  color: var(--text-subtle);
+}
+
+/* ---------- pills ---------- Qt: filter_pills.py, 351 lines */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  padding: 3px var(--space-sm);
+  font-size: calc(var(--type-xs) * 1rem);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color 0.12s steps(3, end), border-color 0.12s steps(3, end);
+}
+.pill:hover {
+  color: var(--text);
+  border-color: var(--accent-muted);
+}
+.pill[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent-muted);
+  background: var(--accent-muted);
+}
+.pill .kind {
+  font-family: var(--font-display);
+  font-size: calc(var(--type-xs) * 0.8rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+.pill .dismiss {
+  color: var(--text-subtle);
+  line-height: 1;
+}
+.pill .dismiss:hover {
+  color: var(--danger-text);
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+  padding: 5px var(--space-md);
+  font-family: var(--font-display);
+  font-size: calc(var(--type-xs) * 0.95rem);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.1s steps(2, end), color 0.1s steps(2, end);
+}
+.btn:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  border-color: var(--accent-muted);
+}
+/* One brass action per screen. The rule that stops four accented controls
+   from meaning none of them is primary. */
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.btn:disabled {
+  color: var(--text-disabled);
+  border-color: var(--border);
+  cursor: not-allowed;
+}

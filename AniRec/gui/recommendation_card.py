@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from .cover_art import CoverLabel, rounded_cover
-from .discover_filters import FilterKind
+from ..presentation.filters import FilterKind
 from .instrument_widgets import keep_crisp
 from .metadata_tags import MetadataTagStrip
 from .design_tokens import RADIUS, SPACE
@@ -46,7 +46,7 @@ from .match_badge import (
     should_show_badge,
 )
 from .scaling import scaled
-from .recommendation_view_model import RecommendationViewModel
+from ..presentation.recommendation_view_model import RecommendationViewModel
 from .resources import (
     cover_placeholder_pixmap,
     themed_ui_icon,

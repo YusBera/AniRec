@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .compatibility import (
+from ..presentation.compatibility import (
     CompatibilityReport,
     CompatibilityUnavailable,
     FriendSummary,

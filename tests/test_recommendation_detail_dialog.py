@@ -10,7 +10,7 @@ from AniRec.gui.recommendation_detail_dialog import (
     RecommendationDetailDialog,
 )
 from AniRec.gui.recommendation_page import RecommendationExplorerPage
-from AniRec.gui.recommendation_view_model import RecommendationViewModel
+from AniRec.presentation.recommendation_view_model import RecommendationViewModel
 from AniRec.gui_main import create_application
 from AniRec.models import Anime, Recommendation
 

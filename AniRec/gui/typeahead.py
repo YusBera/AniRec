@@ -29,8 +29,8 @@ from PySide6.QtWidgets import (
 )
 
 from .design_tokens import SPACE
-from .discover_filters import FilterKind
-from .metadata_index import MetadataCatalog, MetadataSuggestion
+from ..presentation.filters import FilterKind
+from ..presentation.metadata_index import MetadataCatalog, MetadataSuggestion
 from .resources import themed_ui_icon
 from .scaling import scaled
 from .texts import FILTER_TEXT

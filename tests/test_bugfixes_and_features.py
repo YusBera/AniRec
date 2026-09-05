@@ -138,7 +138,7 @@ def test_scaled_dimensions_track_the_factor():
 def test_the_card_and_its_portrait_resize_together(factor):
     create_application([])
     set_gui_scale(factor)
-    from AniRec.gui.recommendation_view_model import recommendation_view_models
+    from AniRec.presentation.recommendation_view_model import recommendation_view_models
     from AniRec.services import SampleDataService
 
     model = recommendation_view_models(SampleDataService().load().recommendations)[0]
@@ -155,7 +155,7 @@ def test_the_card_and_its_portrait_resize_together(factor):
 def test_the_portrait_is_centred_in_the_card():
     """BUG2: the cover is narrower than the card and sat against the margin."""
     create_application([])
-    from AniRec.gui.recommendation_view_model import recommendation_view_models
+    from AniRec.presentation.recommendation_view_model import recommendation_view_models
     from AniRec.services import SampleDataService
 
     model = recommendation_view_models(SampleDataService().load().recommendations)[0]

@@ -49,7 +49,7 @@ from ..services import (
     RecommendationStateService,
 )
 from .bundle_card import BundleCard
-from .bundle_view_model import BundleViewModel, build_bundles
+from ..presentation.bundle_view_model import BundleViewModel, build_bundles
 from .discover_filters import (
     ActiveFilter,
     DiscoverFilterState,
@@ -60,7 +60,7 @@ from .discover_filters import (
     score_filter,
 )
 from .filter_pills import FilterPillBar
-from .metadata_index import MetadataCatalog
+from ..presentation.metadata_index import MetadataCatalog
 from .recommendation_card import CARD_WIDTH, RecommendationCard
 from .texts import FILTER_TEXT
 from .typeahead import MetadataTypeahead, ProfileInput
@@ -70,7 +70,7 @@ from .design_tokens import SPACE
 from .instrument_widgets import ChannelWipe, InstrumentPanel, ScanSweep
 from .recommendation_detail_dialog import RecommendationDetailDialog
 from .recommendation_row import RecommendationRow
-from .recommendation_view_model import RecommendationViewModel, recommendation_view_models
+from ..presentation.recommendation_view_model import RecommendationViewModel, recommendation_view_models
 from .workers import CoverDownloadWorker, OperationAlreadyRunningError, WorkerController
 
 

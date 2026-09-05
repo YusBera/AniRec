@@ -27,7 +27,7 @@ from AniRec.gui.profile_page import (
     board_facts,
 )
 from AniRec.gui.resources import ui_icon_pixmap
-from AniRec.gui.taste_profile import (
+from AniRec.presentation.taste_profile import (
     EraBucket,
     EraPreferences,
     FingerprintReading,

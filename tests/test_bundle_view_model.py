@@ -8,12 +8,12 @@ half of it.
 
 from __future__ import annotations
 
-from AniRec.gui.bundle_view_model import (
+from AniRec.presentation.bundle_view_model import (
     BundleViewModel,
     build_bundles,
     franchise_components,
 )
-from AniRec.gui.recommendation_view_model import RecommendationViewModel
+from AniRec.presentation.recommendation_view_model import RecommendationViewModel
 from AniRec.models import Anime, Recommendation
 
 

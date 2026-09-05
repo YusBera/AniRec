@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from AniRec.gui.recommendation_view_model import (
+from AniRec.presentation.recommendation_view_model import (
     NO_GENRES,
     NO_SYNOPSIS,
     RecommendationViewModel,

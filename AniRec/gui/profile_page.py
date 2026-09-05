@@ -42,10 +42,10 @@ from PySide6.QtWidgets import (
 )
 
 from .compare_page import StatePanel
-from .compatibility import UnavailableReason
+from ..presentation.compatibility import UnavailableReason
 from .cover_art import rounded_cover
 from .design_tokens import RADIUS, SPACE
-from .discover_filters import FilterKind
+from ..presentation.filters import FilterKind
 from .instrument_widgets import InstrumentPanel, keep_crisp
 from .metadata_tags import MetadataTag
 from .profile_widgets import (
@@ -59,7 +59,7 @@ from .profile_widgets import (
 )
 from .resources import cover_placeholder_pixmap, ui_icon_pixmap
 from .scaling import scaled
-from .taste_profile import (
+from ..presentation.taste_profile import (
     DASH,
     TasteProfile,
     TasteProfileUnavailable,

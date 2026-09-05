@@ -22,7 +22,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .discover_filters import FilterKind
+from .filters import FilterKind
 
 
 # Suggestions past this point are noise: nobody scrolls a typeahead.

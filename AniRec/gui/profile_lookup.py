@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import QObject, Signal
 
 from ..errors import AniRecError
-from .compatibility import UnavailableReason
+from ..presentation.compatibility import UnavailableReason
 from .texts import FILTER_TEXT
 from .workers import (
     OperationAlreadyRunningError,

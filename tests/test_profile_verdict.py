@@ -11,7 +11,7 @@ from __future__ import annotations
 import pathlib
 
 from AniRec.gui.profile_page import ProfilePage, unlisted_facts, unlisted_sentences
-from AniRec.gui.taste_profile import (
+from AniRec.presentation.taste_profile import (
     EraBucket,
     EraPreferences,
     FingerprintReading,
@@ -121,7 +121,7 @@ def test_no_archetype_name_is_an_insult():
     supports it, so both ends of every axis are named for something real
     rather than for a deficiency.
     """
-    from AniRec.gui.taste_profile import _ARCHETYPES
+    from AniRec.presentation.taste_profile import _ARCHETYPES
 
     banned = {"bad", "poor", "worst", "boring", "basic", "shallow", "wrong"}
     for name, sentence in _ARCHETYPES.values():
@@ -350,7 +350,7 @@ def test_a_claim_the_reader_cannot_check_carries_its_titles():
 def test_evidence_never_names_the_same_title_twice():
     """A title can sit at the top of one list and inside the other."""
     from AniRec.gui.profile_page import _evidence
-    from AniRec.gui.taste_profile import TasteTitle
+    from AniRec.presentation.taste_profile import TasteTitle
 
     high = (TasteTitle("Bleach", 4.0), TasteTitle("Naruto", 5.0))
     low = (TasteTitle("Bleach", 4.0), TasteTitle("Gintama", 6.0))

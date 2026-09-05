@@ -24,7 +24,13 @@ THEMES = ("dark", "light")
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from AniRec.gui.css_tokens import build_tokens_css  # noqa: E402
 from AniRec.gui.qss_builder import build_stylesheet, selectors  # noqa: E402
+
+
+# Where the React frontend reads its variables from. One generated file, and
+# the frontend's own stylesheets never name a hex value.
+CSS_TOKENS_PATH = REPO_ROOT / "frontend" / "src" / "styles" / "tokens.css"
 
 
 def main() -> int:
@@ -36,6 +42,16 @@ def main() -> int:
         path = STYLE_DIR / f"{theme}.qss"
         path.write_text(stylesheet + "\n", encoding="utf-8", newline="\n")
         print(f"wrote {path.relative_to(REPO_ROOT)} ({len(stylesheet.splitlines())} lines)")
+
+    # The same tokens, for the other frontend. Written unconditionally so the
+    # two can never be regenerated separately and drift.
+    tokens = build_tokens_css()
+    CSS_TOKENS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CSS_TOKENS_PATH.write_text(tokens, encoding="utf-8", newline="\n")
+    print(
+        f"wrote {CSS_TOKENS_PATH.relative_to(REPO_ROOT)} "
+        f"({len(tokens.splitlines())} lines)"
+    )
 
     first, second = (selectors(rendered[theme]) for theme in THEMES)
     if first != second:

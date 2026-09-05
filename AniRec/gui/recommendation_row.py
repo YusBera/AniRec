@@ -28,7 +28,7 @@ from .cover_art import rounded_cover
 from .instrument_widgets import keep_crisp
 from .scaling import scaled
 from .recommendation_card import MEMORY_COVER_CACHE, open_mal_url
-from .recommendation_view_model import RecommendationViewModel
+from ..presentation.recommendation_view_model import RecommendationViewModel
 from .resources import cover_placeholder_pixmap, title_placeholder_pixmap
 
 

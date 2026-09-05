@@ -36,7 +36,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .bundle_view_model import BundleViewModel
+from ..presentation.bundle_view_model import BundleViewModel
 from .cover_art import rounded_cover
 from .design_tokens import FONT_STACK_DISPLAY, RADIUS, SPACE
 from .instrument_widgets import ScoreTrack, keep_crisp

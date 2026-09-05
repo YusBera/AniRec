@@ -7,9 +7,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from AniRec.gui.compatibility import UnavailableReason
+from AniRec.presentation.compatibility import UnavailableReason
 from AniRec.gui.main_window import MainWindow, PageId
-from AniRec.gui.taste_profile import LocalTasteProfileProvider, TasteProfileUnavailable
+from AniRec.presentation.taste_profile import LocalTasteProfileProvider, TasteProfileUnavailable
 from AniRec.gui_main import create_application
 from AniRec.infrastructure.csv_storage import CsvStorage
 from AniRec.infrastructure.json_storage import JsonStore

@@ -7,7 +7,7 @@ from AniRec.gui.recommendation_page import (
     RecommendationViewMode,
     filter_and_sort_recommendations,
 )
-from AniRec.gui.recommendation_view_model import recommendation_view_models
+from AniRec.presentation.recommendation_view_model import recommendation_view_models
 from AniRec.gui_main import create_application
 from AniRec.models import Anime, Recommendation
 from AniRec.services import RecommendationStateService

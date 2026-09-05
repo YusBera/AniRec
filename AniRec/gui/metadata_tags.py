@@ -29,7 +29,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QPushButton, QSizePolicy, QWidget
 
 from .design_tokens import SPACE
-from .discover_filters import FilterKind
+from ..presentation.filters import FilterKind
 from .scaling import scaled
 
 

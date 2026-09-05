@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from AniRec.gui.compare_page import ComparePage, CompatibilityHeader
-from AniRec.gui.compatibility import (
+from AniRec.presentation.compatibility import (
     FriendSummary,
     SampleCompatibilityProvider,
     report_from_payload,
@@ -17,7 +17,7 @@ from AniRec.gui.discover_filters import (
     ProfileStatus,
 )
 from AniRec.gui.filter_pills import FilterPillBar
-from AniRec.gui.metadata_index import MetadataCatalog
+from AniRec.presentation.metadata_index import MetadataCatalog
 from AniRec.gui.metadata_tags import MetadataTagStrip
 from AniRec.gui.scaling import set_gui_scale
 from AniRec.gui_main import create_application

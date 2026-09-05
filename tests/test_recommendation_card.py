@@ -11,7 +11,7 @@ from AniRec.gui.recommendation_card import (
     RecommendationCard,
     open_mal_url,
 )
-from AniRec.gui.recommendation_view_model import RecommendationViewModel
+from AniRec.presentation.recommendation_view_model import RecommendationViewModel
 from AniRec.gui_main import create_application
 from AniRec.models import Anime, Recommendation
 

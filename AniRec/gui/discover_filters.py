@@ -1,135 +1,34 @@
-"""One state for everything the Discover feed is filtered by.
+"""The Qt store that broadcasts what the Discover feed is filtered by.
 
-Before this, a filter was wherever its control happened to live: the genre was
-whatever ``genre_filter.currentData()`` returned, the score was a spin box's
-value, and nothing else could ask what was active without reaching into a
-widget. Adding a second entry point for the same filter - a genre clicked on a
-card, say - meant either duplicating that reach or keeping a second copy of the
-answer, and a second copy is a copy that drifts.
+Every entry point writes here and every reader reads from here, so
+"Psychological" selected from the control and "Psychological" clicked on a
+card are not two code paths that agree by inspection, they are one value.
 
-Every entry point now writes here and every reader reads from here, so
-"Psychological" selected from the control and "Psychological" clicked on a card
-are not two code paths that agree by inspection, they are one value.
-
-Deliberately Qt-light: a QObject for the one signal, and otherwise plain data
-that can be built and asserted without a widget. The *meaning* of a filter -
-what the backend does with a studio or a profile - is not decided here; this
-only records what the user asked for, in a normalised form.
+CHANGE [PRESENTATION-BOUNDARY]: the filter vocabulary itself - the kinds, the
+labels, ``ActiveFilter`` and the two constructors that spell a range the way
+a pill shows it - moved to ``AniRec.presentation.filters``. It was already
+Qt-free, and a second client now needs it without importing a widget toolkit.
+What is left here is the one thing that genuinely belongs to Qt: an object
+that emits ``changed``. The names are re-exported so existing importers keep
+working and so this module still reads as the one place the feed's filter
+state lives.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from enum import Enum
+from dataclasses import replace
 
 from PySide6.QtCore import QObject, Signal
 
-
-class FilterKind(str, Enum):
-    """What a filter is about.
-
-    The value doubles as the parameter name sent to whatever answers a query,
-    so a filter is normalised the moment it is created rather than translated
-    at the boundary.
-    """
-
-    GENRE = "genre"
-    STUDIO = "studio"
-    YEAR = "year"
-    SCORE = "score"
-    STATUS = "status"
-    EPISODES = "episodes"
-    PROFILE = "profile"
-
-
-# The caption a pill carries. Kept beside the kind rather than in the widget so
-# a pill, a screen reader and an empty state cannot describe the same filter
-# with three different words.
-KIND_LABELS = {
-    FilterKind.GENRE: "Genre",
-    FilterKind.STUDIO: "Studio",
-    FilterKind.YEAR: "Year",
-    FilterKind.SCORE: "Score",
-    FilterKind.STATUS: "Status",
-    FilterKind.EPISODES: "Episodes",
-    FilterKind.PROFILE: "Profile",
-}
-
-
-class ProfileStatus(str, Enum):
-    """Where one added profile is in its own lifecycle.
-
-    A profile filter is the only kind that has to be fetched before it means
-    anything, so it is the only kind that can be pending or broken. Keeping
-    that on the filter rather than in a parallel dictionary is what lets one
-    profile fail without the others noticing.
-    """
-
-    PENDING = "pending"
-    READY = "ready"
-    ERROR = "error"
-
-
-# The UI's own ceiling on group recommendations, stated once. Five is a limit
-# on how many lists a person can meaningfully hold in their head at a time,
-# not a backend constraint, so it is communicated inline rather than enforced
-# by a failed request.
-MAXIMUM_GROUP_PROFILES = 5
-
-
-@dataclass(frozen=True)
-class ActiveFilter:
-    """One thing the feed is currently narrowed by.
-
-    ``value`` is what goes to the query and is what identity is decided on;
-    ``display_value`` is what a person reads. They differ for anything with a
-    machine form - a score range is ``7-10`` and reads as ``7–10``.
-    """
-
-    kind: FilterKind
-    value: str
-    display_value: str = ""
-    status: ProfileStatus | None = None
-    message: str = ""
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "value", str(self.value).strip())
-        display = str(self.display_value).strip() or self.value
-        object.__setattr__(self, "display_value", display)
-
-    @property
-    def key(self) -> tuple[str, str]:
-        """What makes two filters the same filter.
-
-        Case-folded, because a genre clicked off a card carries whatever case
-        the catalogue used and a genre typed into the search box carries
-        whatever the reader typed. Two pills reading "Shaft" and "shaft" are
-        one filter, and the backend is not asked twice for it.
-        """
-        return (self.kind.value, self.value.casefold())
-
-    @property
-    def label(self) -> str:
-        return KIND_LABELS[self.kind]
-
-    @property
-    def is_loading(self) -> bool:
-        return self.status is ProfileStatus.PENDING
-
-    @property
-    def is_failed(self) -> bool:
-        return self.status is ProfileStatus.ERROR
-
-    @property
-    def counts_toward_query(self) -> bool:
-        """Whether this filter should be sent with a request.
-
-        A profile that has not resolved, or that failed to, is a pill on
-        screen and nothing more: sending it would either ask for a list that
-        is still being fetched or re-ask for one already known to be
-        unavailable.
-        """
-        return self.status in (None, ProfileStatus.READY)
+from ..presentation.filters import (
+    KIND_LABELS,
+    MAXIMUM_GROUP_PROFILES,
+    ActiveFilter,
+    FilterKind,
+    ProfileStatus,
+    episode_filter,
+    score_filter,
+)
 
 
 class DiscoverFilterState(QObject):
@@ -350,34 +249,14 @@ class DiscoverFilterState(QObject):
         self.changed.emit()
 
 
-def score_filter(minimum: float) -> ActiveFilter:
-    """A minimum-MAL-score filter, spelled the way the pill row shows it.
 
-    The machine form keeps the bound the query needs; the display form is the
-    range a reader recognises, with an en dash because it is a range and not a
-    subtraction.
-    """
-    bound = f"{float(minimum):g}"
-    return ActiveFilter(
-        kind=FilterKind.SCORE,
-        value=f"{bound}-10",
-        display_value=f"{bound}–10",
-    )
-
-
-def episode_filter(minimum: int | None, maximum: int | None) -> ActiveFilter | None:
-    """An episode-count band, or nothing when neither end is set."""
-    if not minimum and not maximum:
-        return None
-    if minimum and maximum:
-        value = f"{int(minimum)}-{int(maximum)}"
-        display = f"{int(minimum)}–{int(maximum)}"
-    elif minimum:
-        value = f"{int(minimum)}-"
-        display = f"{int(minimum)}+"
-    else:
-        value = f"-{int(maximum)}"
-        display = f"up to {int(maximum)}"
-    return ActiveFilter(
-        kind=FilterKind.EPISODES, value=value, display_value=display
-    )
+__all__ = [
+    "KIND_LABELS",
+    "MAXIMUM_GROUP_PROFILES",
+    "ActiveFilter",
+    "DiscoverFilterState",
+    "FilterKind",
+    "ProfileStatus",
+    "episode_filter",
+    "score_filter",
+]

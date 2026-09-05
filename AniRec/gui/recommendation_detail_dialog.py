@@ -35,7 +35,7 @@ from .instrument_widgets import (
     keep_crisp,
 )
 from .recommendation_card import open_mal_url
-from .recommendation_view_model import RecommendationViewModel
+from ..presentation.recommendation_view_model import RecommendationViewModel
 from .resources import cover_placeholder_pixmap, title_placeholder_pixmap
 
 
