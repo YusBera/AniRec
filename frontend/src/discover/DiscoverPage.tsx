@@ -15,13 +15,14 @@
  * exactly what _enter_demo_mode does with set_ephemeral(True).
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { AniRecApiError, api } from "../api/client";
 import { useFeed, useOperation } from "../api/hooks";
-import type { LocalState } from "../api/types";
+import type { LocalState, RecommendationViewModel } from "../api/types";
 import { Controls } from "./Controls";
 import { RecommendationCard } from "./RecommendationCard";
-import { EMPTY_FILTERS, filterAndSort, isActive, type Filters, type SortMode } from "./filtering";
+import { RecommendationDetails } from "./RecommendationDetails";
+import { EMPTY_FILTERS, activeFilterCount, filterAndSort, isActive, type Filters, type SortMode } from "./filtering";
 import { EmptyPanel, ErrorPanel, FeedSkeleton } from "./states";
 import "./discover.css";
 
@@ -30,6 +31,11 @@ export function DiscoverPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sortMode, setSortMode] = useState<SortMode>("personal-match");
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [inspected, setInspected] = useState<RecommendationViewModel | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [feedbackNotice, setFeedbackNotice] = useState("");
+  const [feedbackError, setFeedbackError] = useState<{ message: string; retryable: boolean; vote: [number, "watch_later" | "hidden", boolean] } | null>(null);
 
   const operation = useOperation((finished) => {
     // A successful run replaces the feed; a cancel or failure leaves what is
@@ -42,15 +48,29 @@ export function DiscoverPage() {
   const vote = useCallback(
     async (
       malId: number,
-      action: "sentiment" | "watch_later" | "hidden",
+      action: "watch_later" | "hidden",
       value: boolean,
     ) => {
-      if (!feed) return;
+      // Responses contain the whole local state. Serialize writes so a late
+      // response or rollback cannot erase another card's newer decision.
+      if (!feed || savingRef.current || operation.status.state === "running") return;
+      setFeedbackError(null);
+      const title = feed.recommendations.find((model) => model.mal_id === malId)?.display_title ?? "Title";
+      const outcome = action === "watch_later"
+        ? (value ? "saved for later" : "removed from saved titles")
+        : (value ? "set aside" : "restored to future feeds");
       const previous = feed.state;
       const optimistic = applyVote(previous, malId, action, value);
       setFeed({ ...feed, state: optimistic });
 
-      if (feed.ephemeral || !feed.state_profile_id) return;
+      if (feed.ephemeral || !feed.state_profile_id) {
+        setFeedbackNotice(`${title} ${outcome} in this preview. Changes reset on reload.`);
+        return;
+      }
+
+      savingRef.current = true;
+      setSaving(true);
+      setFeedbackNotice(`Saving decision for ${title}…`);
 
       try {
         const response = await api.feedback({
@@ -58,17 +78,26 @@ export function DiscoverPage() {
           mal_id: malId,
           action,
           value,
-          sentiment: action === "sentiment" ? (value ? "liked" : null) : undefined,
         });
         setFeed((current) => (current ? { ...current, state: response.state } : current));
+        setFeedbackNotice(`${title} ${outcome}.`);
       } catch (caught) {
         // Roll back rather than leaving the card showing a vote the profile
         // does not have.
         setFeed((current) => (current ? { ...current, state: previous } : current));
-        if (!(caught instanceof AniRecApiError)) throw caught;
+        const detail = caught instanceof AniRecApiError ? caught.detail : null;
+        setFeedbackNotice("");
+        setFeedbackError({
+          message: `Decision for ${title} was not saved. ${detail ? [detail.title, detail.solution].filter(Boolean).join(". ") : "The service returned an unexpected response."} The previous state is restored.`,
+          retryable: detail?.retryable ?? false,
+          vote: [malId, action, value],
+        });
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
       }
     },
-    [feed, setFeed],
+    [feed, setFeed, operation.status.state],
   );
 
   const visible = useMemo(
@@ -81,19 +110,20 @@ export function DiscoverPage() {
 
   return (
     <>
+      <a className="skip-link" href="#recommendations">Skip to recommendations</a>
       <header className="titlebar">
         <div className="shell titlebar-inner">
           <span className="wordmark">
             Ani<span>Rec</span>
           </span>
-          <span className="lbl">Discover</span>
+          <h1 className="lbl">Discover</h1>
           <div className="tags">
             {feed?.source === "sample" ? (
               <span className="tag warn">Sample data</span>
             ) : null}
             {feed?.profile ? <span className="tag on">{feed.profile.username}</span> : null}
             <span className="tag">
-              <span className={`led ${busy ? "amber live" : "off"}`} /> Engine
+              <span aria-hidden="true" className={`led ${busy ? "amber live" : "off"}`} /> Engine · {busy ? "Working" : state === "loading" ? "Loading" : state === "error" ? "Unavailable" : "Idle"}
             </span>
           </div>
         </div>
@@ -108,17 +138,20 @@ export function DiscoverPage() {
 
         {feed ? (
           <>
-            <Controls
+            <details className="filter-drawer">
+              <summary>Filters &amp; sort <span className="lbl">{activeFilterCount(filters)} active · {sortMode === "personal-match" ? "Personal match" : sortMode === "mal-score" ? "MAL score" : sortMode}</span></summary>
+              <Controls
               catalogue={feed.catalogue}
               filters={filters}
               sortMode={sortMode}
               onFilters={setFilters}
               onSort={setSortMode}
             />
+            </details>
 
             <div className="statusbar">
-              <span className={`led ${busy ? "amber live" : ""}`} />
-              <span className="count">
+              <span aria-hidden="true" className={`led ${busy ? "amber live" : ""}`} />
+              <span className="count" role="status">
                 <b>{visible.length}</b> of {feed.recommendations.length} shown
                 {feed.hidden_count > 0 ? ` · ${feed.hidden_count} hidden` : ""}
               </span>
@@ -139,7 +172,7 @@ export function DiscoverPage() {
                 <button
                   type="button"
                   className="btn primary"
-                  disabled={feed.ephemeral}
+                  disabled={feed.ephemeral || saving}
                   title={
                     feed.ephemeral
                       ? "Connect a MyAnimeList profile to generate recommendations"
@@ -155,11 +188,16 @@ export function DiscoverPage() {
                   <span className="lbl">{progress?.message ?? "Working"}</span>
                   <div
                     className={`progress-track${progress?.total ? "" : " indeterminate"}`}
+                    role="progressbar"
+                    aria-label={progress?.message ?? "Generating recommendations"}
+                    aria-valuemin={0}
+                    aria-valuemax={progress?.total || undefined}
+                    aria-valuenow={progress?.total ? Math.max(0, Math.min(progress.current, progress.total)) : undefined}
                   >
                     <i
                       style={
                         progress?.total
-                          ? { width: `${(progress.current / progress.total) * 100}%` }
+                          ? { width: `${Math.max(0, Math.min(100, (progress.current / progress.total) * 100))}%` }
                           : undefined
                       }
                     />
@@ -170,9 +208,20 @@ export function DiscoverPage() {
                 </div>
               ) : null}
               {operation.status.error ? (
-                <span className="tag warn">{operation.status.error.title}</span>
+                <span className="tag warn" role="alert">{operation.status.error.title}</span>
               ) : null}
             </div>
+
+            <div className="feed-notices">
+              {feed.ephemeral ? <p className="sample-note">Sample library. Decisions stay in this preview; connect a MyAnimeList profile in the desktop app to keep them and generate personal picks.</p> : null}
+              <p className="feedback-notice" role="status">{feedbackNotice}</p>
+              {feedbackError ? <div className="feedback-error" role="alert">
+                <p>{feedbackError.message}</p>
+                {feedbackError.retryable ? <button type="button" className="pill" disabled={saving || busy} onClick={() => void vote(...feedbackError.vote)}>Retry decision</button> : null}
+              </div> : null}
+            </div>
+
+            <section id="recommendations" tabIndex={-1} aria-label="Recommendations">
 
             {visible.length === 0 ? (
               <EmptyPanel
@@ -181,14 +230,13 @@ export function DiscoverPage() {
               />
             ) : (
               <div className="feed">
-                {visible.map((model, index) => (
+                {visible.map((model) => (
                   <RecommendationCard
                     key={model.mal_id ?? model.display_title}
                     model={model}
-                    index={index}
                     showBreakdown={showBreakdown}
-                    liked={has(localState?.liked_mal_ids, model.mal_id)}
-                    disliked={has(localState?.disliked_mal_ids, model.mal_id)}
+                    pending={saving || busy}
+                    onDetails={setInspected}
                     watchLater={has(localState?.watch_later_mal_ids, model.mal_id)}
                     hidden={has(localState?.hidden_mal_ids, model.mal_id)}
                     onVote={vote}
@@ -196,11 +244,13 @@ export function DiscoverPage() {
                 ))}
               </div>
             )}
+            </section>
           </>
         ) : state === "loading" ? (
           <FeedSkeleton />
         ) : null}
       </main>
+      {inspected ? <RecommendationDetails model={inspected} onClose={() => setInspected(null)} /> : null}
     </>
   );
 }

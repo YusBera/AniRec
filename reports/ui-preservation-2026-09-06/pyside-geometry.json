@@ -1,0 +1,467 @@
+{
+  "screen": "VG27VQ (1)",
+  "window": {
+    "x": 0,
+    "y": 0,
+    "width": 1280,
+    "height": 900
+  },
+  "cards": [
+    {
+      "title": "Monster",
+      "card": {
+        "x": 248,
+        "y": 232,
+        "width": 235,
+        "height": 547
+      },
+      "cover_label": {
+        "x": 289,
+        "y": 241,
+        "width": 152,
+        "height": 228
+      },
+      "title_label": {
+        "x": 261,
+        "y": 477,
+        "width": 209,
+        "height": 34
+      },
+      "secondary_title_label": {
+        "x": 261,
+        "y": 519,
+        "width": 209,
+        "height": 16
+      },
+      "watch_later_button": {
+        "x": 261,
+        "y": 543,
+        "width": 101,
+        "height": 36
+      },
+      "not_interested_button": {
+        "x": 370,
+        "y": 543,
+        "width": 100,
+        "height": 36
+      },
+      "tag_strip": {
+        "x": 261,
+        "y": 587,
+        "width": 209,
+        "height": 45
+      },
+      "meta_label": {
+        "x": 261,
+        "y": 640,
+        "width": 209,
+        "height": 26
+      },
+      "reason_label": {
+        "x": 261,
+        "y": 695,
+        "width": 209,
+        "height": 27
+      }
+    },
+    {
+      "title": "Death Note",
+      "card": {
+        "x": 499,
+        "y": 232,
+        "width": 235,
+        "height": 547
+      },
+      "cover_label": {
+        "x": 540,
+        "y": 241,
+        "width": 152,
+        "height": 228
+      },
+      "title_label": {
+        "x": 512,
+        "y": 477,
+        "width": 209,
+        "height": 34
+      },
+      "secondary_title_label": {
+        "x": 512,
+        "y": 519,
+        "width": 209,
+        "height": 16
+      },
+      "watch_later_button": {
+        "x": 512,
+        "y": 543,
+        "width": 101,
+        "height": 36
+      },
+      "not_interested_button": {
+        "x": 621,
+        "y": 543,
+        "width": 100,
+        "height": 36
+      },
+      "tag_strip": {
+        "x": 512,
+        "y": 587,
+        "width": 209,
+        "height": 45
+      },
+      "meta_label": {
+        "x": 512,
+        "y": 640,
+        "width": 209,
+        "height": 26
+      },
+      "reason_label": {
+        "x": 512,
+        "y": 695,
+        "width": 209,
+        "height": 27
+      }
+    },
+    {
+      "title": "Steins;Gate",
+      "card": {
+        "x": 750,
+        "y": 232,
+        "width": 235,
+        "height": 547
+      },
+      "cover_label": {
+        "x": 791,
+        "y": 241,
+        "width": 152,
+        "height": 228
+      },
+      "title_label": {
+        "x": 763,
+        "y": 477,
+        "width": 209,
+        "height": 34
+      },
+      "secondary_title_label": {
+        "x": 763,
+        "y": 519,
+        "width": 209,
+        "height": 16
+      },
+      "watch_later_button": {
+        "x": 763,
+        "y": 543,
+        "width": 101,
+        "height": 36
+      },
+      "not_interested_button": {
+        "x": 872,
+        "y": 543,
+        "width": 100,
+        "height": 36
+      },
+      "tag_strip": {
+        "x": 763,
+        "y": 587,
+        "width": 209,
+        "height": 45
+      },
+      "meta_label": {
+        "x": 763,
+        "y": 640,
+        "width": 209,
+        "height": 26
+      },
+      "reason_label": {
+        "x": 763,
+        "y": 695,
+        "width": 209,
+        "height": 27
+      }
+    },
+    {
+      "title": "Neon Genesis Evangelion",
+      "card": {
+        "x": 1001,
+        "y": 232,
+        "width": 235,
+        "height": 547
+      },
+      "cover_label": {
+        "x": 1042,
+        "y": 241,
+        "width": 152,
+        "height": 228
+      },
+      "title_label": {
+        "x": 1014,
+        "y": 477,
+        "width": 209,
+        "height": 34
+      },
+      "secondary_title_label": {
+        "x": 1014,
+        "y": 519,
+        "width": 209,
+        "height": 16
+      },
+      "watch_later_button": {
+        "x": 1014,
+        "y": 543,
+        "width": 101,
+        "height": 36
+      },
+      "not_interested_button": {
+        "x": 1123,
+        "y": 543,
+        "width": 100,
+        "height": 36
+      },
+      "tag_strip": {
+        "x": 1014,
+        "y": 587,
+        "width": 209,
+        "height": 45
+      },
+      "meta_label": {
+        "x": 1014,
+        "y": 640,
+        "width": 209,
+        "height": 26
+      },
+      "reason_label": {
+        "x": 1014,
+        "y": 695,
+        "width": 209,
+        "height": 27
+      }
+    },
+    {
+      "title": "Clannad: After Story",
+      "card": {
+        "x": 248,
+        "y": 795,
+        "width": 235,
+        "height": 547
+      },
+      "cover_label": {
+        "x": 289,
+        "y": 804,
+        "width": 152,
+        "height": 228
+      },
+      "title_label": {
+        "x": 261,
+        "y": 1040,
+        "width": 209,
+        "height": 34
+      },
+      "secondary_title_label": {
+        "x": 261,
+        "y": 1082,
+        "width": 209,
+        "height": 16
+      },
+      "watch_later_button": {
+        "x": 261,
+        "y": 1106,
+        "width": 101,
+        "height": 36
+      },
+      "not_interested_button": {
+        "x": 370,
+        "y": 1106,
+        "width": 100,
+        "height": 36
+      },
+      "tag_strip": {
+        "x": 261,
+        "y": 1150,
+        "width": 209,
+        "height": 45
+      },
+      "meta_label": {
+        "x": 261,
+        "y": 1203,
+        "width": 209,
+        "height": 26
+      },
+      "reason_label": {
+        "x": 261,
+        "y": 1258,
+        "width": 209,
+        "height": 27
+      }
+    },
+    {
+      "title": "Your Name.",
+      "card": {
+        "x": 499,
+        "y": 795,
+        "width": 235,
+        "height": 547
+      },
+      "cover_label": {
+        "x": 540,
+        "y": 804,
+        "width": 152,
+        "height": 228
+      },
+      "title_label": {
+        "x": 512,
+        "y": 1040,
+        "width": 209,
+        "height": 34
+      },
+      "secondary_title_label": {
+        "x": 512,
+        "y": 1082,
+        "width": 209,
+        "height": 16
+      },
+      "watch_later_button": {
+        "x": 512,
+        "y": 1106,
+        "width": 101,
+        "height": 36
+      },
+      "not_interested_button": {
+        "x": 621,
+        "y": 1106,
+        "width": 100,
+        "height": 36
+      },
+      "tag_strip": {
+        "x": 512,
+        "y": 1150,
+        "width": 209,
+        "height": 45
+      },
+      "meta_label": {
+        "x": 512,
+        "y": 1203,
+        "width": 209,
+        "height": 26
+      },
+      "reason_label": {
+        "x": 512,
+        "y": 1258,
+        "width": 209,
+        "height": 27
+      }
+    },
+    {
+      "title": "Spirited Away",
+      "card": {
+        "x": 750,
+        "y": 795,
+        "width": 235,
+        "height": 547
+      },
+      "cover_label": {
+        "x": 791,
+        "y": 804,
+        "width": 152,
+        "height": 228
+      },
+      "title_label": {
+        "x": 763,
+        "y": 1040,
+        "width": 209,
+        "height": 34
+      },
+      "secondary_title_label": {
+        "x": 763,
+        "y": 1082,
+        "width": 209,
+        "height": 16
+      },
+      "watch_later_button": {
+        "x": 763,
+        "y": 1106,
+        "width": 101,
+        "height": 36
+      },
+      "not_interested_button": {
+        "x": 872,
+        "y": 1106,
+        "width": 100,
+        "height": 36
+      },
+      "tag_strip": {
+        "x": 763,
+        "y": 1150,
+        "width": 209,
+        "height": 45
+      },
+      "meta_label": {
+        "x": 763,
+        "y": 1203,
+        "width": 209,
+        "height": 26
+      },
+      "reason_label": {
+        "x": 763,
+        "y": 1258,
+        "width": 209,
+        "height": 27
+      }
+    },
+    {
+      "title": "One Piece",
+      "card": {
+        "x": 1001,
+        "y": 795,
+        "width": 235,
+        "height": 547
+      },
+      "cover_label": {
+        "x": 1042,
+        "y": 804,
+        "width": 152,
+        "height": 228
+      },
+      "title_label": {
+        "x": 1014,
+        "y": 1040,
+        "width": 209,
+        "height": 34
+      },
+      "secondary_title_label": {
+        "x": 1014,
+        "y": 1082,
+        "width": 209,
+        "height": 16
+      },
+      "watch_later_button": {
+        "x": 1014,
+        "y": 1106,
+        "width": 101,
+        "height": 36
+      },
+      "not_interested_button": {
+        "x": 1123,
+        "y": 1106,
+        "width": 100,
+        "height": 36
+      },
+      "tag_strip": {
+        "x": 1014,
+        "y": 1150,
+        "width": 209,
+        "height": 45
+      },
+      "meta_label": {
+        "x": 1014,
+        "y": 1203,
+        "width": 209,
+        "height": 26
+      },
+      "reason_label": {
+        "x": 1014,
+        "y": 1258,
+        "width": 209,
+        "height": 27
+      }
+    }
+  ]
+}

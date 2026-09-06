@@ -36,7 +36,7 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
   return (
     <>
       <div className="controls">
-        <div className="control-group">
+        <div className="control-group" role="group" aria-label="Genre filters">
           <div className="control-head">
             <span className="lbl">Genre</span>
             <span className="line" />
@@ -57,7 +57,7 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
           </div>
         </div>
 
-        <div className="control-group">
+        <div className="control-group" role="group" aria-label="Studio filters">
           <div className="control-head">
             <span className="lbl">Studio</span>
             <span className="line" />
@@ -100,6 +100,7 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
               max={10}
               step={0.5}
               value={filters.minimumMalScore ?? 0}
+              aria-valuetext={filters.minimumMalScore === null ? "Any score" : `${filters.minimumMalScore.toFixed(1)} out of 10`}
               onChange={(event) => {
                 const value = Number(event.target.value);
                 onFilters({ ...filters, minimumMalScore: value === 0 ? null : value });
@@ -116,7 +117,7 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
             <span className="lbl">Sort</span>
             <span className="line" />
           </div>
-          <div className="sort-row">
+          <div className="sort-row" role="group" aria-label="Sort recommendations">
             {SORTS.map((option) => (
               <button
                 key={option.value}
@@ -184,7 +185,7 @@ function Pill({
   onDismiss: () => void;
 }) {
   return (
-    <span className="pill" aria-pressed="true">
+    <span className="pill" data-active="true">
       <span className="kind">{kind}</span>
       {value}
       <button

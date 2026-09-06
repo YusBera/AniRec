@@ -86,7 +86,8 @@ const next = generate();
 
 if (verifyOnly) {
   const current = existsSync(OUTPUT) ? readFileSync(OUTPUT, "utf8") : "";
-  if (current !== next) {
+  // Git's Windows checkout may use CRLF; line endings are not schema drift.
+  if (current.replace(/\r\n/g, "\n") !== next.replace(/\r\n/g, "\n")) {
     console.error(
       "API types are out of date with the Python models.\n" +
         "Run: npm run generate:api-types",

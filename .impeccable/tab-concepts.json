@@ -1,0 +1,40 @@
+{
+  "title": "AniRec — next-tab concepts",
+  "question": "Choose a layout, combine parts, or request a revision. Each board shows Library, Profile, Compare, and Settings using illustrative sample data; no tabs have been implemented yet.",
+  "options": [
+    {
+      "id": "matrix",
+      "label": "A · Comparison matrix",
+      "kicker": "THE ROLL",
+      "thesis": "Aligned rows make personal signals and differences easy to scan.",
+      "palette": ["#070C09", "#C6D4C2", "#D9A441", "#5FBFB5"],
+      "materials": ["thin ruled tables", "square instrument panels"],
+      "viewport": "Library is a decision ledger; Profile pairs scores with evidence; Compare aligns both ratings; Settings groups labeled rows.",
+      "risk": "Efficient and precise, but less artwork-forward.",
+      "comp": ".impeccable/mocks/decision/matrix.png"
+    },
+    {
+      "id": "workbench",
+      "label": "B · Split workbench",
+      "thesis": "Browse on the left and inspect evidence on the right without losing your place.",
+      "palette": ["#070C09", "#C6D4C2", "#D9A441", "#5FBFB5"],
+      "materials": ["persistent inspector", "compact indexed lists"],
+      "viewport": "Library keeps a selected title open; Profile expands one signal; Compare explains one disagreement; Settings exposes one section.",
+      "risk": "Focused on desktop, but the inspector needs a separate mobile view.",
+      "comp": ".impeccable/mocks/decision/workbench.png"
+    },
+    {
+      "id": "library",
+      "label": "C · Library-led workspace",
+      "thesis": "Recognizable titles lead, with evidence attached directly to each anime.",
+      "palette": ["#070C09", "#C6D4C2", "#D9A441", "#5FBFB5"],
+      "materials": ["poster-format title tiles", "restrained evidence strips"],
+      "viewport": "Library uses shelves; Profile leads with revealing titles; Compare groups shared favorites and disagreements; Settings stays practical.",
+      "risk": "More inviting to browse, but fewer items fit on screen.",
+      "comp": ".impeccable/mocks/decision/library.png"
+    }
+  ],
+  "reroll": true,
+  "steer": true,
+  "buildPath": {"value": "comp", "toggle": true}
+}

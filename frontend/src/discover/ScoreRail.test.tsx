@@ -73,6 +73,17 @@ describe("score rail", () => {
 });
 
 describe("breakdown", () => {
+  it("discloses a mismatch instead of silently implying that the parts reconcile", () => {
+    render(<Breakdown contributions={[{ label: "Adventure", value: 38.9 }]} score={34.7} />);
+    expect(screen.getByText(/does not fully reconcile/)).toHaveTextContent("38.9");
+    expect(screen.getByText(/does not fully reconcile/)).toHaveTextContent("34.7%");
+  });
+
+  it("does not turn a missing match into a numeric zero", () => {
+    render(<Breakdown contributions={[]} score={0} available={false} />);
+    expect(screen.getByText("Personal match is not available.")).toBeInTheDocument();
+    expect(screen.queryByText("0.0")).not.toBeInTheDocument();
+  });
   it("shows a total that reconciles with the score", () => {
     render(<Breakdown contributions={CONTRIBUTIONS} score={92.4} />);
     expect(screen.getByText("92.4")).toBeInTheDocument();

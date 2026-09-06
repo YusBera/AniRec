@@ -50,6 +50,7 @@
   gap: var(--space-sm);
   flex-wrap: wrap;
 }
+.titlebar h1 { margin: 0; }
 
 /* ---------- controls ---------- */
 
@@ -92,6 +93,8 @@
   gap: 6px;
   max-height: 92px;
   overflow-y: auto;
+  padding: 3px;
+  scroll-padding-block: 3px;
 }
 
 .sort-row {
@@ -164,7 +167,7 @@
 
 .feed {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 232px), 1fr));
   gap: var(--space-md);
 }
 
@@ -174,19 +177,24 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--gradient-card);
+  min-width: 0;
   /* Rows are uniform, so a card fills its cell rather than sizing to content.
      This is the whole of the fix that test_card_grid_geometry.py exists for. */
   height: 100%;
-  animation: card-in 0.3s steps(5, end) backwards;
   transition: border-color 0.12s steps(3, end);
 }
 .card:hover {
   border-color: var(--border-strong);
 }
 .card[data-hidden="true"] {
-  opacity: 0.42;
+  border-color: var(--danger-border);
 }
+.filter-drawer { border: 1px solid var(--border); background: var(--surface); }
+.filter-drawer summary { cursor: pointer; padding: var(--space-sm) var(--space-md); color: var(--text); min-height: 36px; }
+.filter-drawer summary .lbl { margin-left: var(--space-md); }
+.filter-drawer .controls { border-width: 1px 0 0; }
+.filter-drawer .pill-row { padding: var(--space-sm) var(--space-md); }
 
 @keyframes card-in {
   from { opacity: 0; }
@@ -195,9 +203,14 @@
 
 .card-art {
   position: relative;
-  aspect-ratio: 2 / 3;
+  display: block;
+  width: 152px;
+  height: 228px;
+  flex: none;
+  align-self: center;
+  margin: var(--space-sm) 0 0;
   background: var(--well);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
   overflow: hidden;
 }
 /* The placeholder is underneath rather than replaced, so artwork resolves into
@@ -212,9 +225,8 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   z-index: 1;
-  animation: art-in 0.35s steps(6, end);
 }
 @keyframes art-in {
   from { opacity: 0; }
@@ -224,19 +236,32 @@
 .card-art .placeholder {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  color: var(--text-disabled);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-muted);
   font-family: var(--font-display);
-  font-size: calc(var(--type-xs) * 0.85rem);
+  font-size: calc(var(--type-xs) * 1rem);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  background-image: repeating-linear-gradient(
-    135deg,
-    var(--surface-sunken) 0 6px,
-    var(--well) 6px 12px
-  );
+  background: var(--surface-raised);
 }
+.placeholder b { font-size: 3.7rem; line-height: 1; letter-spacing: 0; }
+.card-scoreplate {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px;
+  background: var(--well);
+  border-top: 1px solid var(--border);
+}
+.card-scoreplate .lbl { font-size: 0.69rem; letter-spacing: 0.02em; text-align: left; }
+.card-scoreplate .rail { height: 9px; }
 
 .card-rank {
   position: absolute;
@@ -258,11 +283,14 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: var(--space-sm);
+  padding: var(--space-sm) var(--space-md) var(--space-md);
   flex: 1;
 }
 
 .card-title {
+  margin: 0;
+  min-height: 2.6em;
+  font-family: var(--font-display);
   font-size: calc(var(--type-md) * 1rem);
   color: var(--text-strong);
   line-height: 1.3;
@@ -273,7 +301,10 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.card-title button { text-align: left; width: 100%; }
+.card-title:focus-within { overflow: visible; }
 .card-secondary {
+  min-height: 1.55em;
   font-size: calc(var(--type-xs) * 1rem);
   color: var(--text-subtle);
   white-space: nowrap;
@@ -290,13 +321,12 @@
 }
 .card-match {
   font-family: var(--font-display);
-  font-size: calc(var(--type-2xl) * 1rem);
+  font-size: calc(var(--type-lg) * 1rem);
   font-weight: var(--weight-bold);
   line-height: 0.9;
   letter-spacing: -0.02em;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .card-match i {
   font-style: normal;
@@ -309,7 +339,6 @@
   text-shadow: none;
 }
 .card-mal {
-  text-align: right;
   font-size: calc(var(--type-xs) * 1rem);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -321,9 +350,30 @@
   gap: 2px var(--space-sm);
   font-size: calc(var(--type-xs) * 0.95rem);
   color: var(--text-subtle);
+  min-height: 3.1em;
+  align-content: start;
 }
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 4px;
+  /* Reserve three tag rows, just as Qt reserves its metadata strip. */
+  min-height: 64px;
+}
+.card-tag {
+  font-size: calc(var(--type-xs) * 1rem);
+  line-height: 1.35;
+  border: 1px solid var(--busy-border);
+  color: var(--focus);
+  padding: 1px 4px;
+  overflow-wrap: anywhere;
+}
+.card-tag.studio { color: var(--accent-soft); border-color: var(--border-strong); }
 
 .card-reason {
+  margin: 0;
+  font-family: var(--font-sans);
   font-size: calc(var(--type-xs) * 1rem);
   color: var(--text-muted);
   /* Two reserved lines, blank when there is nothing to say rather than filled
@@ -338,22 +388,25 @@
 
 .card-actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--border);
-  border-top: 1px solid var(--border);
-  margin-top: auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+  margin-block: 2px var(--space-xs);
 }
 .card-actions button {
+  border: 1px solid var(--border-strong);
+  min-height: 36px;
   background: var(--surface);
   padding: 5px 2px 6px;
-  font-family: var(--font-display);
-  font-size: calc(var(--type-xs) * 0.8rem);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-subtle);
+  font-family: var(--font-sans);
+  font-size: calc(var(--type-sm) * 1rem);
+  letter-spacing: 0;
+  color: var(--text-muted);
   transition: color 0.1s steps(2, end), background-color 0.1s steps(2, end);
 }
+.card-utilities { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-top: auto; padding-top: var(--space-xs); }
+.card-utilities .pill { min-height: 32px; }
+.mal-link { text-decoration: none; }
+.card-set-aside { margin: 0; color: var(--danger-text); font-size: calc(var(--type-xs) * 1rem); }
 .card-actions button:hover {
   background: var(--surface-raised);
   color: var(--text);
@@ -385,7 +438,6 @@
   align-items: center;
   gap: 7px;
   font-size: calc(var(--type-xs) * 0.95rem);
-  animation: slip 0.3s steps(5, end) backwards;
 }
 @keyframes slip {
   from { opacity: 0; }
@@ -401,9 +453,7 @@
 .breakdown-row .swatch[data-tone="x"] { background: var(--busy-border); }
 .breakdown-row .name {
   color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .breakdown-row .val {
   text-align: right;
@@ -471,7 +521,9 @@
   animation: blink 1.4s steps(2, end) infinite;
 }
 .skeleton .art {
-  aspect-ratio: 2 / 3;
+  width: 152px;
+  height: 228px;
+  margin: var(--space-sm) auto;
   background: var(--well);
   border-bottom: 1px solid var(--border);
 }
@@ -486,4 +538,52 @@
 @keyframes blink {
   0%, 60% { opacity: 1; }
   61%, 100% { opacity: 0.62; }
+}
+
+/* Inspector: the same instrument panels, with room for unabridged evidence. */
+.details-dialog {
+  width: min(760px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: var(--space-lg);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.details-dialog::backdrop { background: color-mix(in srgb, var(--well) 85%, transparent); }
+.details-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.details-head .pill { min-height: 36px; }
+.details-dialog h2 { margin: var(--space-lg) 0 var(--space-xs); font-family: var(--font-display); font-size: 1.4rem; color: var(--text-strong); overflow-wrap: anywhere; }
+.details-dialog h3 { margin: 0 0 var(--space-sm); font-family: var(--font-display); font-size: 1rem; color: var(--accent-soft); }
+.details-secondary { margin: 0; color: var(--text-muted); }
+.details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-lg); margin-top: var(--space-lg); }
+.details-grid section { min-width: 0; padding-top: var(--space-md); border-top: 1px solid var(--border); }
+.details-grid p { font-family: var(--font-sans); overflow-wrap: anywhere; }
+.details-note { color: var(--text-muted); font-size: calc(var(--type-sm) * 1rem); }
+.details-grid dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-sm) var(--space-md); font-size: calc(var(--type-sm) * 1rem); }
+.details-grid dt { color: var(--text-muted); }
+.details-grid dd { margin: 0; overflow-wrap: anywhere; }
+.details-synopsis { white-space: pre-line; }
+.breakdown-warning, .feedback-error { color: var(--warning-text); border-left: 2px solid var(--warning-border); padding-left: var(--space-sm); }
+.feed-notices { font-family: var(--font-sans); font-size: calc(var(--type-sm) * 1rem); color: var(--text-muted); }
+.feed-notices p { margin: 0; }
+.feedback-notice:not(:empty), .feedback-error { margin-top: var(--space-sm); }
+.feedback-error .pill { margin-top: var(--space-sm); }
+
+@media (max-width: 600px) {
+  .details-grid { grid-template-columns: 1fr; }
+  .titlebar .tags { margin-left: 0; }
+  .card-actions button, .pill, .btn, .details-head .pill, .card-utilities .pill { min-height: 44px; }
+  .pill .dismiss { min-width: 30px; min-height: 36px; }
+  .filter-drawer summary { min-height: 44px; }
+}
+@media (pointer: coarse) {
+  .card-actions button, .pill, .btn, .card-utilities .pill { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton, .progress-track.indeterminate > i { animation: none; }
+  .progress-track.indeterminate > i { width: 100%; opacity: 0.5; }
+  .card, .card-actions button, .progress-track > i { transition: none; }
 }

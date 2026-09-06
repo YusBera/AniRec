@@ -1,176 +1,78 @@
-/**
- * One recommendation.
- *
- * The Qt equivalent is recommendation_card.py: 1,125 lines, two paintEvent
- * overrides, two QLabel subclasses for text truncation, a cover memory cache
- * and a fixed CARD_WIDTH the grid arithmetic depends on. None of those have
- * an equivalent here, which is the measurement the decision gate is for.
- *
- * Artwork is loaded by the browser straight from MyAnimeList's CDN. The whole
- * of CoverImageService - validation, size bounds, magic-byte checks,
- * content-addressed disk cache, the aux-cover plumbing in MainWindow - is
- * replaced by an <img> and the HTTP cache. The validation still matters on a
- * server-side path, and a deployed web build should proxy these rather than
- * hotlink; for a local proof of concept the direct fetch is honest about what
- * the browser is actually doing.
- */
-
-import { memo } from "react";
+/** Discover decisions follow PySide: save a prospect or set it aside, not rate it. */
+import { memo, useState } from "react";
 import type { RecommendationViewModel } from "../api/types";
-import { usePlatform } from "../platform/PlatformContext";
 import { Breakdown, ScoreRail } from "./ScoreRail";
+import { MalLink } from "./RecommendationDetails";
 
 interface Props {
   model: RecommendationViewModel;
-  index: number;
-  liked: boolean;
-  disliked: boolean;
   watchLater: boolean;
   hidden: boolean;
   showBreakdown: boolean;
-  onVote: (malId: number, action: "sentiment" | "watch_later" | "hidden", value: boolean) => void;
+  pending: boolean;
+  onDetails: (model: RecommendationViewModel) => void;
+  onVote: (malId: number, action: "watch_later" | "hidden", value: boolean) => void;
 }
 
-function RecommendationCardInner({
-  model,
-  index,
-  liked,
-  disliked,
-  watchLater,
-  hidden,
-  showBreakdown,
-  onVote,
-}: Props) {
-  const platform = usePlatform();
+function RecommendationCardInner({ model, watchLater, hidden, showBreakdown, pending, onDetails, onVote }: Props) {
+  const [failedCover, setFailedCover] = useState<string | null>(null);
   const malId = model.mal_id;
   const meta = [model.year_text, model.episodes_text, model.status].filter(
     (item) => item && !item.toLocaleLowerCase().includes("not available"),
   );
-
-  // Still a real anchor - it keeps the href in the status bar, middle-click,
-  // and "copy link address". The handler exists because a bare target=_blank
-  // inside the desktop webview would navigate the application window to
-  // MyAnimeList, which has no chrome to come back from.
-  const openMal = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (!model.mal_url) return;
-    event.preventDefault();
-    void platform.openExternal(model.mal_url);
-  };
+  const initials = model.display_title.split(/\s+/).slice(0, 2).map((word) => word[0]).join("");
 
   return (
-    <article
-      className="card"
-      data-hidden={hidden ? "true" : "false"}
-      // Stagger, capped so a large feed does not make the last card wait.
-      style={{ animationDelay: `${Math.min(index, 11) * 0.035}s` }}
-    >
-      <div className="card-art">
-        <div className="placeholder" aria-hidden="true">
-          No artwork
-        </div>
-        {model.cover_url ? (
-          <img
-            src={model.cover_url}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            referrerPolicy="no-referrer"
-          />
+    <article className="card" data-hidden={hidden} aria-label={model.display_title}>
+      <button type="button" className="card-art" aria-label={`Inspect ${model.display_title}`} onClick={() => onDetails(model)}>
+        <span className="placeholder" aria-hidden="true"><b>{initials}</b><span>No artwork</span></span>
+        {model.cover_url && failedCover !== model.cover_url ? (
+          <img src={model.cover_url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
+            onError={() => setFailedCover(model.cover_url)} />
         ) : null}
-        {model.rank !== null ? <div className="card-rank">#{model.rank}</div> : null}
-      </div>
+        {model.rank !== null ? <span className="card-rank">#{model.rank}</span> : null}
+        <span className="card-scoreplate">
+          <span className="card-figures">
+            <span className="lbl">Personal match</span>
+            <span className="card-match" data-available={model.personal_match_available}>
+              {model.personal_match_available ? <>{model.personal_match.toFixed(1)}<i>%</i></> : "—"}
+            </span>
+          </span>
+          <ScoreRail contributions={model.genre_contributions} score={model.personal_match} available={model.personal_match_available} />
+        </span>
+      </button>
 
       <div className="card-body">
-        <h3 className="card-title" title={model.display_title}>
-          {model.mal_url ? (
-            <a
-              href={model.mal_url}
-              target="_blank"
-              rel="noreferrer noopener"
-              onClick={openMal}
-            >
-              {model.display_title}
-            </a>
-          ) : (
-            model.display_title
-          )}
-        </h3>
-        {model.secondary_title ? (
-          <div className="card-secondary">{model.secondary_title}</div>
-        ) : null}
+        <h2 className="card-title"><button type="button" title={model.display_title} onClick={() => onDetails(model)}>{model.display_title}</button></h2>
+        <div className="card-secondary" title={model.secondary_title ?? undefined}>{model.secondary_title || "\u00a0"}</div>
 
-        <div className="card-figures">
-          <div className="card-match" data-available={String(model.personal_match_available)}>
-            {model.personal_match_available ? model.personal_match.toFixed(1) : "--"}
-            <i>%</i>
-          </div>
-          <div className="card-mal">
-            <div className="lbl">MAL</div>
-            {model.mal_score === null ? "not rated" : model.mal_score.toFixed(2)}
-          </div>
+        <div className="card-actions" aria-label={`Decisions for ${model.display_title}`}>
+          <button type="button" data-action="later" aria-pressed={watchLater} disabled={malId === null || pending}
+            onClick={() => malId !== null && onVote(malId, "watch_later", !watchLater)}>
+            {watchLater ? "Saved for later" : "Save for later"}
+          </button>
+          <button type="button" data-action="hide" aria-pressed={hidden} disabled={malId === null || pending}
+            onClick={() => malId !== null && onVote(malId, "hidden", !hidden)}>
+            {hidden ? "Show again" : "Not interested"}
+          </button>
         </div>
+        {hidden ? <p className="card-set-aside">Set aside. Excluded from future feeds.</p> : null}
 
-        <ScoreRail
-          contributions={model.genre_contributions}
-          score={model.personal_match}
-          available={model.personal_match_available}
-        />
-
-        <div className="card-meta">
-          {meta.map((item) => (
-            <span key={item}>{item}</span>
-          ))}
+        <div className="card-tags" title={[...model.studios, ...model.genres].join(" · ")}>
+          {model.studios.map((studio) => <span className="card-tag studio" key={`s-${studio}`}>{studio}</span>)}
+          {model.genres.map((genre) => <span className="card-tag" key={`g-${genre}`}>{genre}</span>)}
         </div>
-
-        {model.studios.length > 0 ? (
-          <div className="card-meta">
-            <span className="lbl">{model.studios.join(" · ")}</span>
-          </div>
-        ) : null}
-
+        <div className="card-meta">{meta.map((item) => <span key={item}>{item}</span>)}</div>
+        <div className="card-mal">MAL score: {model.mal_score === null ? "not rated" : `${model.mal_score.toFixed(2)} / 10`}</div>
         <p className="card-reason">{model.reason}</p>
-
-        {showBreakdown ? (
-          <Breakdown contributions={model.genre_contributions} score={model.personal_match} />
-        ) : null}
-      </div>
-
-      <div className="card-actions">
-        <button
-          type="button"
-          data-action="like"
-          aria-pressed={liked}
-          disabled={malId === null}
-          onClick={() => malId !== null && onVote(malId, "sentiment", !liked)}
-        >
-          {liked ? "Liked" : "Like"}
-        </button>
-        <button
-          type="button"
-          data-action="later"
-          aria-pressed={watchLater}
-          disabled={malId === null}
-          onClick={() => malId !== null && onVote(malId, "watch_later", !watchLater)}
-        >
-          Later
-        </button>
-        <button
-          type="button"
-          data-action="hide"
-          aria-pressed={hidden || disliked}
-          disabled={malId === null}
-          onClick={() => malId !== null && onVote(malId, "hidden", !hidden)}
-        >
-          Not for me
-        </button>
+        {showBreakdown ? <Breakdown contributions={model.genre_contributions} score={model.personal_match} available={model.personal_match_available} /> : null}
+        <div className="card-utilities">
+          <button type="button" className="pill" onClick={() => onDetails(model)}>Details</button>
+          <MalLink model={model} />
+        </div>
       </div>
     </article>
   );
 }
 
-// The feed re-renders on every filter keystroke and every vote. Without this,
-// each keystroke re-renders every card; with it, only the cards whose props
-// actually changed. The equivalent in Qt is not needing to think about it,
-// because widgets are retained - this is a real cost React introduces, and it
-// is one line.
 export const RecommendationCard = memo(RecommendationCardInner);

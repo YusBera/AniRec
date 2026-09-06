@@ -33,39 +33,25 @@ body {
   font-size: 1rem;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  overflow-wrap: break-word;
 }
 
-/* The raster. In Qt this is Scanlines(QWidget): 133 lines, three widget
- * attributes, a transparency mode and a parent chosen so it does not cover
- * native dialogs. Here it is a pseudo-element that cannot take input because
- * it is not an element. The weight is the same decision the widget records -
- * light enough to sit behind cover artwork rather than filter it. */
+/* Keep the raster on the ground, beneath the content stacking context. The
+ * former z-index: 90 layer darkened text and artwork despite the exemption
+ * described below. Native dialogs and photographic artwork stay crisp. */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: 0;
   pointer-events: none;
-  background: repeating-linear-gradient(
-    0deg,
-    rgb(0 0 0 / 0.22) 0 1px,
-    transparent 1px 3px
-  );
+  background: repeating-linear-gradient(0deg, var(--well) 0 1px, transparent 1px 3px);
   opacity: 0.45;
 }
 
 /* Artwork is exempt from the raster for the same reason the desktop exempts
  * it: a 1-in-3 dark line over a photograph is damage, not atmosphere. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+#root { position: relative; z-index: 1; }
 
 a {
   color: var(--focus);
@@ -73,7 +59,7 @@ a {
 }
 
 :focus-visible {
-  outline: 1px solid var(--focus);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
@@ -85,6 +71,9 @@ button {
   padding: 0;
   cursor: pointer;
 }
+button:disabled { cursor: not-allowed; }
+.skip-link { position: absolute; left: var(--space-md); top: var(--space-sm); transform: translateY(-200%); padding: var(--space-sm); background: var(--surface); z-index: 5; }
+.skip-link:focus { transform: none; }
 
 img {
   max-width: 100%;

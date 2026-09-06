@@ -75,8 +75,9 @@ export function ScoreRail({ contributions, score, available }: Props) {
   );
 }
 
-export function Breakdown({ contributions, score }: { contributions: Contribution[]; score: number }) {
-  if (contributions.length === 0) return null;
+export function Breakdown({ contributions, score, available = true }: { contributions: Contribution[]; score: number; available?: boolean }) {
+  if (!available) return <p className="details-note">Personal match is not available.</p>;
+  if (contributions.length === 0) return <p className="details-note">No contribution breakdown is available for this score.</p>;
   const sum = contributions.reduce((total, item) => total + item.value, 0);
   return (
     <div className="breakdown">
@@ -101,6 +102,7 @@ export function Breakdown({ contributions, score }: { contributions: Contributio
           {sum.toFixed(1)}
         </span>
       </div>
+      {Math.abs(sum - score) > 0.05 ? <p className="breakdown-warning">The supplied contributions total {sum.toFixed(1)}, but the displayed match is {score.toFixed(1)}%. This explanation does not fully reconcile.</p> : null}
     </div>
   );
 }

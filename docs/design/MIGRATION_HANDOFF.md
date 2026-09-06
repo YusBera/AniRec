@@ -1,5 +1,10 @@
 # AniRec migration handoff
 
+**Latest continuation (2026-09-06): [Latest agent handoff](LATEST_AGENT_HANDOFF.md).**
+Read it first for the user's updated next-tab scope, required skills, selected
+Library-led concept, portrait-poster requirement, dirty-tree transfer checklist and
+the exact approval boundary. The architecture history below remains relevant.
+
 Written 2026-09-05. **The direction here is decided; most of it is not built.**
 One React page is validated, the HTTP API is tested, and the desktop shell that
 would package them does not exist. PySide6 ships, is untouched, and stays that
@@ -8,6 +13,11 @@ way until a separate decision gate says otherwise.
 Read this before any frontend work. If you are changing the PySide interface,
 read [FRONTEND_HANDOFF.md](FRONTEND_HANDOFF.md) too — it remains the visual
 standard and nothing here supersedes it.
+
+2026-09-06 follow-up: [React Discover preservation audit](REACT_PRESERVATION_AUDIT.md)
+records the user's approved bounded polish, current PySide card semantics,
+measured comparison, verification, and remaining migration gaps. It does not
+promote the PoC to the shipping application or approve the Tauri decision gate.
 
 ---
 

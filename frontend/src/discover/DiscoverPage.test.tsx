@@ -6,9 +6,10 @@
  * is the difference between testing a frontend and testing a mock.
  */
 
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Feed } from "../api/types";
 import { DiscoverPage, applyVote } from "./DiscoverPage";
 
@@ -104,6 +105,18 @@ function stubFetch(feed: Feed = FEED) {
   return fetchMock;
 }
 
+beforeEach(() => {
+  // jsdom has no native dialog lifecycle. The real focus trap and Escape are
+  // verified in Chromium; this models asynchronous close events, including
+  // the StrictMode cleanup/reopen sequence that previously dismissed it.
+  vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (this: HTMLDialogElement) { this.open = true; });
+  vi.spyOn(HTMLDialogElement.prototype, "close").mockImplementation(function (this: HTMLDialogElement) {
+    if (!this.open) return;
+    this.open = false;
+    queueMicrotask(() => this.dispatchEvent(new Event("close")));
+  });
+});
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -132,6 +145,7 @@ describe("DiscoverPage", () => {
     await screen.findByText("Death Note");
     const callsBefore = fetchMock.mock.calls.length;
 
+    await user.click(screen.getByText(/Filters & sort/));
     await user.click(screen.getByRole("button", { name: "Comedy" }));
 
     await waitFor(() => expect(screen.queryByText("Death Note")).not.toBeInTheDocument());
@@ -145,6 +159,7 @@ describe("DiscoverPage", () => {
     render(<DiscoverPage />);
     await screen.findByText("Death Note");
 
+    await user.click(screen.getByText(/Filters & sort/));
     await user.click(screen.getByRole("button", { name: "Comedy" }));
     await user.click(screen.getByRole("button", { name: "Madhouse" }));
 
@@ -159,6 +174,7 @@ describe("DiscoverPage", () => {
     const { container } = render(<DiscoverPage />);
     await screen.findByText("Death Note");
 
+    await user.click(screen.getByText(/Filters & sort/));
     await user.click(screen.getByRole("button", { name: "MAL" }));
     await waitFor(() => {
       const titles = [...container.querySelectorAll(".card-title")].map((n) => n.textContent);
@@ -174,14 +190,88 @@ describe("DiscoverPage", () => {
     const callsBefore = fetchMock.mock.calls.length;
 
     const card = container.querySelector<HTMLElement>(".card")!;
-    await user.click(within(card).getByRole("button", { name: "Like" }));
+    await user.click(within(card).getByRole("button", { name: "Save for later" }));
 
-    expect(await within(card).findByRole("button", { name: "Liked" })).toHaveAttribute(
+    expect(await within(card).findByRole("button", { name: "Saved for later" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
     // Ephemeral: no write was attempted.
     expect(fetchMock.mock.calls.length).toBe(callsBefore);
+    expect(screen.getByText(/Changes reset on reload/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Like" })).not.toBeInTheDocument();
+  });
+
+  it("sets a prospect aside and restores it without sending a taste verdict", async () => {
+    const fetchMock = stubFetch();
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    const card = await screen.findByRole("article", { name: "Death Note" });
+    await user.click(within(card).getByRole("button", { name: "Not interested" }));
+    expect(card).toHaveAttribute("data-hidden", "true");
+    expect(within(card).getByText(/Set aside/)).toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Show again" }));
+    expect(card).toHaveAttribute("data-hidden", "false");
+    expect(fetchMock.mock.calls.every(([input]) => !String(input).includes("feedback"))).toBe(true);
+  });
+
+  it("opens the full inspector from the title, including in StrictMode", async () => {
+    stubFetch();
+    const user = userEvent.setup();
+    render(<StrictMode><DiscoverPage /></StrictMode>);
+    await user.click(await screen.findByRole("button", { name: "Death Note" }));
+    const dialog = await screen.findByRole("dialog", { name: "Death Note" });
+    expect(dialog).toHaveAttribute("open");
+    expect(within(dialog).getByText("+76.1")).toBeInTheDocument();
+    expect(within(dialog).getByText("Community rating")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("keeps a readable placeholder when the artwork request fails", async () => {
+    stubFetch({ ...FEED, recommendations: [{ ...FEED.recommendations[0]!, cover_url: "https://example.test/missing.jpg" }] });
+    const { container } = render(<DiscoverPage />);
+    await screen.findByText("Death Note");
+    fireEvent.error(container.querySelector(".card-art img")!);
+    expect(container.querySelector(".card-art img")).toBeNull();
+    expect(screen.getByText("No artwork")).toBeInTheDocument();
+  });
+
+  it("rolls back a failed save, reports it, and retries the same decision", async () => {
+    const profileFeed = { ...FEED, ephemeral: false, state_profile_id: "test-profile" };
+    const fetchMock = stubFetch(profileFeed);
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    const card = await screen.findByRole("article", { name: "Death Note" });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: {
+      code: "network_error", title: "Service unavailable", description: "", solution: "Try again.", retryable: true,
+    } }), { status: 503 }));
+    await user.click(within(card).getByRole("button", { name: "Save for later" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Decision for Death Note was not saved");
+    expect(within(card).getByRole("button", { name: "Save for later" })).toHaveAttribute("aria-pressed", "false");
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ state: { ...FEED.state, watch_later_mal_ids: [1535] } })));
+    await user.click(screen.getByRole("button", { name: "Retry decision" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(within(card).getByRole("button", { name: "Saved for later" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("serializes profile decisions so a delayed rollback cannot erase another save", async () => {
+    const fetchMock = stubFetch({ ...FEED, ephemeral: false, state_profile_id: "test-profile" });
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    const first = await screen.findByRole("article", { name: "Death Note" });
+    const second = screen.getByRole("article", { name: "Steins;Gate" });
+    let complete!: (response: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => { complete = resolve; }));
+    await user.click(within(first).getByRole("button", { name: "Save for later" }));
+    expect(within(second).getByRole("button", { name: "Save for later" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Recommend 5 more" })).toBeDisabled();
+    await act(async () => complete(new Response(JSON.stringify({ state: { ...FEED.state, watch_later_mal_ids: [1535] } }))));
+    await waitFor(() => expect(within(second).getByRole("button", { name: "Save for later" })).toBeEnabled());
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ state: { ...FEED.state, watch_later_mal_ids: [1535, 9253] } })));
+    await user.click(within(second).getByRole("button", { name: "Save for later" }));
+    expect(within(first).getByRole("button", { name: "Saved for later" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(second).getByRole("button", { name: "Saved for later" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("disables generation when there is no profile to generate for", async () => {

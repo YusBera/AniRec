@@ -21,6 +21,9 @@ logs/
 build/
 dist/
 release/
+# Impeccable's small workflow checkpoint is source handoff data, not build output.
+!.impeccable/build/
+!.impeccable/build/state.json
 # API sidecar build output (PyInstaller). Same reasoning as build/ and dist/:
 # generated locally, ~130 MB, never reviewed.
 build-api/
@@ -43,3 +46,9 @@ htmlcov/
 .DS_Store
 Thumbs.db
 ACCEPTANCE_STATIC_RESULTS.txt
+
+# Local Impeccable decision-server runtime (portable choices live in mock sidecars)
+.impeccable/questions/
+
+# Disposable isolated API root used only for UI capture
+reports/ui-preservation-2026-09-06/sample-data/
