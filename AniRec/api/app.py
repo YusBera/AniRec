@@ -45,6 +45,7 @@ from ..models import PipelineProgress
 from ..presentation import recommendation_view_models
 from ..services import ApiConnectionService
 from .container import ApiContainer, build_container
+from .workspace import workspace_router
 from .models import (
     Catalogue,
     ErrorEnvelope,
@@ -162,6 +163,7 @@ def create_app(
     app.state.container = services
     app.state.operations = operations
     app.state.token_required = bool(resolved_token)
+    app.include_router(workspace_router(services))
 
     if resolved_token:
         app.add_middleware(TokenAuthMiddleware, token=resolved_token)

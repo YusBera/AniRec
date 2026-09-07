@@ -1,163 +1,221 @@
-# Latest agent handoff — React preservation and selected next-tab direction
+# Latest agent handoff — Library-led workspace
 
-Updated 2026-09-06. **Start here before resuming this work.** This is a local working-tree handoff, not a release report.
+Updated 2026-09-07. Read this first. Prepared for review on another PC in
+`YusBera/AniRec`, branch `codex/library-led-workspace-handoff`, based on
+`feat/react-fastapi-boundary` at commit
+`9b8268cec1a1001144d0cd8a0dd6b254efc5bfab`.
 
-## 1. Exact stopping point
+At publication preparation, the remote source branch had advanced to
+`059bf918310db047c9ad94a0e139a7645772b81e`. Those later remote changes were not
+merged into this reviewed local snapshot. This new branch preserves the completed
+work without overwriting the source branch; assess divergence before a later merge.
 
-Discover received a bounded preservation/polish pass. Library, Profile, Compare
-and Settings have three visual concept boards; the user selected **C — Library-led
-workspace** through the local selection page. It is approved as a compositional
-north star but has not been implemented in React.
+The authorized workspace implementation and requested verification are complete.
+**The full Python suite is not green: 738 passed, 2 failed.** The failures and
+remaining product limits are documented below. This branch is a review handoff,
+not a deployment, packaged release, or merge into the original branch.
 
-The user's latest instructions:
+## Read order and binding decisions
 
-1. Treat the current PySide screens and AniRec handoffs as visual authority.
-2. Use Impeccable critique/audit in preservation mode and UI/UX Pro Max for specific accessibility and React questions.
-3. Measure current geometry and behavior; compare the React result directly with PySide.
-4. Other tabs may be reimagined, including useful recommendation-site features/layouts/widgets, while preserving their core purpose and AniRec's theme/feel.
-5. Visual concepts were shown first; the user selected concept C through the
-   selection page. Resume from that approved direction rather than asking again.
-6. **Anime images are portrait posters, not squares. Preserve 2:3 aspect ratio; existing Discover posters are 152 × 228 logical pixels.** This applies to smaller table/list thumbnails too. Do not interpret square initials in generated mockups as an artwork specification.
-7. The user is transferring the project to another agent and requested this handoff, not additional UI work.
+1. This file, then `PRODUCT.md` and `DESIGN.md`.
+2. `docs/design/LIBRARY_WORKSPACE_SPEC.md` and `WORKSPACE_FUNCTIONAL_EXTENSION.md`.
+3. `docs/design/REACT_PRESERVATION_AUDIT.md` and
+   `reports/ui-tabs-concepts/README.md` for Discover preservation and concept provenance.
+4. Relevant `MIGRATION_HANDOFF.md`, `FRONTEND_HANDOFF.md`, `BACKEND_HANDOFF.md`
+   and `ICON_HANDOFF.md` before changes to their domains.
+5. Current source and verification reports. `WORKSPACE_IMPLEMENTATION.md` describes
+   the earlier bounded implementation; its read-only/sample-only limits are historical.
 
-Opening/re-attaching concept A was a Windows image-path troubleshooting exchange,
-**not approval of A**. The later selection-page answer explicitly chose C. The
-poster correction followed and is a binding refinement of C: every anime image,
-including compact thumbnails, remains a 2:3 portrait poster.
+Preserve PySide's visual authority and the existing Discover work. Concept C,
+Library-led workspace, is approved as a composition reference. Do not reopen the
+A/B/C decision without a new reason from the user. Every anime image and fallback,
+including compact thumbnails, must be a **2:3 portrait poster**. Discover's reference
+poster is 152 × 228 logical pixels. Generated concept text, counts and square
+placeholders are not data or artwork specifications.
 
-This latest scope supersedes older blanket prohibitions on proposing tab redesigns, but does not authorize a new visual identity, removing PySide, Tauri packaging, deployment, or changing recommendation algorithms.
+Retain green-black ground, bone text, brass personal signals/actions, aqua
+community/system/focus, compact typography, thin near-square borders and house
+icons. Python owns recommendation/scoring behavior. Show unavailable values
+honestly; do not invent metadata, history, personal matches or compatibility.
 
-## 2. Read order and source precedence
+## Required skills
 
-1. This file.
-2. `PRODUCT.md` and `DESIGN.md` at the repository root.
-3. `docs/design/REACT_PRESERVATION_AUDIT.md` — actual Discover changes, measurements and scoped verification.
-4. `reports/ui-tabs-concepts/README.md` — approved direction, concept limitations and exact data corrections.
-5. `docs/design/MIGRATION_HANDOFF.md`, `FRONTEND_HANDOFF.md`, `ICON_HANDOFF.md`; `BACKEND_HANDOFF.md` before API/service changes. Read relevant additional handoffs for affected domains.
-6. Actual Qt widgets/services and current React source before copying older prose.
+Before UI work, read the complete Impeccable and UI/UX Pro Max skills and their
+required references. They were used on the originating machine at:
 
-User instructions and verified current behavior outrank stale handoff descriptions. Generated image text never outranks source data. Keep green-black ground, bone text, brass personal signals/actions, aqua community/system/focus, compact typography, thin near-square borders and the existing icon family. No generic SaaS restyle, fake telemetry, invented scores or artificial status lamps.
+- `C:/Users/yusuf/.codex/skills/impeccable/SKILL.md`
+- `C:/Users/yusuf/.codex/skills/ui-ux-pro-max/SKILL.md`
 
-## 3. Required skills and available tools
+These machine-local installations are not transferred by cloning. Find or install
+the receiving agent's equivalents from https://impeccable.style/ and
+https://ui-ux-pro-max-skill.nextlevelbuilder.io/ if necessary; do not claim to have
+loaded unavailable skills. Apply Impeccable in preservation mode and UI/UX Pro Max
+for targeted accessibility/React questions. React is 18, not 19.
 
-Skills are installed outside this repository on the originating machine; transferring the project does **not** install them on another agent. Discover the receiving agent's equivalents. Read each selected `SKILL.md` completely and its required references before using it; do not merely cite the names. If unavailable, disclose that and arrange the appropriate skill rather than claiming to have run it.
+## Implemented behavior
 
-| Skill/tool | Requirement and use | Original local entry point |
-| --- | --- | --- |
-| Impeccable | Required for UI critique/audit, composition, preservation polish and its approval/verification workflow. Existing AniRec identity is pinned; generic anti-pattern warnings do not overrule it. | `C:/Users/yusuf/.codex/skills/impeccable/SKILL.md` |
-| UI/UX Pro Max | Required for targeted accessibility, keyboard navigation, state preservation, responsive and React implementation questions. This app is React 18; do not copy React 19-only advice or substitute a generated brand/design system. | `C:/Users/yusuf/.codex/skills/ui-ux-pro-max/SKILL.md` |
-| Imagegen | Conditional: use when revising/generating raster concept boards. Inspect actual PySide reference images first. Keep exact prompt sidecars/provenance; obtain approval before implementation. Not required for semantic HTML/CSS or house SVG icons. | `C:/Users/yusuf/.codex/skills/.system/imagegen/SKILL.md` |
-| Standalone critique | Available but optional; Impeccable covers the current required critique/audit. Avoid duplicate ceremonial reviews. | `C:/Users/yusuf/.codex/skills/critique/SKILL.md` |
-| Browser automation + screenshots | Required for actual web inspection and interaction checks after implementation. Current agent used the in-app browser through CUA. Use the receiving harness's supported equivalent. | Harness-provided, not a repo dependency |
-| Qt capture harness | Use isolated sample data and the secondary display for visual authority. Never disturb the user's primary monitor or normal profile. | `reports/ui-tabs-concepts/capture_tabs.py`, `reports/ui-preservation-2026-09-06/capture_qt.py` |
+- **Workspace:** Discover, Library, Profile, Compare and Settings hash routes;
+  heading focus, route scroll/state preservation and responsive navigation.
+- **Discover:** existing feed, filters, decisions and inspector preserved and
+  shared with Library.
+- **Library:** Watch Later / Not interested, search, card/list/table views, inspect
+  and undo. Saved metadata can come from the full saved result and local
+  completed/top/candidate CSVs beyond the visible feed. Explicit MAL resolution
+  is available for missing saved titles with a configured Client ID. Metadata-only
+  cards have N/A personal match; network-resolved metadata lasts for the mounted
+  page session. Sample decisions reset on reload.
+- **Profile:** local identity and supplied analysis, including archetype,
+  higher/lower evidence, highly ranked low-rated titles, hidden gems, histogram,
+  genre/studio disclosures, eras/seasons, habits and timeline. Missing statistics
+  remain unavailable; sample mode requires explicit opt-in.
+- **Compare:** joins the active local completed snapshot with a named public MAL
+  completed list. Shows source counts, both scores, absolute differences and
+  separate unrated shared titles. Live compatibility is N/A because no aggregate
+  algorithm exists. Explicit sample mode remains labelled and separate. Invalid
+  responses and foreign pagination URLs are rejected. NSFW preference scopes the
+  remote titles returned.
+- **Settings:** validated allowlisted saved preferences, dirty/save/error/discard
+  states; errors preserve edits. Credentials and unexposed settings are retained.
+  Unreadable settings cannot be overwritten with defaults. Desktop appearance
+  values do not change the browser theme. Account/folder/delete actions remain
+  desktop-only and are presented as unavailable in the browser.
+- **PySide cache repair:** successful local Profile loading now sets its loaded
+  profile ID and clears dirty state. Sample loading invalidates that local cache;
+  the misplaced undefined `profile_id` reference was removed. This changes
+  behavior only; PySide visual styling and shared design tokens are preserved.
 
-The prior work used Impeccable audit/polish and then surface-composition exploration; UI/UX Pro Max searches covered focus/target sizing/async errors, navigation/back/deep links and state preservation. A new agent should load the skills again, not assume skill instructions persist through this document.
+Main code: `frontend/src/workspace/`, `frontend/src/discover/DiscoverPage.tsx`,
+`AniRec/api/workspace.py`, `AniRec/services/workspace_service.py`, and
+`AniRec/gui/main_window.py`. API routes share the existing token boundary.
+Types in `frontend/src/api/generated/schema.d.ts` are generated from FastAPI,
+including workspace Pydantic models. The generator now passes parsed JSON to
+openapi-typescript to support Unicode Windows checkout paths.
 
-No new external design-service account/plugin is necessary for the current next step. Earlier research links (Vercel Design, 21st.dev, TasteSkill and codebase-memory-mcp) are optional resources, not proof those services/tools were installed and not visual authorities over AniRec. Do not install persistent hooks, telemetry, credential stores or unrelated plugins implicitly.
+## Verification completed
 
-## 4. Concepts and approval state
+| Check | Result and limit |
+| --- | --- |
+| Frontend CI | 56 tests passed; TypeScript and generated schema verification passed |
+| Production build | Passed; main JS 200.34 kB / 61.83 kB gzip, CSS 35.66 kB / 7.34 kB gzip |
+| Scoped Python | 56 passed across workspace, API boundary, settings/tokens, taste profile and MAL mapping |
+| Desktop dashboard tests | All 10 passed after the Profile cache repair |
+| Full Python suite | **738 passed, 2 failed, 740 total**, 4327.76 seconds; completed after the cache repair |
+| Two distinct real MAL accounts | API check passed; existing local NeoBalls_ snapshot against actual remote Kuroboshi_ completed list |
 
-All three boards show Library, Profile, Compare and Settings. **C is selected:**
-
-| Choice | File | Structural idea / tradeoff |
-| --- | --- | --- |
-| A — Comparison matrix | `.impeccable/mocks/decision/matrix.png` | Aligned evidence/score rows; easy comparison, less artwork-forward. |
-| B — Split workbench | `.impeccable/mocks/decision/workbench.png` | Browse list beside persistent inspector; strong context, needs an intentional narrow-screen detail view. |
-| C — Library-led workspace | `.impeccable/mocks/decision/library.png` | Poster-led browsing and attached evidence; closer to original cards, lower visible density. |
-
-Use **repository copies**, not images under the previous agent's global generated-images directory. Each has a same-stem JSON sidecar with exact prompt; only `library.json` is `approved: true`. All three contain generated text/data errors: see the concept README before treating anything literally. In particular, 412 is the friend's anime count, not match score; Personal match is a percentage, MAL score is /10; added dates and saved counts are illustrative. Source values must be used in implementation. No fake covers; actual covers use 2:3 posters and appropriate portrait fallbacks.
-
-PySide authority captures: `reports/ui-tabs-concepts/pyside-{library,profile,compare,settings}.png`, captured at 1440 × 1000 in an isolated sample session on the secondary display. These are real captures; the concept boards are not. The capture harness directly supplies the bundled Profile payload, so its screenshot is not proof that normal Profile navigation works end to end.
-
-Impeccable state to resume rather than restart blindly:
-
-- `.impeccable/config.json`: `buildPath: comp`.
-- `.impeccable/build/state.json`: comps are closed and the `spec` phase is open.
-  The approved portable comp is `.impeccable/mocks/library-led.png`; no UI code
-  has been written for the other tabs. The two alternatives and all exact-prompt
-  sidecars are also in `.impeccable/mocks/` so the phase gate is reproducible.
-- Surface seed `e94eea46`; prewritten structures in `reports/ui-tabs-concepts/structures.md`; selected indices 4, 2, 5. These map to A/B/C above, not new theme choices.
-- `.impeccable/tab-concepts.json`: selection-page payload referencing portable repo image paths.
-- Original local selection page was `http://127.0.0.1:56766/`, key `fdd64048`.
-  Its answer was `optionId: library`. This is an ephemeral local process, not a
-  hosted or transferable URL; the approved JSON sidecar is the portable record.
-- Original CLI: `C:/Users/yusuf/.codex/skills/impeccable/scripts/impeccable.cmd`.
-  After reading the skill, resume its current `build-phase` workflow from the
-  checked-in state; do not restart the visual-direction round without user cause.
-
-The exact choice and poster constraint are recorded in `DESIGN.md`. These boards contain four scaled desktop views, so derive per-tab layouts and responsive behavior deliberately; do not implement the board as one giant image or rasterize UI text/controls. Follow the installed skill's review gates, including any required independent reviewer, without presenting a failed/missing review as passed.
-
-## 5. Existing Discover work — preserve it
-
-Verified branch at handoff: `feat/react-fastapi-boundary`; HEAD `968ec2d614c4c4becd1999bfe2e24e7391699e31`. There are **uncommitted modified and untracked files**. Do not reset, clean, overwrite or switch to a supposedly newer checkout without preserving this work. No fetch/latest-remote check was performed for this documentation handoff.
-
-The previous preservation pass includes:
-
-- `frontend/src/discover/RecommendationCard.tsx`: Save for later / Not interested, not Like/Dislike; title/artwork open an inspector, MAL is separate; 152 × 228 posters, fallback and metadata.
-- New `RecommendationDetails.tsx`: native dialog, full explanation/metadata/synopsis, StrictMode-safe asynchronous close behavior.
-- `DiscoverPage.tsx` and `Controls.tsx`: collapsible controls, optimistic decisions with serialized writes/rollback/retry, truthful sample/reset notices, semantics and focus.
-- `ScoreRail.tsx`: visible supplied-contribution mismatch warning; no fabricated reconciliation of sample data.
-- `discover.css`, `styles/base.css`, `styles/instrument.css`: aligned card geometry, legible targets, content-safe raster, reduced-motion handling. Shared Python tokens/scoring were not changed.
-- Tests in `DiscoverPage.test.tsx`, `ScoreRail.test.tsx` and `test/setup.ts`.
-- `frontend/scripts/generate-api-types.mjs`: CRLF/LF normalization for verification; generated schema remains Python-owned.
-
-See `REACT_PRESERVATION_AUDIT.md` for measurements and limits. Preserve all other dirty/untracked files too; not every file in `reports/` was created by this work.
-
-## 6. Verification evidence and limits
-
-These scoped checks were rerun immediately before the handoff commit:
-
-- `npm run ci` in `frontend`: generated API types in sync, TypeScript passed,
-  46 tests passed. The sandbox attempt could not spawn project Python (`EPERM`);
-  the cleanup-permitted rerun passed.
-- `npm run build`: passed; JS 169.22 kB / 54.06 kB gzip, CSS 25.23 kB / 5.39 kB gzip.
-- `pytest tests/test_card_grid_geometry.py -q`: 5 passed on the cleanup-permitted
-  run. The sandbox attempt also passed all five assertions but reported teardown
-  errors because Windows temp-directory cleanup was denied.
-- Browser checks included sample save/undo, filter/clear, inspector Close/Escape/focus return, desktop and 320/375/768px widths; no horizontal overflow in the checked states.
-- PySide/React Discover geometry compared at 1280 × 900; evidence in `reports/ui-preservation-2026-09-06/`.
-
-Not verified by this work: full Python suite, real-account writes, full onboarding, screen-reader certification, light theme, exhaustive text zoom/localization, large-feed performance, complete tab migration, Tauri packaging, deployment/release. The older migration handoff lists pre-existing/flaky Python failures; reproduce before attributing them to new changes. Do not call all tests green on the strength of the scoped results above.
-
-## 7. Architecture and safe local startup
-
-React 18 + TypeScript + Vite consume the loopback FastAPI boundary. Python owns scoring, recommendation, profiles and domain services. PySide remains the shipping fallback. No `src-tauri/` app has been implemented; existing frontend Tauri adapter imports are not proof of desktop support.
-
-Current API exposes health/system state, Discover feed/feedback and operations (including SSE), but no dedicated Library/Profile/Compare/Settings read routes. Before building those tabs, map each proposed control to an existing service and add only the scoped boundary needed after approval. Do not equate sample payloads or an operation name with proven live capability. Browser-native folder/account/data actions require honest capability handling.
-
-Original browser preview: `http://127.0.0.1:5173/`; API loopback `127.0.0.1:8770`; Vite defaults to proxying that port (`ANIREC_API` overrides it). These processes may not survive transfer. Inspect listeners before launching duplicates or touching locks. Use a project environment with dependencies installed; inspect the repository's setup docs instead of assuming a global Python is suitable.
-
-Example commands, each from the indicated working directory, in separate terminals:
+Full-suite command, from repository root:
 
 ```powershell
-# Repository root, with the project's Python environment active.
-python -m AniRec.api --root-override reports/ui-preservation-2026-09-06/sample-data --port 8770
+.\.venv\Scripts\python.exe -m pytest -q --tb=short -rA --junitxml=reports/workspace-full-tests.xml
 ```
 
+Evidence: `reports/workspace-full-tests-summary.md` and
+`reports/workspace-full-tests.xml`. Failures are
+`test_repository_contains_no_real_credential_signatures` and
+`test_binary_assets_carry_no_credential_signatures` in `tests/test_security_audit.py`.
+The diagnostic scan found all 15 flagged files under ignored
+`frontend/node_modules/`, using only the generic 32-hex pattern. No scanned file
+outside node_modules matched. Inspected text contexts were public identifiers,
+example values and numeric comments. The scan excludes Python environments and
+build directories but does not exclude node_modules. Tests were not modified to
+suppress these failures. A future test-scope fix should retain detection in
+project-owned files; do not report this recorded run as passing.
+
+Distinct-account evidence: `reports/workspace-live-compare-check.json`.
+HTTP 200, non-sample response: local 167, remote 555, shared 108, both rated 89,
+unrated shared 19. All 108 score pairs and supplied differences were checked
+against the actual sources. No duplicate/missing shared IDs; compatibility null.
+The active account remained NeoBalls_. This uses an existing local snapshot,
+not a fresh local sync, and certifies the API integration rather than populated
+live-result browser rendering. User-authorized accounts:
+https://myanimelist.net/profile/NeoBalls_ and
+https://myanimelist.net/profile/Kuroboshi_. No real-account writes were performed.
+
+## UI evidence and Impeccable state
+
+Portable reference: `.impeccable/mocks/library-led.png`; approval/provenance
+sidecars and alternatives remain checked in. PySide authority captures live in
+`reports/ui-tabs-concepts/pyside-*.png`. They used isolated sample data; they do
+not by themselves establish normal Profile navigation behavior.
+
+The original Impeccable workflow is closed. The user explicitly approved dropping
+literal pixel matching for the four-screen composition board. Supported forced
+hero/responsive transitions and their reason are recorded in build state and
+`.impeccable/review/composition-approval.md`. The raw **41.1% FAIL** pixel comparison
+is preserved; it is not a pixel pass. Do not restart an obsolete spec phase or
+change fonts, poster proportions or real values to match generated pixels.
+
+Original UI correction verdict: `.impeccable/review/finish-verdict.md`.
+Extension review: `.impeccable/review/extension/finish-review.md` and
+`finish-verdict.md`. Its ship disposition covers the resolved stale-design-doc
+finding, not a fresh whole-surface certificate, full-suite success or the separate
+PySide cache repair. Those review records predate the final distinct-account
+check and this authorized handoff and retain their historical wording.
+
+Nine required extension captures include Library/Profile/Compare/Settings desktop
+and mobile plus Profile analysis. Profile full-page exports and readable crops
+cover the added sections. Settings save 5 to 7 survived reload in an isolated
+fixture; saved Monster metadata absent from the test feed loaded from CSV with
+N/A match. Keyboard disclosures and checked mobile layouts worked; inspected
+posters remained 2:3. Compare captures show missing connection/sample states,
+not populated real-account comparison. Capture exports can omit scrollbars or
+rescale pixels; see the packet. The invalid Library full-page export was replaced.
+
+## Fresh Windows PC setup
+
+Clone the review branch, then work from the repository root:
+
 ```powershell
-# frontend/
-npm run dev -- --host 127.0.0.1
-# After approved implementation:
+git clone --branch codex/library-led-workspace-handoff https://github.com/YusBera/AniRec.git
+cd AniRec
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+cd frontend
+npm ci
 npm run ci
 npm run build
 ```
 
-Keep sample data isolated from normal APPDATA/profiles/tokens. Confirm sample mode in the UI. Never copy credentials into a handoff or expose the local API beyond loopback. On Windows image paths use `C:/Users/...`, **not `/C:/Users/...`** (the latter caused os error 123). Prefer paths resolved from the transferred repository, not this machine's username.
+Use a compatible installed Python and Node runtime. The originating Python
+verification used Python 3.10; recreate the virtual environment, do not copy it.
+`requirements-dev.txt` includes the application, API and test dependencies.
+The type generator prefers the repository `.venv`, falling back to PATH Python.
 
-## 8. Transfer checklist and next-agent assignment
+Run two terminals. In the repository root, start an isolated data directory:
 
-- This work is being committed and pushed to `feat/react-fastapi-boundary` after
-  this handoff was written. The receiving agent should still verify branch/HEAD
-  and preserve any additional local changes before switching or pulling.
-- Transfer/pull the changed frontend files plus `RecommendationDetails.tsx`, this handoff, the audit, `PRODUCT.md`, `DESIGN.md`, `.impeccable/` concept images/JSON/state/payload, and the two relevant report folders' screenshots/geometry/scripts/README. Include existing source and lockfiles.
-- Do not send credentials, real profiles, `.env`, tokens, caches/logs, runtime `api.lock`, `node_modules`, `.venv`, or unrelated build artifacts. A Git-only transfer omits untracked work unless explicitly included. No archive, commit or push was performed by this handoff task.
-- Skills/tool binaries live outside the repo: acquire or point the next agent at the required skills separately. Local server URLs and process IDs are not portable state.
-- Recheck branch/diff and read the required docs/skills; preserve unrelated work.
-- Resume from approved concept C and explain the 2:3 poster correction and
-  generated-label limitations in any implementation brief. Do not mistake the
-  earlier concept-A attachment for the selection; the page answer selected C.
-- Implement bounded tab work tied to real services, retaining the existing Discover behavior; test keyboard/focus, empty/loading/error/sample states, navigation state, long titles, portrait artwork and narrow layouts. Compare directly with PySide and the approved composition, and report remaining capability gaps honestly.
+```powershell
+.\.venv\Scripts\python.exe -m AniRec.api --root-override reports/ui-workspace-sample --port 8770
+```
 
-Suggested message to the receiving agent:
+In `frontend/`:
 
-> Read `docs/design/LATEST_AGENT_HANDOFF.md` first and load the required Impeccable and UI/UX Pro Max skills. Preserve the current PySide visual authority and Discover work. Concept C, Library-led workspace, is approved; resume its checked-in Impeccable phase, keep every anime image a 2:3 portrait poster, and implement only truthful capabilities.
+```powershell
+npm run dev -- --host 127.0.0.1
+```
+
+Open http://127.0.0.1:5173/#/library (other routes use their lowercase names).
+Vite proxies `/api` to loopback port 8770; `ANIREC_API` overrides that target.
+Check existing listeners before starting duplicates. The ignored isolated root,
+real profile data, credentials, dependencies and virtual environment are not
+included in this branch. An empty root uses labelled sample/empty/unavailable
+states; it will not reproduce the private live account data or discarded browser
+fixture automatically. Configure real accounts privately through the existing
+desktop workflow when needed. Keep sample writes isolated from normal account data.
+
+## Remaining limits and next work
+
+1. Resolve the two dependency-scanner false-positive failures in a separately
+   reviewed change, preserving project credential detection, then rerun affected
+   checks and the full suite if required. This handoff does not conceal the failures.
+2. Populated real Compare browser inspection is still additional coverage;
+   the two-account API check is complete.
+3. Network-resolved Library metadata is not persisted beyond the mounted session.
+   Browser account setup, folder selection/deletion, complete desktop parity,
+   aggregate compatibility, Tauri packaging and deployment remain outside this work.
+4. Full accessibility certification, exhaustive localization/zoom/light-theme and
+   large-feed performance were not established by the scoped captures/tests.
+
+No extra implementation is implied by receiving this handoff. Review the branch
+and choose further scope with the user. Preserve current work and evidence; do
+not reset the checkout to the original feature branch or silently mark old failures
+as resolved. For future UI changes, load both required skills and resume from the
+actual checked-in state.

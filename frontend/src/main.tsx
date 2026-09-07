@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { DiscoverPage } from "./discover/DiscoverPage";
+import { Workspace } from "./workspace/Workspace";
 import { PlatformProvider } from "./platform/PlatformContext";
 import "./styles/tokens.css";
 import "./styles/base.css";
@@ -15,7 +15,7 @@ if (!container) throw new Error("Missing #root");
 createRoot(container).render(
   <StrictMode>
     <PlatformProvider>
-      <DiscoverPage />
+      <Workspace />
     </PlatformProvider>
   </StrictMode>,
 );

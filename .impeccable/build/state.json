@@ -6,7 +6,7 @@
   "direction": "e94eea46",
   "breakpoint": "1536x1024",
   "artifact": null,
-  "phase": "spec",
+  "phase": "review",
   "phases": {
     "comps": {
       "status": "closed",
@@ -24,68 +24,394 @@
       "forced": null
     },
     "spec": {
-      "status": "open",
+      "status": "closed",
       "openedAt": "2026-09-06T15:58:05.910Z",
-      "closedAt": null,
-      "attempts": 0,
-      "notes": [],
-      "gate": null,
+      "closedAt": "2026-09-06T16:44:35.617Z",
+      "attempts": 4,
+      "notes": [
+        {
+          "at": "2026-09-06T16:42:46.133Z",
+          "text": "Measured four-screen Concept C in docs/design/LIBRARY_WORKSPACE_SPEC.md. User handoff makes it a compositional north star; 2:3 posters, source values and PySide fonts override generated pixels. No UI changes yet."
+        }
+      ],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "27 regions, 0 plates, 8 text regions measured",
+        "at": "2026-09-06T16:44:35.617Z"
+      },
       "forced": null
     },
     "plates": {
-      "status": "pending",
-      "openedAt": null,
-      "closedAt": null,
-      "attempts": 0,
+      "status": "closed",
+      "openedAt": "2026-09-06T16:44:35.617Z",
+      "closedAt": "2026-09-06T16:44:46.813Z",
+      "attempts": 1,
       "notes": [],
-      "gate": null,
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "no plates owed",
+        "at": "2026-09-06T16:44:46.813Z"
+      },
       "forced": null
     },
     "hero": {
-      "status": "pending",
-      "openedAt": null,
-      "closedAt": null,
-      "attempts": 0,
-      "notes": [],
-      "gate": null,
-      "forced": null
+      "status": "closed",
+      "openedAt": "2026-09-06T16:44:46.813Z",
+      "closedAt": "2026-09-07T02:55:54.142Z",
+      "attempts": 3,
+      "notes": [
+        {
+          "at": "2026-09-06T21:29:53.730Z",
+          "text": "Hero capture records the real Library route at 1536x1024. Pixel gate fails at 41.1 percent because approved C is a four-route board. LATEST_AGENT_HANDOFF explicitly makes it a compositional north star and mandates real values, PySide fonts and portrait correction. No failed gate is marked passed; independent review uses all route captures. No final pixel diff exists while this gate is open."
+        }
+      ],
+      "gate": {
+        "ok": false,
+        "reasons": [
+          "hero overall 41.1% < 72% (structure 53%, color 57%, detail 20%)",
+          "region profile-navigation is missing (detail 1%, structure 69%): the comp shows material the build does not",
+          "region profile-heading is missing (detail 0%, structure 79%): the comp shows material the build does not",
+          "region compare-navigation is missing (detail 0%, structure 60%): the comp shows material the build does not",
+          "region compare-heading is missing (detail 0%, structure 74%): the comp shows material the build does not",
+          "region settings-heading is missing (detail 1%, structure 75%): the comp shows material the build does not",
+          "region library-controls is missing (detail 3%, structure 66%): the comp shows material the build does not",
+          "region compare-card-0 is missing (detail 1%, structure 56%): the comp shows material the build does not",
+          "region library-card-1 is missing (detail 9%, structure 50%): the comp shows material the build does not",
+          "region compare-card-1 is missing (detail 0%, structure 61%): the comp shows material the build does not",
+          "region library-card-2 is missing (detail 5%, structure 53%): the comp shows material the build does not",
+          "region compare-card-2 is missing (detail 6%, structure 60%): the comp shows material the build does not",
+          "region profile-identity is missing (detail 0%, structure 58%): the comp shows material the build does not",
+          "region profile-readings is missing (detail 2%, structure 55%): the comp shows material the build does not",
+          "region profile-evidence-heading is missing (detail 0%, structure 81%): the comp shows material the build does not",
+          "region profile-evidence-0 is missing (detail 2%, structure 54%): the comp shows material the build does not",
+          "region profile-evidence-1 is missing (detail 0%, structure 48%): the comp shows material the build does not",
+          "region compare-controls is missing (detail 4%, structure 63%): the comp shows material the build does not",
+          "region compare-summary is missing (detail 0%, structure 60%): the comp shows material the build does not",
+          "region compare-section is missing (detail 0%, structure 85%): the comp shows material the build does not",
+          "region settings-recommendation is missing (detail 6%, structure 56%): the comp shows material the build does not",
+          "region settings-appearance is missing (detail 0%, structure 66%): the comp shows material the build does not",
+          "region settings-account is missing (detail 0%, structure 67%): the comp shows material the build does not",
+          "region settings-data is missing (detail 0%, structure 53%): the comp shows material the build does not",
+          "region library-heading (text) is contradicted (structure 65%, detail added 33%): the composition of this text region differs from the comp; re-derive it from the spec box"
+        ],
+        "summary": "hero 41% (drift)",
+        "score": 0.4107,
+        "verdict": "drift",
+        "report": ".impeccable/review/diff/hero/report.json",
+        "sideBySide": "A:/Anirec yEPYENİ/.impeccable/review/diff/hero/side-by-side.png",
+        "worst": [
+          "profile-evidence-1 missing 32%",
+          "compare-navigation missing 33%",
+          "compare-card-1 missing 36%"
+        ],
+        "worstIds": [
+          "profile-evidence-1",
+          "compare-navigation",
+          "compare-card-1"
+        ],
+        "worstCrops": [
+          {
+            "id": "profile-evidence-1",
+            "verdict": "missing",
+            "score": {
+              "overall": 0.3234,
+              "structure": 0.483,
+              "color": 0.3751,
+              "colorIntersection": 0.011,
+              "paletteMatch": 0.5712,
+              "detail": 0.0021,
+              "detailRaw": 0.0021,
+              "detailAdded": 0,
+              "bands": 0.4
+            },
+            "file": ".impeccable/review/diff/hero/regions/profile-evidence-1.png"
+          },
+          {
+            "id": "compare-navigation",
+            "verdict": "missing",
+            "score": {
+              "overall": 0.3298,
+              "structure": 0.6037,
+              "color": 0.474,
+              "colorIntersection": 0.0581,
+              "paletteMatch": 0.6979,
+              "detail": 0,
+              "detailRaw": 0.0044,
+              "detailAdded": 0.0833,
+              "bands": 0
+            },
+            "file": ".impeccable/review/diff/hero/regions/compare-navigation.png"
+          },
+          {
+            "id": "compare-card-1",
+            "verdict": "missing",
+            "score": {
+              "overall": 0.3601,
+              "structure": 0.6079,
+              "color": 0.5151,
+              "colorIntersection": 0.2053,
+              "paletteMatch": 0.6819,
+              "detail": 0,
+              "detailRaw": 0.0614,
+              "detailAdded": 0.1563,
+              "bands": 0.1238
+            },
+            "file": ".impeccable/review/diff/hero/regions/compare-card-1.png"
+          }
+        ],
+        "advisories": [
+          "(advisory, unchanged for 3+ attempts) text library-heading: cap height 22.4px in the build, 12.4px in the comp (+81%); set font-size so the cap height renders at 12.4px (font-match ranked Encode Sans SC 700 at 18px)",
+          "(advisory, unchanged for 3+ attempts) text compare-heading: 1 line in the build, 2 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape",
+          "(advisory, unchanged for 3+ attempts) text compare-summary: ink is #c1cec3 in the build, #7a8271 in the comp; use the comp's colour",
+          "(advisory, unchanged for 3+ attempts) text compare-section: ink is #3f4d44 in the build, #e5e9d9 in the comp; use the comp's colour",
+          "(advisory, unchanged for 3+ attempts) text compare-heading: its first line starts 18px lower than in the comp (18px vs 0px into the region box); the spacing above it is too large",
+          "(advisory, unchanged for 3+ attempts) text compare-heading: it starts 126px further right than in the comp",
+          "(advisory, unchanged for 3+ attempts) control library-controls: its rule sits 31px into the box in the comp and 42px in the build (+11px), so the strip is taller than the comp's; match the height, not only the position"
+        ],
+        "regionVerdicts": {
+          "library-navigation": "drift",
+          "library-heading": "contradicted",
+          "profile-navigation": "missing",
+          "profile-heading": "missing",
+          "compare-navigation": "missing",
+          "compare-heading": "missing",
+          "settings-navigation": "drift",
+          "settings-heading": "missing",
+          "library-controls": "missing",
+          "library-card-0": "contradicted",
+          "compare-card-0": "missing",
+          "library-card-1": "missing",
+          "compare-card-1": "missing",
+          "library-card-2": "missing",
+          "compare-card-2": "missing",
+          "profile-identity": "missing",
+          "profile-readings": "missing",
+          "profile-evidence-heading": "missing",
+          "profile-evidence-0": "missing",
+          "profile-evidence-1": "missing",
+          "compare-controls": "missing",
+          "compare-summary": "missing",
+          "compare-section": "missing",
+          "settings-recommendation": "missing",
+          "settings-appearance": "missing",
+          "settings-account": "missing",
+          "settings-data": "missing"
+        },
+        "at": "2026-09-07T02:55:54.138Z"
+      },
+      "forced": {
+        "at": "2026-09-07T02:55:54.142Z",
+        "reason": "User explicitly approved downgrading the comp to a composition reference, not a pixel target. Asked: C yi birebir piksel hedefi yerine kompozisyon referansi kabul ederek bu kapiyi kapatmami onayliyor musun? User answered: Yap kanka o zaman. Preserve historical 41.1 percent failed pixel comparison and the independent accepted UI fixes. No interface changes are authorized by this workflow closure.",
+        "reasons": [
+          "hero overall 41.1% < 72% (structure 53%, color 57%, detail 20%)",
+          "region profile-navigation is missing (detail 1%, structure 69%): the comp shows material the build does not",
+          "region profile-heading is missing (detail 0%, structure 79%): the comp shows material the build does not",
+          "region compare-navigation is missing (detail 0%, structure 60%): the comp shows material the build does not",
+          "region compare-heading is missing (detail 0%, structure 74%): the comp shows material the build does not",
+          "region settings-heading is missing (detail 1%, structure 75%): the comp shows material the build does not",
+          "region library-controls is missing (detail 3%, structure 66%): the comp shows material the build does not",
+          "region compare-card-0 is missing (detail 1%, structure 56%): the comp shows material the build does not",
+          "region library-card-1 is missing (detail 9%, structure 50%): the comp shows material the build does not",
+          "region compare-card-1 is missing (detail 0%, structure 61%): the comp shows material the build does not",
+          "region library-card-2 is missing (detail 5%, structure 53%): the comp shows material the build does not",
+          "region compare-card-2 is missing (detail 6%, structure 60%): the comp shows material the build does not",
+          "region profile-identity is missing (detail 0%, structure 58%): the comp shows material the build does not",
+          "region profile-readings is missing (detail 2%, structure 55%): the comp shows material the build does not",
+          "region profile-evidence-heading is missing (detail 0%, structure 81%): the comp shows material the build does not",
+          "region profile-evidence-0 is missing (detail 2%, structure 54%): the comp shows material the build does not",
+          "region profile-evidence-1 is missing (detail 0%, structure 48%): the comp shows material the build does not",
+          "region compare-controls is missing (detail 4%, structure 63%): the comp shows material the build does not",
+          "region compare-summary is missing (detail 0%, structure 60%): the comp shows material the build does not",
+          "region compare-section is missing (detail 0%, structure 85%): the comp shows material the build does not",
+          "region settings-recommendation is missing (detail 6%, structure 56%): the comp shows material the build does not",
+          "region settings-appearance is missing (detail 0%, structure 66%): the comp shows material the build does not",
+          "region settings-account is missing (detail 0%, structure 67%): the comp shows material the build does not",
+          "region settings-data is missing (detail 0%, structure 53%): the comp shows material the build does not",
+          "region library-heading (text) is contradicted (structure 65%, detail added 33%): the composition of this text region differs from the comp; re-derive it from the spec box"
+        ]
+      },
+      "readingsSeen": {
+        "text library-heading: cap height 22.4px in the build, 12.4px in the comp (+81%); set font-size so the cap height renders at 12.4px (font-match ranked Encode Sans SC 700 at 18px)": 6,
+        "text compare-heading: 1 line in the build, 2 in the comp; the measure (max-width, font-size, letter-spacing) wraps it differently, so the block is a different shape": 6,
+        "text compare-summary: ink is #c1cec3 in the build, #7a8271 in the comp; use the comp's colour": 6,
+        "text compare-section: ink is #3f4d44 in the build, #e5e9d9 in the comp; use the comp's colour": 6,
+        "text compare-heading: its first line starts 18px lower than in the comp (18px vs 0px into the region box); the spacing above it is too large": 6,
+        "text compare-heading: it starts 126px further right than in the comp": 6,
+        "control library-controls: its rule sits 31px into the box in the comp and 42px in the build (+11px), so the strip is taller than the comp's; match the height, not only the position": 6
+      },
+      "records": 3,
+      "history": [
+        {
+          "at": "2026-09-07T02:55:54.142Z",
+          "score": 0.4107,
+          "worstIds": [
+            "profile-evidence-1",
+            "compare-navigation",
+            "compare-card-1"
+          ],
+          "regionVerdicts": {
+            "library-navigation": "drift",
+            "library-heading": "contradicted",
+            "profile-navigation": "missing",
+            "profile-heading": "missing",
+            "compare-navigation": "missing",
+            "compare-heading": "missing",
+            "settings-navigation": "drift",
+            "settings-heading": "missing",
+            "library-controls": "missing",
+            "library-card-0": "contradicted",
+            "compare-card-0": "missing",
+            "library-card-1": "missing",
+            "compare-card-1": "missing",
+            "library-card-2": "missing",
+            "compare-card-2": "missing",
+            "profile-identity": "missing",
+            "profile-readings": "missing",
+            "profile-evidence-heading": "missing",
+            "profile-evidence-0": "missing",
+            "profile-evidence-1": "missing",
+            "compare-controls": "missing",
+            "compare-summary": "missing",
+            "compare-section": "missing",
+            "settings-recommendation": "missing",
+            "settings-appearance": "missing",
+            "settings-account": "missing",
+            "settings-data": "missing"
+          },
+          "artifactHash": null
+        }
+      ]
     },
     "sections": {
-      "status": "pending",
-      "openedAt": null,
-      "closedAt": null,
-      "attempts": 0,
-      "notes": [],
-      "gate": null,
+      "status": "closed",
+      "openedAt": "2026-09-07T02:55:54.142Z",
+      "closedAt": "2026-09-07T02:56:07.783Z",
+      "attempts": 1,
+      "notes": [
+        {
+          "at": "2026-09-07T02:56:07.766Z",
+          "text": "All four workspace routes are implemented and independently reviewed in finish-review.md and finish-verdict.md. Source truthful capabilities and portrait corrections are documented in WORKSPACE_IMPLEMENTATION.md. UI findings2-7 resolved. This phase records existing completed work; no new UI edits."
+        }
+      ],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "no mechanical gate",
+        "at": "2026-09-07T02:56:07.783Z"
+      },
       "forced": null
     },
     "motion": {
-      "status": "pending",
-      "openedAt": null,
-      "closedAt": null,
-      "attempts": 0,
-      "notes": [],
-      "gate": null,
+      "status": "closed",
+      "openedAt": "2026-09-07T02:56:07.783Z",
+      "closedAt": "2026-09-07T02:56:32.441Z",
+      "attempts": 1,
+      "notes": [
+        {
+          "at": "2026-09-07T02:56:32.424Z",
+          "text": "Existing restrained stepped button transitions and reduced-motion rules are retained. Shared save/undo, inspector Escape focus return, native disclosure and stable asynchronous friend selection were verified. No decorative motion was added; Operate-mode behavior and PySide authority remain unchanged."
+        }
+      ],
+      "gate": {
+        "ok": true,
+        "reasons": [],
+        "summary": "no mechanical gate",
+        "at": "2026-09-07T02:56:32.441Z"
+      },
       "forced": null
     },
     "responsive": {
-      "status": "pending",
-      "openedAt": null,
-      "closedAt": null,
-      "attempts": 0,
-      "notes": [],
-      "gate": null,
-      "forced": null
+      "status": "closed",
+      "openedAt": "2026-09-07T02:56:32.441Z",
+      "closedAt": "2026-09-07T02:56:34.502Z",
+      "attempts": 1,
+      "notes": [
+        {
+          "at": "2026-09-07T02:56:32.506Z",
+          "text": "Canonical desktop.png and mobile.png are unmodified aliases of the independently reviewed Library captures. All route captures and metadata remain in review. User explicitly approved composition-reference authority and removing pixel-target requirement; responsive geometry and UI fixes were reviewed per route."
+        }
+      ],
+      "gate": {
+        "ok": false,
+        "reasons": [
+          "the desktop capture (1440x1000; the top 1536x1024 rows scaled to the comp's width are compared, a full-page capture is fine) scores 41% against the comp, under 65%: the first viewport does not survive a common desktop width. The hero passed at 1536x1024; the layout must hold from ~1280 up, not only at the comp's exact width (grid columns in fr / minmax, not fixed px that overflow and wrap).",
+          "at desktop width, region library-heading is missing",
+          "at desktop width, region profile-navigation is missing",
+          "at desktop width, region profile-heading is missing",
+          "at desktop width, region compare-navigation is missing",
+          "at desktop width, region compare-heading is missing",
+          "at desktop width, region settings-heading is missing",
+          "at desktop width, region library-controls is missing",
+          "at desktop width, region compare-card-0 is missing",
+          "at desktop width, region library-card-2 is missing",
+          "at desktop width, region profile-identity is missing",
+          "at desktop width, region profile-readings is missing",
+          "at desktop width, region profile-evidence-heading is missing",
+          "at desktop width, region profile-evidence-0 is missing",
+          "at desktop width, region profile-evidence-1 is missing",
+          "at desktop width, region compare-controls is missing",
+          "at desktop width, region compare-summary is missing",
+          "at desktop width, region compare-section is missing",
+          "at desktop width, region settings-recommendation is missing",
+          "at desktop width, region settings-appearance is missing",
+          "at desktop width, region settings-account is missing",
+          "at desktop width, region settings-data is missing"
+        ],
+        "summary": "desktop 41% (drift)",
+        "score": 0.4138,
+        "sideBySide": "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/side-by-side.png",
+        "at": "2026-09-07T02:56:34.499Z"
+      },
+      "forced": {
+        "at": "2026-09-07T02:56:34.502Z",
+        "reason": "User explicitly approved downgrading the comp to a composition reference, not a pixel target. User answered: Yap kanka o zaman. This approval applies to the same four-board-versus-single-route pixel comparison at desktop width. All route screenshots and independent responsive review evidence are retained. No pixel pass is claimed and no UI changes are made.",
+        "reasons": [
+          "the desktop capture (1440x1000; the top 1536x1024 rows scaled to the comp's width are compared, a full-page capture is fine) scores 41% against the comp, under 65%: the first viewport does not survive a common desktop width. The hero passed at 1536x1024; the layout must hold from ~1280 up, not only at the comp's exact width (grid columns in fr / minmax, not fixed px that overflow and wrap).",
+          "at desktop width, region library-heading is missing",
+          "at desktop width, region profile-navigation is missing",
+          "at desktop width, region profile-heading is missing",
+          "at desktop width, region compare-navigation is missing",
+          "at desktop width, region compare-heading is missing",
+          "at desktop width, region settings-heading is missing",
+          "at desktop width, region library-controls is missing",
+          "at desktop width, region compare-card-0 is missing",
+          "at desktop width, region library-card-2 is missing",
+          "at desktop width, region profile-identity is missing",
+          "at desktop width, region profile-readings is missing",
+          "at desktop width, region profile-evidence-heading is missing",
+          "at desktop width, region profile-evidence-0 is missing",
+          "at desktop width, region profile-evidence-1 is missing",
+          "at desktop width, region compare-controls is missing",
+          "at desktop width, region compare-summary is missing",
+          "at desktop width, region compare-section is missing",
+          "at desktop width, region settings-recommendation is missing",
+          "at desktop width, region settings-appearance is missing",
+          "at desktop width, region settings-account is missing",
+          "at desktop width, region settings-data is missing"
+        ]
+      }
     },
     "review": {
-      "status": "pending",
-      "openedAt": null,
-      "closedAt": null,
+      "status": "closed",
+      "openedAt": "2026-09-07T02:56:34.502Z",
+      "closedAt": "2026-09-07T02:58:10.288Z",
       "attempts": 0,
-      "notes": [],
+      "notes": [
+        {
+          "at": "2026-09-07T02:58:10.271Z",
+          "text": "Independent reviewer verified the explicit user authority change and recorded resolution of workflow finding1 in finish-verdict.md. All seven scored fixes resolved; disposition ship, scoped to implemented workspace. No UI changes. DESIGN.md and handoffs updated with preserved pixel failures and supported force reasons."
+        }
+      ],
       "gate": null,
       "forced": null
     }
   },
-  "finish": null
+  "finish": {
+    "disposition": "ship",
+    "at": "2026-09-07T02:58:10.288Z",
+    "phaseAtFinish": "review"
+  },
+  "plates": {}
 }

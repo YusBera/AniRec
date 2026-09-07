@@ -19,6 +19,13 @@
 import type { components } from "./generated/schema";
 
 type Schemas = components["schemas"];
+export type ProfileRead = Schemas["ProfileReadResponse"];
+export type CompareRead = Schemas["CompareReadResponse"];
+export type SettingsRead = Schemas["SettingsReadResponse"];
+export type SettingsWrite = Schemas["SettingsWriteRequest"];
+export type LibraryRead = Schemas["LibraryReadResponse"];
+export type TasteProfile = Schemas["TasteProfile"];
+export type TitleVerdict = Schemas["TitleVerdict"];
 
 // -- discover ---------------------------------------------------------------
 

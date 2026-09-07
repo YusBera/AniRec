@@ -210,6 +210,23 @@ def test_returning_to_profile_reuses_the_rendered_taste_profile(system_temp_dir)
     window.navigate_to(PageId.PROFILE)
 
     assert provider.calls == 1
+
+    # A completed sync invalidates the cached evidence, even for the same profile.
+    window.worker_controller.result_ready.emit(
+        f"sync:{_profile.profile_id}", PipelineResult(user_stats={"completed_count": 99})
+    )
+    window.navigate_to(PageId.SETTINGS)
+    window.navigate_to(PageId.PROFILE)
+    assert provider.calls == 2
+
+    # Showing the explicit example must neither crash nor masquerade as local data.
+    window._show_sample_taste_profile()
+    window.navigate_to(PageId.SETTINGS)
+    window.navigate_to(PageId.PROFILE)
+    assert provider.calls == 3
+    window.navigate_to(PageId.SETTINGS)
+    window.navigate_to(PageId.PROFILE)
+    assert provider.calls == 3
     window.close()
 
 

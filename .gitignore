@@ -52,3 +52,4 @@ ACCEPTANCE_STATIC_RESULTS.txt
 
 # Disposable isolated API root used only for UI capture
 reports/ui-preservation-2026-09-06/sample-data/
+reports/ui-workspace-sample/

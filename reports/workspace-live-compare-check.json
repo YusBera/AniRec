@@ -1,0 +1,32 @@
+{
+  "checked_on": "2026-09-07",
+  "result": "PASS",
+  "http_status": 200,
+  "local_account": "NeoBalls_",
+  "remote_account": "Kuroboshi_",
+  "local_source": "Existing synchronized completed_anime.csv; account settings unchanged",
+  "remote_source": "Actual MyAnimeList completed-list response through the application API",
+  "local_snapshot_count": 167,
+  "remote_completed_count": 555,
+  "shared_anime": 108,
+  "both_rated": 89,
+  "shared_with_an_unrated_score": 19,
+  "verified_score_pairs": 108,
+  "compatibility": null,
+  "checks": [
+    "Two distinct real account usernames",
+    "Response is not sample data",
+    "Remote and shared counts match source list IDs",
+    "Every shared title occurs exactly once",
+    "All 108 score pairs match the local snapshot and actual remote response",
+    "All supplied score differences match the source scores",
+    "Unrated scores remain unavailable",
+    "No personal-match or aggregate compatibility score is fabricated",
+    "Active account remains NeoBalls_"
+  ],
+  "limits": [
+    "Local account uses its existing synchronized snapshot, not a fresh sync",
+    "The saved NSFW preference controls which remote titles MyAnimeList returns",
+    "This is an API integration check; it does not certify browser rendering"
+  ]
+}

@@ -12,6 +12,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Feed } from "../api/types";
 import { DiscoverPage, applyVote } from "./DiscoverPage";
+import { Workspace } from "../workspace/Workspace";
+import { LibraryPage } from "../workspace/LibraryPage";
 
 const CARD = {
   secondary_title: null,
@@ -123,6 +125,48 @@ afterEach(() => {
 });
 
 describe("DiscoverPage", () => {
+  it("keeps saved decisions and Library controls when navigating away and back", async () => {
+    stubFetch();
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    window.history.replaceState(null, "", "#/discover");
+    const user = userEvent.setup();
+    render(<Workspace />);
+    const card = await screen.findByRole("article", { name: "Death Note" });
+    await user.click(within(card).getByRole("button", { name: "Save for later" }));
+    const navigate = (hash: string) => act(() => {
+      window.history.replaceState(null, "", hash);
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    navigate("#/library");
+    expect(screen.getByRole("button", { name: "Watch Later · 1" })).toBeInTheDocument();
+    await user.type(screen.getByRole("searchbox"), "Death");
+    await user.selectOptions(screen.getByRole("combobox", { name: "View" }), "list");
+    navigate("#/discover");
+    expect(within(screen.getByRole("article", { name: "Death Note" })).getByRole("button", { name: "Saved for later" })).toHaveAttribute("aria-pressed", "true");
+    navigate("#/library");
+    expect(screen.getByRole("searchbox")).toHaveValue("Death");
+    expect(screen.getByRole("combobox", { name: "View" })).toHaveValue("list");
+    expect(screen.getByRole("heading", { level: 1, name: "My Library" })).toHaveFocus();
+    await user.selectOptions(screen.getByRole("combobox", { name: "View" }), "table");
+    expect(screen.getByRole("columnheader", { name: "MAL score / 10" })).toBeInTheDocument();
+    expect(within(screen.getByRole("table")).getByText("92.4%")).toBeInTheDocument();
+    navigate("#/discover");
+    navigate("#/library");
+    expect(screen.getByRole("combobox", { name: "View" })).toHaveValue("table");
+    await user.click(screen.getByRole("button", { name: "Remove from Watch Later" }));
+    expect(screen.getByRole("heading", { name: "Your Watch Later list is empty" })).toBeInTheDocument();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("discloses saved IDs absent from the feed without inventing title evidence", async () => {
+    const onVote = vi.fn();
+    render(<LibraryPage feed={{ ...FEED, state: { ...FEED.state, watch_later_mal_ids: [99999] } }} pending={false} onVote={onVote} onDetails={vi.fn()} />);
+    expect(screen.getByText(/MAL #99999/)).toBeInTheDocument();
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Remove saved decision" }));
+    expect(onVote).toHaveBeenCalledWith(99999, "watch_later", false);
+  });
+
   it("renders a skeleton before the feed arrives, then the cards", async () => {
     stubFetch();
     const { container } = render(<DiscoverPage />);
@@ -327,4 +371,17 @@ describe("applyVote", () => {
     expect(twice.watch_later_mal_ids).toEqual([3]);
     expect(applyVote(twice, 3, "watch_later", false).watch_later_mal_ids).toEqual([]);
   });
+});
+
+it("loads saved metadata outside the feed and retains honest missing-score state", async () => {
+  const { api } = await import("../api/client");
+  const model = { ...FEED.recommendations[0]!, mal_id: 19, display_title: "Monster", personal_match_available: false, personal_match: 0 };
+  vi.spyOn(api, "library").mockResolvedValue({ profile_id: "reader", recommendations: [model] });
+  const feed: Feed = { ...FEED, source: "profile", ephemeral: false, state_profile_id: "reader", recommendations: [], state: { ...FEED.state, watch_later_mal_ids: [19] } };
+  const details = vi.fn();
+  render(<LibraryPage feed={feed} pending={false} onVote={vi.fn()} onDetails={details} />);
+  expect(await screen.findByRole("heading", { name: "Monster" })).toBeInTheDocument();
+  expect(screen.getByText("N/A")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Details for Monster" }));
+  expect(details).toHaveBeenCalledWith(model);
 });

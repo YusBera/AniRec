@@ -17,6 +17,7 @@
 
 import type { ApiError, Feed, FeedbackResponse, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
+import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
 export class AniRecApiError extends Error {
   readonly detail: ApiError;
@@ -83,6 +84,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  profile: (sample = false) => request<ProfileRead>(`/api/workspace/profile?sample=${sample}`),
+  compare: (sample = false, username = "") => request<CompareRead>(`/api/workspace/compare?sample=${sample}&username=${encodeURIComponent(username)}`),
+  settings: () => request<SettingsRead>("/api/workspace/settings"),
+  saveSettings: (payload: SettingsWrite) => request<SettingsRead>("/api/workspace/settings", { method: "POST", body: JSON.stringify(payload) }),
+  library: (profileId: string) => request<LibraryRead>(`/api/workspace/library?profile_id=${encodeURIComponent(profileId)}`),
+  resolveTitle: (profileId: string, malId: number) => request<RecommendationViewModel>("/api/workspace/library/resolve", { method: "POST", body: JSON.stringify({ profile_id: profileId, mal_id: malId }) }),
   health: () => request<{ status: string; version: string }>("/api/health"),
 
   systemState: () => request<SystemState>("/api/system/state"),

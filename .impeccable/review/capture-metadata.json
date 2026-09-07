@@ -1,0 +1,8 @@
+{
+  "tool": "CUA Chromium browser screenshot",
+  "devicePixelRatio": 1,
+  "notes": "Full-page screenshots exclude the 15px native vertical scrollbar. Viewport screenshots may be normalized by the capture tool; hero was recaptured using fullPage:true with no vertical overflow for exact original pixels.",
+  "hero-repro.png": {"route": "#/library", "innerWidth": 1536, "innerHeight": 1024, "clientWidth": 1536, "scrollWidth": 1536, "scrollHeight": 1024, "fullPage": true},
+  "library-mobile.png": {"route": "#/library", "innerWidth": 390, "innerHeight": 844, "clientWidth": 375, "scrollWidth": 375, "fullPage": true, "note": "Recaptured after mobile density fix; PNG height is the full-page capture height, not viewport height."},
+  "library-table-mobile.png": {"route": "#/library", "innerWidth": 390, "innerHeight": 844, "clientWidth": 375, "scrollWidth": 375, "fullPage": false, "note": "Viewport capture. Full-page tool produced malformed captures of horizontally scrolling table; invalid files replaced. Table thumbnails measured48x72; overflow contained to focusable region."}
+}

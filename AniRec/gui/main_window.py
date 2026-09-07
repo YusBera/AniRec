@@ -754,6 +754,8 @@ class MainWindow(QMainWindow):
             page.show_unavailable(error, offer_sample=True)
             return
         page.show_profile(profile)
+        self._loaded_taste_profile_id = profile_id
+        self._taste_profile_dirty = False
         page.request_visible_covers()
 
     def _show_sample_taste_profile(self) -> None:
@@ -770,9 +772,9 @@ class MainWindow(QMainWindow):
             page.show_unavailable(error)
             return
         page.show_profile(profile)
-        if profile_id is not None:
-            self._loaded_taste_profile_id = profile_id
-            self._taste_profile_dirty = False
+        # The page now displays sample evidence, not the cached local profile.
+        self._loaded_taste_profile_id = None
+        self._taste_profile_dirty = True
         page.request_visible_covers()
 
     def _request_aux_cover(self, url: str) -> None:

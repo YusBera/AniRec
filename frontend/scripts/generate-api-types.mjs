@@ -21,6 +21,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import openapiTS, { astToString } from "openapi-typescript";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FRONTEND = resolve(HERE, "..");
@@ -42,7 +43,7 @@ function resolvePython() {
   return process.platform === "win32" ? "python" : "python3";
 }
 
-function generate() {
+async function generate() {
   const python = resolvePython();
   const schema = execFileSync(python, ["-m", "AniRec.api.openapi_export"], {
     cwd: REPO_ROOT,
@@ -57,16 +58,10 @@ function generate() {
   const schemaPath = join(SCRATCH, "openapi.json");
   writeFileSync(schemaPath, schema, "utf8");
 
-  // The CLI's JS entry point run under this same Node, rather than the
-  // `npx` shim: spawning a .cmd directly fails with EINVAL on current Node
-  // for Windows, and going through a shell to work around that would mean
-  // quoting paths correctly on two platforms for no benefit.
   const generatedPath = join(SCRATCH, "schema.d.ts");
-  const cli = join(FRONTEND, "node_modules", "openapi-typescript", "bin", "cli.js");
-  execFileSync(process.execPath, [cli, schemaPath, "-o", generatedPath], {
-    cwd: FRONTEND,
-    stdio: ["ignore", "ignore", "inherit"],
-  });
+  // Passing the parsed document avoids Redocly treating Unicode Windows paths
+  // as partially URL-encoded filenames (for example the capital Turkish İ).
+  writeFileSync(generatedPath, astToString(await openapiTS(JSON.parse(schema))), "utf8");
 
   const banner = [
     "/**",
@@ -82,7 +77,7 @@ function generate() {
   return banner + readFileSync(generatedPath, "utf8");
 }
 
-const next = generate();
+const next = await generate();
 
 if (verifyOnly) {
   const current = existsSync(OUTPUT) ? readFileSync(OUTPUT, "utf8") : "";

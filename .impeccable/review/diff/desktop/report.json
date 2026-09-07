@@ -1,0 +1,982 @@
+{
+  "tool": "comp-diff",
+  "version": 1,
+  "createdAt": "2026-09-07T02:56:34.497Z",
+  "label": "desktop",
+  "comp": ".impeccable/mocks/library-led.png",
+  "build": ".impeccable/review/desktop.png",
+  "spec": ".impeccable/build/spec.json",
+  "compSize": "1536x1024",
+  "buildSize": "1440x1000",
+  "align": "top",
+  "overall": 0.4138,
+  "verdict": "drift",
+  "scores": {
+    "overall": 0.4138,
+    "structure": 0.5068,
+    "color": 0.5621,
+    "colorIntersection": 0.267,
+    "paletteMatch": 0.721,
+    "detail": 0.2363,
+    "detailRaw": 0.2727,
+    "detailAdded": 0.0729,
+    "bands": 0.2457
+  },
+  "palette": {
+    "comp": [
+      {
+        "hex": "#0b1812",
+        "coverage": 0.9464
+      },
+      {
+        "hex": "#352c2f",
+        "coverage": 0.0205
+      },
+      {
+        "hex": "#2f3c2f",
+        "coverage": 0.0121
+      },
+      {
+        "hex": "#909789",
+        "coverage": 0.0102
+      },
+      {
+        "hex": "#626a5c",
+        "coverage": 0.0072
+      },
+      {
+        "hex": "#382818",
+        "coverage": 0.0035
+      }
+    ],
+    "build": [
+      {
+        "hex": "#080b09",
+        "coverage": 0.9801
+      },
+      {
+        "hex": "#182c20",
+        "coverage": 0.0076
+      },
+      {
+        "hex": "#465648",
+        "coverage": 0.0045
+      },
+      {
+        "hex": "#281808",
+        "coverage": 0.0029
+      },
+      {
+        "hex": "#607c6c",
+        "coverage": 0.0025
+      },
+      {
+        "hex": "#ccdccc",
+        "coverage": 0.0025
+      }
+    ]
+  },
+  "regions": [
+    {
+      "id": "library-navigation",
+      "x": 0.0065,
+      "y": 0.0098,
+      "w": 0.1113,
+      "h": 0.4805,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.5934,
+        "structure": 0.6001,
+        "color": 0.5203,
+        "colorIntersection": 0.1473,
+        "paletteMatch": 0.7211,
+        "detail": 0.4407,
+        "detailRaw": 0.498,
+        "detailAdded": 0.1146,
+        "bands": 0.9538
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 171,
+          "h": 492
+        },
+        "build": {
+          "x": 9,
+          "y": 19,
+          "w": 128,
+          "h": 303
+        }
+      }
+    },
+    {
+      "id": "library-heading",
+      "x": 0.1289,
+      "y": 0.0264,
+      "w": 0.293,
+      "h": 0.0488,
+      "kind": "text",
+      "score": {
+        "overall": 0.4244,
+        "structure": 0.5947,
+        "color": 0.4589,
+        "colorIntersection": 0.0985,
+        "paletteMatch": 0.6529,
+        "detail": 0.0825,
+        "detailRaw": 0.1919,
+        "detailAdded": 0.2188,
+        "bands": 0
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 2,
+          "y": 5,
+          "w": 178,
+          "h": 38
+        },
+        "build": {
+          "x": 67,
+          "y": 8,
+          "w": 193,
+          "h": 31
+        }
+      }
+    },
+    {
+      "id": "profile-navigation",
+      "x": 0.5039,
+      "y": 0.0098,
+      "w": 0.1113,
+      "h": 0.4805,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.4029,
+        "structure": 0.6953,
+        "color": 0.4767,
+        "colorIntersection": 0.1012,
+        "paletteMatch": 0.6789,
+        "detail": 0.026,
+        "detailRaw": 0.026,
+        "detailAdded": 0,
+        "bands": 0.2256
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 160,
+          "h": 492
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "profile-heading",
+      "x": 0.6263,
+      "y": 0.0264,
+      "w": 0.293,
+      "h": 0.0488,
+      "kind": "text",
+      "score": {
+        "overall": 0.5336,
+        "structure": 0.7924,
+        "color": 0.3894,
+        "colorIntersection": 0.0772,
+        "paletteMatch": 0.5576,
+        "detail": 0.0002,
+        "detailRaw": 0.0002,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 1,
+          "w": 311,
+          "h": 39
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "compare-navigation",
+      "x": 0.0065,
+      "y": 0.5029,
+      "w": 0.1113,
+      "h": 0.4805,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.3337,
+        "structure": 0.6218,
+        "color": 0.4645,
+        "colorIntersection": 0.047,
+        "paletteMatch": 0.6893,
+        "detail": 0,
+        "detailRaw": 0.0053,
+        "detailAdded": 0.0729,
+        "bands": 0
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 1,
+          "w": 162,
+          "h": 302
+        },
+        "build": {
+          "x": 10,
+          "y": 471,
+          "w": 153,
+          "h": 21
+        }
+      }
+    },
+    {
+      "id": "compare-heading",
+      "x": 0.1289,
+      "y": 0.5195,
+      "w": 0.293,
+      "h": 0.0488,
+      "kind": "text",
+      "score": {
+        "overall": 0.4994,
+        "structure": 0.7211,
+        "color": 0.5552,
+        "colorIntersection": 0.3515,
+        "paletteMatch": 0.665,
+        "detail": 0,
+        "detailRaw": 0.0255,
+        "detailAdded": 0.125,
+        "bands": 0
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 188,
+          "h": 36
+        },
+        "build": {
+          "x": 157,
+          "y": 0,
+          "w": 289,
+          "h": 22
+        }
+      }
+    },
+    {
+      "id": "settings-navigation",
+      "x": 0.5039,
+      "y": 0.5029,
+      "w": 0.1113,
+      "h": 0.4805,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.504,
+        "structure": 0.5988,
+        "color": 0.6719,
+        "colorIntersection": 0.3722,
+        "paletteMatch": 0.8332,
+        "detail": 0.1895,
+        "detailRaw": 0.3353,
+        "detailAdded": 0.2917,
+        "bands": 0.5273
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 16,
+          "w": 171,
+          "h": 452
+        },
+        "build": {
+          "x": 10,
+          "y": 5,
+          "w": 161,
+          "h": 380
+        }
+      }
+    },
+    {
+      "id": "settings-heading",
+      "x": 0.6263,
+      "y": 0.5195,
+      "w": 0.293,
+      "h": 0.0488,
+      "kind": "text",
+      "score": {
+        "overall": 0.533,
+        "structure": 0.7501,
+        "color": 0.4639,
+        "colorIntersection": 0.1692,
+        "paletteMatch": 0.6226,
+        "detail": 0.0132,
+        "detailRaw": 0.0132,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 0,
+          "w": 364,
+          "h": 33
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "library-controls",
+      "x": 0.1289,
+      "y": 0.083,
+      "w": 0.3587,
+      "h": 0.0732,
+      "kind": "control",
+      "score": {
+        "overall": 0.4336,
+        "structure": 0.6289,
+        "color": 0.4304,
+        "colorIntersection": 0.1779,
+        "paletteMatch": 0.5663,
+        "detail": 0,
+        "detailRaw": 0.0588,
+        "detailAdded": 0.1979,
+        "bands": 0.2333
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 0,
+          "w": 539,
+          "h": 73
+        },
+        "build": {
+          "x": 67,
+          "y": 0,
+          "w": 378,
+          "h": 55
+        }
+      }
+    },
+    {
+      "id": "library-card-0",
+      "x": 0.1296,
+      "y": 0.1709,
+      "w": 0.1139,
+      "h": 0.2881,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.4094,
+        "structure": 0.4592,
+        "color": 0.5006,
+        "colorIntersection": 0.1495,
+        "paletteMatch": 0.6896,
+        "detail": 0.1888,
+        "detailRaw": 0.293,
+        "detailAdded": 0.2083,
+        "bands": 0.5087
+      },
+      "verdict": "contradicted",
+      "inkBox": {
+        "comp": {
+          "x": 10,
+          "y": 55,
+          "w": 155,
+          "h": 231
+        },
+        "build": {
+          "x": 65,
+          "y": 29,
+          "w": 110,
+          "h": 194
+        }
+      }
+    },
+    {
+      "id": "compare-card-0",
+      "x": 0.1198,
+      "y": 0.7344,
+      "w": 0.1178,
+      "h": 0.2402,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.4111,
+        "structure": 0.518,
+        "color": 0.5357,
+        "colorIntersection": 0.2148,
+        "paletteMatch": 0.7085,
+        "detail": 0.0634,
+        "detailRaw": 0.1676,
+        "detailAdded": 0.2083,
+        "bands": 0.5333
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 10,
+          "y": 44,
+          "w": 155,
+          "h": 184
+        },
+        "build": {
+          "x": 98,
+          "y": 0,
+          "w": 83,
+          "h": 159
+        }
+      }
+    },
+    {
+      "id": "library-card-1",
+      "x": 0.252,
+      "y": 0.1709,
+      "w": 0.1139,
+      "h": 0.2881,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.4281,
+        "structure": 0.4737,
+        "color": 0.5142,
+        "colorIntersection": 0.2422,
+        "paletteMatch": 0.6606,
+        "detail": 0.2045,
+        "detailRaw": 0.2826,
+        "detailAdded": 0.1563,
+        "bands": 0.551
+      },
+      "verdict": "contradicted",
+      "inkBox": {
+        "comp": {
+          "x": 9,
+          "y": 55,
+          "w": 155,
+          "h": 231
+        },
+        "build": {
+          "x": 0,
+          "y": 29,
+          "w": 175,
+          "h": 194
+        }
+      }
+    },
+    {
+      "id": "compare-card-1",
+      "x": 0.2435,
+      "y": 0.7344,
+      "w": 0.1178,
+      "h": 0.2402,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.5124,
+        "structure": 0.5859,
+        "color": 0.5802,
+        "colorIntersection": 0.2842,
+        "paletteMatch": 0.7396,
+        "detail": 0.2581,
+        "detailRaw": 0.3779,
+        "detailAdded": 0.2396,
+        "bands": 0.6513
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 11,
+          "y": 44,
+          "w": 147,
+          "h": 185
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 181,
+          "h": 156
+        }
+      }
+    },
+    {
+      "id": "library-card-2",
+      "x": 0.3743,
+      "y": 0.1709,
+      "w": 0.1139,
+      "h": 0.2881,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.3788,
+        "structure": 0.5262,
+        "color": 0.4617,
+        "colorIntersection": 0.1885,
+        "paletteMatch": 0.6088,
+        "detail": 0.0511,
+        "detailRaw": 0.0928,
+        "detailAdded": 0.0833,
+        "bands": 0.4429
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 8,
+          "y": 55,
+          "w": 156,
+          "h": 230
+        },
+        "build": {
+          "x": 0,
+          "y": 29,
+          "w": 58,
+          "h": 115
+        }
+      }
+    },
+    {
+      "id": "compare-card-2",
+      "x": 0.3672,
+      "y": 0.7344,
+      "w": 0.1178,
+      "h": 0.2402,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.4927,
+        "structure": 0.5648,
+        "color": 0.6176,
+        "colorIntersection": 0.3,
+        "paletteMatch": 0.7885,
+        "detail": 0.1852,
+        "detailRaw": 0.3518,
+        "detailAdded": 0.3333,
+        "bands": 0.6286
+      },
+      "verdict": "drift",
+      "inkBox": {
+        "comp": {
+          "x": 12,
+          "y": 44,
+          "w": 153,
+          "h": 185
+        },
+        "build": {
+          "x": 0,
+          "y": 0,
+          "w": 167,
+          "h": 148
+        }
+      }
+    },
+    {
+      "id": "profile-identity",
+      "x": 0.6139,
+      "y": 0.0781,
+      "w": 0.373,
+      "h": 0.083,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.372,
+        "structure": 0.5797,
+        "color": 0.4363,
+        "colorIntersection": 0.0216,
+        "paletteMatch": 0.6597,
+        "detail": 0,
+        "detailRaw": 0,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 25,
+          "y": 24,
+          "w": 541,
+          "h": 41
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "profile-readings",
+      "x": 0.6139,
+      "y": 0.1729,
+      "w": 0.373,
+      "h": 0.123,
+      "kind": "text",
+      "score": {
+        "overall": 0.4299,
+        "structure": 0.5423,
+        "color": 0.454,
+        "colorIntersection": 0.0255,
+        "paletteMatch": 0.6848,
+        "detail": 0.0348,
+        "detailRaw": 0.0348,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 14,
+          "y": 19,
+          "w": 537,
+          "h": 91
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "profile-evidence-heading",
+      "x": 0.6146,
+      "y": 0.3037,
+      "w": 0.332,
+      "h": 0.0313,
+      "kind": "text",
+      "score": {
+        "overall": 0.5519,
+        "structure": 0.7869,
+        "color": 0.4206,
+        "colorIntersection": 0.0343,
+        "paletteMatch": 0.6286,
+        "detail": 0.0887,
+        "detailRaw": 0.0887,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 8,
+          "y": 25,
+          "w": 197,
+          "h": 9
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "profile-evidence-0",
+      "x": 0.6152,
+      "y": 0.3369,
+      "w": 0.1758,
+      "h": 0.1328,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.375,
+        "structure": 0.5244,
+        "color": 0.4164,
+        "colorIntersection": 0.0765,
+        "paletteMatch": 0.5995,
+        "detail": 0.0646,
+        "detailRaw": 0.0646,
+        "detailAdded": 0,
+        "bands": 0.475
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 32,
+          "y": 15,
+          "w": 213,
+          "h": 96
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "profile-evidence-1",
+      "x": 0.7988,
+      "y": 0.3369,
+      "w": 0.1758,
+      "h": 0.1328,
+      "kind": "chrome",
+      "score": {
+        "overall": 0.3404,
+        "structure": 0.4744,
+        "color": 0.3763,
+        "colorIntersection": 0.0145,
+        "paletteMatch": 0.5712,
+        "detail": 0.0449,
+        "detailRaw": 0.0449,
+        "detailAdded": 0,
+        "bands": 0.46
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 21,
+          "y": 15,
+          "w": 226,
+          "h": 96
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "compare-controls",
+      "x": 0.1198,
+      "y": 0.5684,
+      "w": 0.3652,
+      "h": 0.0449,
+      "kind": "control",
+      "score": {
+        "overall": 0.4744,
+        "structure": 0.6288,
+        "color": 0.5371,
+        "colorIntersection": 0.3756,
+        "paletteMatch": 0.624,
+        "detail": 0.0176,
+        "detailRaw": 0.0801,
+        "detailAdded": 0.125,
+        "bands": 0
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 8,
+          "y": 1,
+          "w": 552,
+          "h": 40
+        },
+        "build": {
+          "x": 151,
+          "y": 6,
+          "w": 343,
+          "h": 9
+        }
+      }
+    },
+    {
+      "id": "compare-summary",
+      "x": 0.1198,
+      "y": 0.6201,
+      "w": 0.3652,
+      "h": 0.0801,
+      "kind": "text",
+      "score": {
+        "overall": 0.4372,
+        "structure": 0.6047,
+        "color": 0.5392,
+        "colorIntersection": 0.0963,
+        "paletteMatch": 0.7777,
+        "detail": 0,
+        "detailRaw": 0.0574,
+        "detailAdded": 0.1667,
+        "bands": 0
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 14,
+          "y": 18,
+          "w": 536,
+          "h": 48
+        },
+        "build": {
+          "x": 99,
+          "y": 65,
+          "w": 381,
+          "h": 17
+        }
+      }
+    },
+    {
+      "id": "compare-section",
+      "x": 0.1198,
+      "y": 0.707,
+      "w": 0.3652,
+      "h": 0.0244,
+      "kind": "text",
+      "score": {
+        "overall": 0.6017,
+        "structure": 0.7342,
+        "color": 0.8263,
+        "colorIntersection": 0.6827,
+        "paletteMatch": 0.9036,
+        "detail": 0,
+        "detailRaw": 0.1235,
+        "detailAdded": 0.4375,
+        "bands": 0.28
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 0,
+          "y": 21,
+          "w": 122,
+          "h": 9
+        },
+        "build": {
+          "x": 98,
+          "y": 0,
+          "w": 425,
+          "h": 48
+        }
+      }
+    },
+    {
+      "id": "settings-recommendation",
+      "x": 0.6081,
+      "y": 0.5625,
+      "w": 0.1849,
+      "h": 0.2803,
+      "kind": "control",
+      "score": {
+        "overall": 0.449,
+        "structure": 0.5623,
+        "color": 0.5344,
+        "colorIntersection": 0.1824,
+        "paletteMatch": 0.724,
+        "detail": 0.0449,
+        "detailRaw": 0.0553,
+        "detailAdded": 0.0208,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 15,
+          "w": 275,
+          "h": 261
+        },
+        "build": {
+          "x": 0,
+          "y": 189,
+          "w": 47,
+          "h": 75
+        }
+      }
+    },
+    {
+      "id": "settings-appearance",
+      "x": 0.7988,
+      "y": 0.5625,
+      "w": 0.1868,
+      "h": 0.2803,
+      "kind": "control",
+      "score": {
+        "overall": 0.4483,
+        "structure": 0.656,
+        "color": 0.4376,
+        "colorIntersection": 0.0218,
+        "paletteMatch": 0.6614,
+        "detail": 0,
+        "detailRaw": 0,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 13,
+          "y": 13,
+          "w": 261,
+          "h": 214
+        },
+        "build": null
+      }
+    },
+    {
+      "id": "settings-account",
+      "x": 0.6081,
+      "y": 0.8516,
+      "w": 0.1849,
+      "h": 0.1348,
+      "kind": "control",
+      "score": {
+        "overall": 0.4891,
+        "structure": 0.6762,
+        "color": 0.4899,
+        "colorIntersection": 0.1173,
+        "paletteMatch": 0.6906,
+        "detail": 0.0665,
+        "detailRaw": 0.0665,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 1,
+          "y": 12,
+          "w": 261,
+          "h": 101
+        },
+        "build": {
+          "x": 0,
+          "y": 2,
+          "w": 46,
+          "h": 37
+        }
+      }
+    },
+    {
+      "id": "settings-data",
+      "x": 0.7988,
+      "y": 0.8516,
+      "w": 0.1868,
+      "h": 0.1348,
+      "kind": "control",
+      "score": {
+        "overall": 0.3877,
+        "structure": 0.5276,
+        "color": 0.4291,
+        "colorIntersection": 0.0166,
+        "paletteMatch": 0.6512,
+        "detail": 0.0004,
+        "detailRaw": 0.0004,
+        "detailAdded": 0,
+        "bands": 0.4
+      },
+      "verdict": "missing",
+      "inkBox": {
+        "comp": {
+          "x": 13,
+          "y": 12,
+          "w": 263,
+          "h": 98
+        },
+        "build": null
+      }
+    }
+  ],
+  "files": {
+    "sideBySide": "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/side-by-side.png",
+    "heatmap": "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/heatmap.png",
+    "regionFiles": [
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/library-navigation.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/library-heading.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/profile-navigation.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/profile-heading.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/compare-navigation.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/compare-heading.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/settings-navigation.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/settings-heading.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/library-controls.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/library-card-0.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/compare-card-0.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/library-card-1.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/compare-card-1.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/library-card-2.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/compare-card-2.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/profile-identity.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/profile-readings.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/profile-evidence-heading.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/profile-evidence-0.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/profile-evidence-1.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/compare-controls.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/compare-summary.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/compare-section.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/settings-recommendation.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/settings-appearance.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/settings-account.png",
+      "A:/Anirec yEPYENİ/.impeccable/review/diff/desktop/regions/settings-data.png"
+    ]
+  }
+}

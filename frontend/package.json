@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Proof-of-concept React frontend for AniRec. Discover surface only.",
+  "description": "React workspace preview for AniRec, backed by the local FastAPI boundary.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

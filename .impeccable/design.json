@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-07T13:42:21Z",
+  "title": "AniRec visual authority",
+  "extensions": {
+    "breakpoints": [
+      { "name": "workspace-compact", "value": "1050px" },
+      { "name": "workspace-mobile", "value": "700px" }
+    ],
+    "motion": [
+      { "name": "button-state", "value": "background-color 0.1s steps(2, end), color 0.1s steps(2, end)", "purpose": "Inherited button state transitions; no new workspace motion vocabulary." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Workspace button",
+      "kind": "button",
+      "description": "Inherited square action with brass pressed state and separate aqua keyboard focus.",
+      "html": "<button class=\"ds-button\" aria-pressed=\"true\">Watch Later</button>",
+      "css": ".ds-button{border:1px solid var(--border-strong);background:var(--surface-raised);color:var(--text);padding:5px var(--space-md);font:600 10.127px var(--font-display);letter-spacing:.12em;text-transform:uppercase;border-radius:var(--radius-sm);min-height:36px;cursor:pointer;transition:background-color .1s steps(2,end),color .1s steps(2,end)}.ds-button:hover:not(:disabled){background:var(--surface-sunken);border-color:var(--accent-muted)}.ds-button[aria-pressed=true]{border-color:var(--accent);color:var(--accent);background:var(--accent-muted)}.ds-button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.ds-button:disabled{color:var(--text-disabled);border-color:var(--border);cursor:not-allowed}@media(max-width:700px){.ds-button{min-height:44px}}"
+    },
+    {
+      "name": "Saved-title search",
+      "kind": "input",
+      "description": "Labelled search with a sunken field and inherited focus outline.",
+      "html": "<label class=\"ds-field\">Find a saved title<input type=\"search\" /></label>",
+      "css": ".ds-field{display:grid;gap:5px;color:var(--text);font:12px var(--font-mono)}.ds-field input{width:260px;max-width:100%;min-width:0;min-height:36px;background:var(--well);color:var(--text);border:1px solid var(--border);font:inherit;padding:8px 10px;border-radius:0}.ds-field input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}@media(max-width:700px){.ds-field input{min-height:44px;font-size:16px}}"
+    },
+    {
+      "name": "Indexed navigation",
+      "kind": "nav",
+      "description": "House Library SVG, brass route selection and aqua keyboard outline.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Main navigation\"><a href=\"#/library\" aria-current=\"page\"><svg aria-hidden=\"true\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"butt\" stroke-linejoin=\"miter\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"16\"/><path d=\"M8 8v9M12 8v9M16 8v9\"/></svg><span class=\"ds-index\" aria-hidden=\"true\">02</span>My Library</a></nav>",
+      "css": ".ds-nav{background:var(--sidebar);font:12px var(--font-mono)}.ds-nav a{display:flex;align-items:center;gap:9px;padding:13px 16px;color:var(--text-muted);text-decoration:none;border-left:2px solid transparent}.ds-nav a:hover{color:var(--text-strong);background:var(--surface)}.ds-nav a[aria-current]{color:var(--accent);border-left-color:var(--accent);background:var(--surface)}.ds-index{font-size:10px}.ds-nav a:focus-visible{outline:2px solid var(--focus);outline-offset:2px}@media(max-width:700px){.ds-index{display:none}.ds-nav a{min-height:44px;justify-content:center;padding:8px 10px}}"
+    },
+    {
+      "name": "Source genre chips",
+      "kind": "chip",
+      "description": "Noninteractive, wrapping metadata attached to Library and Compare titles.",
+      "html": "<div class=\"ds-genres\" aria-label=\"Genres\"><span class=\"ds-genre\">Drama</span><span class=\"ds-genre\">Comedy</span></div>",
+      "css": ".ds-genres{display:flex;align-content:start;flex-wrap:wrap;gap:4px;font:11px var(--font-mono);min-height:36px;margin-block:8px}.ds-genre{align-self:start;color:var(--focus);border:1px solid var(--focus);padding:2px 4px;line-height:1.3;overflow-wrap:anywhere}"
+    },
+    {
+      "name": "Evidence card",
+      "kind": "card",
+      "description": "Flat Profile evidence surface with a labelled 2:3 unavailable poster; preview intentionally supplies no scores.",
+      "html": "<article class=\"ds-evidence\"><div class=\"ds-poster\" role=\"img\" aria-label=\"Poster unavailable\"><small>Poster unavailable</small></div><div><h3>Title evidence</h3><dl class=\"ds-paired\"><div><dt>You / 10</dt><dd>N/A</dd></div><div><dt>Community / 10</dt><dd>N/A</dd></div></dl></div></article>",
+      "css": ".ds-evidence{display:flex;gap:18px;padding:16px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:13px var(--font-mono)}.ds-evidence>div:last-child{min-width:0;flex:1}.ds-poster{width:100px;aspect-ratio:2/3;flex-shrink:0;align-self:flex-start;display:flex;align-items:center;justify-content:center;background:var(--well);border:1px solid var(--border);color:var(--text-muted)}.ds-poster small{font:10px var(--font-sans);text-align:center}.ds-evidence h3{font:700 16px var(--font-display);color:var(--text-strong);margin:0 0 10px;overflow-wrap:anywhere}.ds-paired{display:flex;flex-wrap:wrap;gap:22px;margin:20px 0}.ds-paired dt{color:var(--text-muted);font-size:11px}.ds-paired dd{margin:8px 0 0;font:700 24px var(--font-mono);color:var(--accent)}.ds-paired>div+div dd{color:var(--focus)}@media(max-width:700px){.ds-evidence{gap:12px;padding:12px}.ds-poster{width:80px}}"
+    },
+    {
+      "name": "Taste evidence disclosure",
+      "kind": "custom",
+      "description": "Native genre/studio disclosure exposes supplied title evidence; missing evidence stays explicit.",
+      "html": "<details class=\"ds-taste-detail\"><summary>Genre evidence</summary><p>No title evidence supplied.</p></details>",
+      "css": ".ds-taste-detail{border-bottom:1px solid var(--border);padding:12px 0;color:var(--text);font:13px/1.55 var(--font-mono)}.ds-taste-detail summary{cursor:pointer;padding:10px 0;overflow-wrap:anywhere}.ds-taste-detail summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.ds-taste-detail p{font-family:var(--font-sans);color:var(--text-muted);max-width:75ch}"
+    },
+    {
+      "name": "Editable preference field",
+      "kind": "input",
+      "description": "Artwork-free Settings fields use shared sunken surfaces and 44px controls; validated saves retain edits on error and distinguish desktop appearance from browser appearance.",
+      "html": "<div class=\"ds-preferences\"><label>Minimum MAL score (blank for any)<input type=\"number\" min=\"0\" max=\"10\" step=\"0.1\" /></label></div>",
+      "css": ".ds-preferences{display:grid;gap:16px;color:var(--text);font:13px/1.55 var(--font-mono)}.ds-preferences>label{display:grid;gap:6px}.ds-preferences input{max-width:100%;min-width:0;min-height:44px;background:var(--well);color:var(--text);border:1px solid var(--border);font:inherit;padding:8px 10px;border-radius:0}.ds-preferences input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "overview": "This records the established visual world for concept work, not a new theme. Current PySide screens and docs/design handoffs remain authoritative; current implementation takes precedence over stale dimensions and obsolete button descriptions.",
+    "keyCharacteristics": [
+      "Green-black ground, bone text, thin square panel boundaries, restrained raster.",
+      "Brass marks the reader's signal and primary action; aqua carries system, community, and keyboard focus. Selection and focus stay distinguishable."
+    ],
+    "rules": [],
+    "dos": [
+      "Do preserve all incumbent visual authority and the approved C corrections above when extending these React patterns.",
+      "Do keep source evidence, sample labels, unavailable states and real capability limits visible without letting notices displace the title evidence.",
+      "Do carry the Profile provider's additional archetype, histogram, genre/studio title disclosures, era/season, habit and timeline evidence without inventing unavailable statistics. Retain existing higher/lower title evidence first.",
+      "Do distinguish live completed-list comparisons from bundled samples: live counts describe returned completed titles; scores pair the local snapshot with the named public list, and compatibility stays N/A. Unrated shared titles are separate. NSFW preference affects returned titles."
+    ],
+    "donts": [
+      "Don't claim full desktop parity or populated live-result browser verification. The two-account API check passed for the existing NeoBalls_ snapshot against Kuroboshi_'s live completed list; it does not establish a fresh local sync.",
+      "Don't canonize the four-screen concept board as a single-route pixel target. The raw hero comparison remains 41.1% FAIL. After explicit user approval to remove literal pixel matching, supported force transitions record C's composition-reference authority. The independent verdict resolves the six UI findings; the workflow addendum records this clarification without changing UI. This is not a pixel pass or certification of the whole surface. Evidence: `.impeccable/review/finish-verdict.md`, route desktop/mobile captures (including Library Table), and `docs/design/WORKSPACE_IMPLEMENTATION.md`."
+    ]
+  }
+}

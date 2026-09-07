@@ -1,24 +1,27 @@
 # AniRec frontend
 
-React + TypeScript. **One page — Discover — and it is a validated proof of
-concept, not the product.** The shipping application is the PySide6 desktop app
-in `AniRec/gui/`, which is untouched and still the reference implementation.
+React + TypeScript workspace preview with Discover, Library, Profile, Compare
+and Settings. The shipping application remains the PySide6 desktop app in
+`AniRec/gui/`, which is the visual reference. A nonvisual Profile cache repair
+is included in this branch; this is not complete desktop parity or a release.
 
-Read [../docs/design/MIGRATION_HANDOFF.md](../docs/design/MIGRATION_HANDOFF.md)
-before changing anything here.
+Read [the latest handoff](../docs/design/LATEST_AGENT_HANDOFF.md) first for current
+scope, verification results and fresh-PC dependency installation, then
+[the migration handoff](../docs/design/MIGRATION_HANDOFF.md) for architecture.
 
 ## Run it
 
 Two processes. The API first:
 
 ```powershell
-.\.venv\Scripts\python.exe -m AniRec.api
+.\.venv\Scripts\python.exe -m AniRec.api --root-override reports/ui-workspace-sample --port 8770
 ```
 
-It serves `http://127.0.0.1:8770` and prints a readiness line. Then:
+From the repository root, it serves `http://127.0.0.1:8770` using an isolated,
+ignored data directory and prints a readiness line. Then, in `frontend/`:
 
 ```powershell
-npm install
+npm ci
 npm run dev
 ```
 
@@ -42,7 +45,8 @@ credentials.
 
 ## Types are generated
 
-`AniRec/api/models.py` is the source of truth. `src/api/generated/schema.d.ts`
+Python Pydantic models in `AniRec/api/models.py` and `AniRec/api/workspace.py`
+are the source of truth. `src/api/generated/schema.d.ts`
 is produced from FastAPI's OpenAPI document and **must not be edited by hand**;
 `src/api/types.ts` holds only aliases into it, plus the server-sent-event frame
 types, which are hand-written because OpenAPI cannot describe the shape of
@@ -73,7 +77,8 @@ either as working desktop support.
 ```text
 src/
   api/         HTTP client, hooks, generated types
-  discover/    the one page, its components and CSS
+  discover/    preserved Discover page, shared cards and inspector
+  workspace/   navigation, Library, Profile, Compare and Settings
   platform/    browser vs desktop seam - the only place Tauri may be imported
   styles/      tokens.css (generated), base, instrument design system
 ```

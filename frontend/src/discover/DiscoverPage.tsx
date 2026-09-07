@@ -25,8 +25,9 @@ import { RecommendationDetails } from "./RecommendationDetails";
 import { EMPTY_FILTERS, activeFilterCount, filterAndSort, isActive, type Filters, type SortMode } from "./filtering";
 import { EmptyPanel, ErrorPanel, FeedSkeleton } from "./states";
 import "./discover.css";
+import { LibraryPage } from "../workspace/LibraryPage";
 
-export function DiscoverPage() {
+export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | "library" | "inactive" }) {
   const { feed, state, error, reload, setFeed } = useFeed();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sortMode, setSortMode] = useState<SortMode>("personal-match");
@@ -110,6 +111,7 @@ export function DiscoverPage() {
 
   return (
     <>
+      <div hidden={surface !== "discover"}>
       <a className="skip-link" href="#recommendations">Skip to recommendations</a>
       <header className="titlebar">
         <div className="shell titlebar-inner">
@@ -249,6 +251,17 @@ export function DiscoverPage() {
         ) : state === "loading" ? (
           <FeedSkeleton />
         ) : null}
+      </main>
+      </div>
+      <main className="workspace-page" hidden={surface !== "library"}>
+        <h1 tabIndex={-1}>My Library</h1>
+        <p className="workspace-intro">Saved recommendation decisions, with the evidence attached.</p>
+        {feed?.ephemeral ? <p className="sample-note">Sample data. Decisions reset on reload.</p> : null}
+        {state === "loading" && !feed ? <FeedSkeleton /> : null}
+        {state === "error" && error ? <ErrorPanel error={error} onRetry={() => void reload()} /> : null}
+        <p role="status">{surface === "library" ? (feed?.ephemeral ? feedbackNotice.replace(" in this preview. Changes reset on reload.", ".") : feedbackNotice) : ""}</p>
+        {feedbackError ? <div role="alert"><p>{feedbackError.message}</p>{feedbackError.retryable ? <button className="btn" disabled={saving || busy} onClick={() => void vote(...feedbackError.vote)}>Retry decision</button> : null}</div> : null}
+        {feed ? <LibraryPage feed={feed} pending={saving || busy} onVote={vote} onDetails={setInspected} /> : null}
       </main>
       {inspected ? <RecommendationDetails model={inspected} onClose={() => setInspected(null)} /> : null}
     </>
