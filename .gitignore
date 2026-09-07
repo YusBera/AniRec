@@ -52,3 +52,8 @@ ACCEPTANCE_STATIC_RESULTS.txt
 
 # Disposable isolated API root used only for UI capture
 reports/ui-preservation-2026-09-06/sample-data/
+
+# Stale roast/critique skill output. Everything else under reports/ is
+# tracked on purpose - the UI-preservation captures are the evidence the
+# React work is checked against.
+reports/roast/
