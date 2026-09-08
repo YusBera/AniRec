@@ -12,8 +12,48 @@ from ..models import Recommendation
 NOT_AVAILABLE = "Not available"
 NOT_RATED = "Not rated"
 NO_GENRES = "Genres not available"
+NO_STUDIOS = "Studio not available"
 NO_SYNOPSIS = "No synopsis is available."
-NO_REASON = "No recommendation explanation is available."
+
+
+def _is_community_term(name: str) -> bool:
+    """The score rail's one non-genre term, named the same way it is elsewhere.
+
+    ``match_badge`` and the detail dialog both identify it by this test; the
+    derived explanation has to agree with them or it would report the
+    community rating as one of the user's genres.
+    """
+    lowered = name.casefold()
+    return "community" in lowered or "viewer" in lowered
+
+
+def _derived_reason(
+    contributions: tuple[tuple[str, float], ...], contributing: tuple[str, ...]
+) -> str:
+    """State which genres carried the score, when no explanation was written.
+
+    CHANGE [DEFECT-REASON]: the previous fallback was the sentence "No
+    recommendation explanation is available.", which spent both of the card's
+    reserved reason lines announcing an absence - on the one surface whose
+    whole claim is that a score can be explained. This reports real state
+    instead: the genres that actually contributed, in weight order. When
+    there is nothing to report it returns an empty string, so the card leaves
+    the reserved lines blank rather than filling them with a non-statement.
+    """
+    ranked = [
+        (cleaned, value)
+        for raw, value in contributions
+        if (cleaned := _clean_text(raw)) and not _is_community_term(cleaned)
+    ]
+    ranked.sort(key=lambda item: item[1], reverse=True)
+    names = [name for name, _value in ranked[:3]] or list(contributing[:3])
+    if not names:
+        return ""
+    if len(names) == 1:
+        joined = names[0]
+    else:
+        joined = f"{', '.join(names[:-1])} and {names[-1]}"
+    return f"Matched on {joined}."
 
 
 @dataclass(frozen=True)
@@ -29,6 +69,13 @@ class RecommendationViewModel:
     mal_score_text: str
     genres: tuple[str, ...]
     genres_text: str
+    # CHANGE [FILTER]: carried so the card can show, and the search box can
+    # offer, who actually made a title. ``Anime.studios`` has been populated
+    # from MyAnimeList and persisted since the field was added to the domain
+    # model; the presentation layer simply never asked for it, so the one
+    # piece of metadata a viewer most often filters by was invisible.
+    studios: tuple[str, ...]
+    studios_text: str
     episodes: int | None
     episodes_text: str
     status: str
@@ -44,6 +91,29 @@ class RecommendationViewModel:
     mal_url: str | None
     personal_match_available: bool = True
     genre_contributions: tuple[tuple[str, float], ...] = ()
+    # CHANGE [BUNDLE]: carried so a franchise can be put in running order.
+    # relation_type says "sequel", never "season 2", so ordering inside a
+    # bundle comes from the broadcast year with the media type breaking ties -
+    # otherwise a movie can be listed before the series it belongs to.
+    media_type: str | None = None
+
+    # CHANGE [NO-NULL-PROSE]: the detail dialog used to print
+    # "Aired: Not available to Not available" whenever a title carried
+    # neither date, which is a template with two holes in it shown to a
+    # person. The range is composed here, where both ends are known, and
+    # returns None when there is nothing to say so the caller can hide the
+    # row rather than narrate the absence.
+    @property
+    def aired_text(self) -> str | None:
+        start = self.start_date if self.start_date != NOT_AVAILABLE else None
+        end = self.end_date if self.end_date != NOT_AVAILABLE else None
+        if start and end:
+            return start if start == end else f"{start} to {end}"
+        if start:
+            return f"{start} onwards"
+        if end:
+            return f"until {end}"
+        return None
 
     @classmethod
     def from_recommendation(cls, recommendation: Recommendation) -> "RecommendationViewModel":
@@ -52,17 +122,21 @@ class RecommendationViewModel:
         personal_match = raw_personal_match or 0.0
         mal_score = _finite_number(anime.mean_score)
         genres = tuple(text for item in anime.genres if (text := _clean_text(item)))
+        studios = tuple(text for item in anime.studios if (text := _clean_text(item)))
         alternatives = tuple(
             text for item in anime.alternative_titles if (text := _clean_text(item))
         )
         raw_status = _clean_text(anime.status)
         status = raw_status.replace("_", " ").title() if raw_status else NOT_AVAILABLE
         synopsis = _clean_text(anime.synopsis) or NO_SYNOPSIS
-        reason = _clean_text(recommendation.reason) or NO_REASON
+        contributions = tuple(recommendation.genre_contributions)
         contributing = tuple(
             text
             for item in recommendation.contributing_genres
             if (text := _clean_text(item))
+        )
+        reason = _clean_text(recommendation.reason) or _derived_reason(
+            contributions, contributing
         )
 
         return cls(
@@ -79,6 +153,8 @@ class RecommendationViewModel:
             ),
             genres=genres,
             genres_text=" · ".join(genres) if genres else NO_GENRES,
+            studios=studios,
+            studios_text=" · ".join(studios) if studios else NO_STUDIOS,
             episodes=anime.episodes,
             episodes_text=(
                 f"{anime.episodes} episode" if anime.episodes == 1 else f"{anime.episodes} episodes"
@@ -97,7 +173,8 @@ class RecommendationViewModel:
             large_cover_url=_safe_https_url(anime.large_cover_url),
             mal_url=_safe_mal_url(anime.mal_url, anime.mal_id),
             personal_match_available=raw_personal_match is not None,
-            genre_contributions=tuple(recommendation.genre_contributions),
+            genre_contributions=contributions,
+            media_type=_clean_text(anime.media_type),
         )
 
 

@@ -21,6 +21,7 @@ logs/
 build/
 dist/
 release/
+/tmp/
 *_Profile/
 *Profile/
 *_Recommended_Anime.csv
@@ -30,6 +31,7 @@ release/
 
 # Tooling and OS noise
 .pytest_cache/
+.pytest_tmp/
 .mypy_cache/
 .ruff_cache/
 .coverage

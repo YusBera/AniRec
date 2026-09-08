@@ -12,6 +12,7 @@ from AniRec.gui.home_page import (
     ACTION_VIEW_GENRES,
 )
 from AniRec.gui.main_window import MainWindow, PageId
+from AniRec.gui.taste_profile import SampleTasteProfileProvider
 from AniRec.gui.texts import DASHBOARD_TEXT
 from AniRec.gui_main import create_application
 from AniRec.infrastructure.csv_storage import CsvStorage
@@ -93,11 +94,11 @@ def test_dashboard_loads_profile_metrics_top_genres_and_recent_english_titles(
     assert home.metric_values["last_sync"].text() == "03 Aug 2026 · 17:30"
     assert home.metric_values["recommendations"].text() == "6"
     assert [home.genre_list.item(index).text() for index in range(5)] == [
-        "Action — 50.0",
-        "Mystery — 40.0",
-        "Comedy — 30.0",
-        "Drama — 20.0",
-        "Fantasy — 10.0",
+        "Action: 50.0",
+        "Mystery: 40.0",
+        "Comedy: 30.0",
+        "Drama: 20.0",
+        "Fantasy: 10.0",
     ]
     assert [home.recommendation_list.item(index).text() for index in range(5)] == [
         "English 1",
@@ -165,6 +166,50 @@ def test_running_operation_disables_only_its_start_action(system_temp_dir):
 
     window._on_operation_finished(f"sync:{profile.profile_id}")
     assert window.home_page.action_buttons[ACTION_SYNC].isEnabled()
+    window.close()
+
+
+def test_cover_work_does_not_flash_engine_busy_and_parallel_work_stays_busy():
+    create_application([])
+    window = MainWindow()
+
+    window._on_operation_started("cover:poster")
+    assert not window._engine_busy
+
+    window._on_operation_started("sync:profile-a")
+    window._on_operation_started("recommendation:profile-a")
+    window._on_operation_finished("sync:profile-a")
+    assert window._engine_busy
+
+    window._on_operation_finished("recommendation:profile-a")
+    assert not window._engine_busy
+    window.close()
+
+
+def test_returning_to_profile_reuses_the_rendered_taste_profile(system_temp_dir):
+    create_application([])
+    profiles, results, _profile, _result = create_dashboard_state(system_temp_dir)
+
+    class CountingTasteProvider:
+        def __init__(self):
+            self.calls = 0
+
+        def taste_profile(self):
+            self.calls += 1
+            return SampleTasteProfileProvider().taste_profile()
+
+    provider = CountingTasteProvider()
+    window = MainWindow(
+        profile_service=profiles,
+        result_service=results,
+        taste_profile_provider=provider,
+    )
+
+    window.navigate_to(PageId.PROFILE)
+    window.navigate_to(PageId.SETTINGS)
+    window.navigate_to(PageId.PROFILE)
+
+    assert provider.calls == 1
     window.close()
 
 

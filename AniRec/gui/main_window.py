@@ -32,11 +32,12 @@ second press cannot start a second run and the control always comes back.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, replace
 from enum import Enum
 
 from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QApplication,
@@ -55,6 +56,7 @@ from ..application.pipeline import PipelineOrchestrator
 from ..errors import AniRecError, UserFacingError
 from ..metadata import (
     APP_NAME,
+    APP_VERSION,
     DEFAULT_WINDOW_HEIGHT,
     DEFAULT_WINDOW_WIDTH,
     MINIMUM_WINDOW_HEIGHT,
@@ -66,8 +68,12 @@ from ..services import (
     DataManagementService,
     OnboardingService,
     ProfileService,
+    ProfileStatisticsService,
     RecommendationStateService,
     ResultService,
+    BundleContextService,
+    CoverImageResult,
+    CoverImageService,
     SampleDataService,
     SettingsService,
     TasteFeedbackService,
@@ -75,19 +81,51 @@ from ..services import (
 )
 from .advanced_operations_page import AdvancedOperationsPage
 from .about_page import AboutPage
+from .compare_page import ComparePage
+from .compatibility import (
+    CompatibilityUnavailable,
+    SampleCompatibilityProvider,
+    UnavailableCompatibilityProvider,
+    UnavailableReason,
+)
 from .discover_page import DiscoverPage
+from .profile_lookup import ProfileLookupService
+from .profile_page import ProfilePage
+from .taste_profile import (
+    LocalTasteProfileProvider,
+    SampleTasteProfileProvider,
+    TasteProfileProvider,
+    TasteProfileUnavailable,
+    UnavailableTasteProfileProvider,
+)
 from .home_page import ACTION_GENERATE, ACTION_SYNC, HomePage
 from .genre_analysis_page import GenreAnalysisPage
+from .instrument_widgets import (
+    ChannelWipe,
+    InstrumentPanel,
+    NavMarker,
+    Scanlines,
+    StatusLight,
+)
 from .error_dialog import ErrorDialog
 from .progress_dialog import OperationProgressDialog
 from .recommendation_page import RecommendationExplorerPage
-from .resources import app_icon, placeholder_pixmap
+from .resources import (
+    app_icon,
+    clear_cover_placeholder_cache,
+    clear_ui_icon_cache,
+    placeholder_pixmap,
+    themed_ui_icon,
+)
+from .design_tokens import SPACE
 from .scaling import set_gui_scale
 from .settings_page import SettingsPage
+from .system_log import SystemLog
 from .setup_wizard import SetupWizard
-from .texts import UI_TEXT, WIZARD_TEXT
+from .texts import COMPARE_TEXT, FILTER_TEXT, UI_TEXT, WIZARD_TEXT
 from .theme import ThemeManager
 from .workers import (
+    CoverDownloadWorker,
     MoreRecommendationsWorker,
     OperationAlreadyRunningError,
     RecommendationWorker,
@@ -100,6 +138,16 @@ from .workers import (
 class PageId(str, Enum):
     DISCOVER = "discover"
     LIBRARY = "library"
+    # CHANGE [PROFILE]: a surface about the reader rather than about the
+    # catalogue. It sits between the library it is derived from and the
+    # comparison it makes sense of: you read your own taste, then you read
+    # somebody else's against it.
+    PROFILE = "profile"
+    # CHANGE [COMPARE]: a fourth surface, and the first one that is about
+    # somebody else. It sits after the two that are about the user's own
+    # library and before Settings, which is where the rail already puts the
+    # things you configure rather than the things you read.
+    COMPARE = "compare"
     SETTINGS = "settings"
 
 
@@ -116,15 +164,103 @@ class PageDefinition:
 PAGE_DEFINITIONS = (
     PageDefinition(PageId.DISCOVER, UI_TEXT.pages[0].label, UI_TEXT.pages[0].description),
     PageDefinition(PageId.LIBRARY, UI_TEXT.pages[1].label, UI_TEXT.pages[1].description),
-    PageDefinition(PageId.SETTINGS, UI_TEXT.pages[2].label, UI_TEXT.pages[2].description),
+    PageDefinition(PageId.PROFILE, UI_TEXT.pages[2].label, UI_TEXT.pages[2].description),
+    PageDefinition(PageId.COMPARE, UI_TEXT.pages[3].label, UI_TEXT.pages[3].description),
+    PageDefinition(PageId.SETTINGS, UI_TEXT.pages[4].label, UI_TEXT.pages[4].description),
 )
+
+# TODO [ICON]: temporary. Every rail row is drawn from ``nav-<page>.svg`` and
+# there is no ``nav-profile.svg`` yet - the icon set is being drawn separately.
+# Until it lands the row borrows the existing profile mark, which is the right
+# subject at the wrong weight; delete this map when the asset arrives.
+NAV_ICON_OVERRIDES = {PageId.PROFILE: "profile"}
+
+
+def nav_icon_name(page_id: PageId) -> str:
+    return NAV_ICON_OVERRIDES.get(page_id, f"nav-{page_id.value}")
 
 # Collections shown on each surface.
 DISCOVER_STATES = ("all",)
 LIBRARY_STATES = ("liked", "watch-later", "disliked")
 
 
-class ConnectionStatusBar(QFrame):
+class SystemReadout(QFrame):
+    """A fixed set of key/value rows reporting live application state.
+
+    Deliberately fixed: the rows are declared once and only their values
+    change, so the rail never reflows and the eye can learn where each fact
+    lives. Values are short enough to be read without being read.
+    """
+
+    ROWS = ("ENGINE", "SOURCE", "PROFILE", "MAL")
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("systemReadout")
+        self.setAccessibleName("System state")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 11, 14, 12)
+        layout.setSpacing(3)
+
+        caption = QLabel("SYSTEM")
+        caption.setObjectName("railCaption")
+        layout.addWidget(caption)
+        layout.addSpacing(3)
+
+        self._values: dict[str, QLabel] = {}
+        self._lamps: dict[str, StatusLight] = {}
+        for key in self.ROWS:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(SPACE["xs"])
+            lamp = StatusLight("off")
+            name = QLabel(key)
+            name.setObjectName("readoutKey")
+            value = QLabel("--")
+            value.setObjectName("readoutValue")
+            value.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            row.addWidget(lamp)
+            row.addWidget(name)
+            row.addStretch()
+            row.addWidget(value)
+            layout.addLayout(row)
+            self._values[key] = value
+            self._lamps[key] = lamp
+
+    # How each readout tone maps onto a lamp.
+    _LAMP_FOR_TONE = {
+        "ok": "ok",
+        "warn": "warn",
+        "busy": "busy",
+        "idle": "off",
+        "error": "error",
+    }
+
+    def set_value(self, key: str, text: str, *, tone: str = "idle") -> None:
+        label = self._values.get(key)
+        if label is None:
+            return
+        changed = label.text() != str(text)
+        label.setText(str(text))
+        label.setProperty("tone", tone)
+        label.setAccessibleName(f"{key} {text}")
+        label.style().unpolish(label)
+        label.style().polish(label)
+
+        lamp = self._lamps.get(key)
+        if lamp is not None:
+            lamp.set_state(self._LAMP_FOR_TONE.get(tone, "off"))
+            if changed:
+                # A changed reading swells its lamp and settles. This used to
+                # invert the text's background for three hard frames, which
+                # strobed rather than drew the eye.
+                lamp.flash()
+
+
+class ConnectionStatusBar(InstrumentPanel):
     """Reusable display for the active profile and MAL connection state."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -141,8 +277,13 @@ class ConnectionStatusBar(QFrame):
         self.mal_status_label = QLabel()
         self.mal_status_label.setObjectName("malConnectionLabel")
 
-        layout.addWidget(self.profile_label)
-        layout.addWidget(self.mal_status_label)
+        # CHANGE [DUPLICATE]: these two are NOT added to the strip. The rail's
+        # system readout reports PROFILE and MAL permanently, so repeating them
+        # here put the same two facts on screen twice at all times. They stay
+        # as live widgets - the text is still set and still queried - they just
+        # no longer occupy a second place on the glass.
+        self.profile_label.setVisible(False)
+        self.mal_status_label.setVisible(False)
         layout.addStretch()
         self._layout = layout
         self.set_status()
@@ -192,6 +333,8 @@ class MainWindow(QMainWindow):
         token_store: TokenStore | None = None,
         data_management_service: DataManagementService | None = None,
         theme_manager: ThemeManager | None = None,
+        taste_profile_provider: TasteProfileProvider | None = None,
+        cover_service: CoverImageService | None = None,
     ) -> None:
         super().__init__()
         self.profile_service = profile_service
@@ -209,7 +352,40 @@ class MainWindow(QMainWindow):
         self.active_profile: UserProfile | None = None
         self.setup_wizard: SetupWizard | None = None
         self.sample_data_service = SampleDataService()
+        # CHANGE [BUNDLE-WIRING]: what the feed needs to fold a franchise.
+        # Read from the profile directory, best effort: no graph means the
+        # feed reads exactly as it always has.
+        self.bundle_context_service = BundleContextService()
         self.demo_mode = False
+        # CHANGE [COMPARE]: what ships wired up is the provider that refuses,
+        # with a reason. Nothing on the Compare surface invents a match score,
+        # and the surface says so rather than showing an empty page that looks
+        # like a fault. The recorded sample is offered from that state, and is
+        # stamped when it is shown.
+        self.compatibility_provider = UnavailableCompatibilityProvider()
+        self.sample_compatibility_provider = SampleCompatibilityProvider()
+        # The local provider reads only the synchronized MAL snapshots. It has
+        # no dependency on candidate generation or recommendation ranking.
+        # A bare test shell still gets the explicit refusing provider.
+        self.taste_profile_provider = taste_profile_provider or (
+            LocalTasteProfileProvider(ProfileStatisticsService(profile_service))
+            if profile_service is not None
+            else UnavailableTasteProfileProvider()
+        )
+        self.sample_taste_profile_provider = SampleTasteProfileProvider()
+        self.cover_service = cover_service or CoverImageService()
+        self._aux_cover_attempted: set[str] = set()
+        self._aux_cover_operations: dict[str, str] = {}
+        self._aux_cover_data: dict[str, bytes] = {}
+        self._loaded_taste_profile_id: str | None = None
+        self._taste_profile_dirty = True
+        # Mirrored state for the rail's system readout. Kept here rather
+        # than interrogated from widgets so the panel cannot disagree
+        # with what the window believes.
+        self._engine_busy = False
+        self._active_engine_operations: set[str] = set()
+        self._mal_connected = False
+        self._profile_name: str | None = None
         self.theme_manager = theme_manager
         self.setObjectName("mainWindow")
         self.setWindowTitle(APP_NAME)
@@ -220,6 +396,16 @@ class MainWindow(QMainWindow):
         self.page_indexes: dict[PageId, int] = {}
         self.page_widgets: dict[PageId, QWidget] = {}
         self.worker_controller = WorkerController(self)
+        # One lookup for both surfaces, with one session cache in front of it,
+        # so the same username typed on Discover and on Compare costs one
+        # request and cannot produce two different verdicts.
+        self.profile_lookup = ProfileLookupService(
+            worker_controller=self.worker_controller,
+            profile_service=profile_service,
+            settings_service=self.settings_service,
+            parent=self,
+        )
+        self.profile_lookup.resolved.connect(self._on_profile_lookup_resolved)
         self.operation_dialogs: dict[str, OperationProgressDialog] = {}
         self.error_dialogs: dict[str, ErrorDialog] = {}
         self._last_more_count = 5
@@ -296,9 +482,16 @@ class MainWindow(QMainWindow):
             view.set_ephemeral(True)
             view.set_recommendations(result.recommendations)
         self.discover_page.set_genre_stats(result.genre_stats)
+        self._publish_studio_names()
+        self._publish_bundle_context()
         self.genre_analysis_page.set_genre_stats(result.genre_stats)
         self.home_page.set_state(None, result)
         self.demo_banner.setVisible(True)
+        self._refresh_system_readout()
+        self._log(
+            "source",
+            f"sample vault mounted · {len(result.recommendations)} records",
+        )
         self.navigate_to(PageId.DISCOVER)
 
     def _leave_demo_mode(self) -> None:
@@ -306,6 +499,8 @@ class MainWindow(QMainWindow):
         for view in self._recommendation_views():
             view.set_ephemeral(False)
         self.demo_banner.setVisible(False)
+        self._refresh_system_readout()
+        self._log("source", "sample vault released · awaiting uplink")
         self.open_setup_wizard()
 
     def _on_setup_finished(self, result: int) -> None:
@@ -322,6 +517,9 @@ class MainWindow(QMainWindow):
         # refresh would only replace it with nothing.
         if self.demo_mode:
             return
+        previous_profile_id = (
+            self.active_profile.profile_id if self.active_profile is not None else None
+        )
         profile = None
         result = None
         if self.profile_service is not None:
@@ -335,6 +533,10 @@ class MainWindow(QMainWindow):
             except (AniRecError, OSError, TypeError, ValueError):
                 result = None
         self.active_profile = profile
+        current_profile_id = profile.profile_id if profile is not None else None
+        if current_profile_id != previous_profile_id:
+            self._loaded_taste_profile_id = None
+            self._taste_profile_dirty = True
         display_result = result
         local_state = None
         if profile is not None:
@@ -357,14 +559,30 @@ class MainWindow(QMainWindow):
             )
         self.genre_analysis_page.set_genre_stats(stats)
         self.discover_page.set_genre_stats(stats)
+        self._publish_studio_names()
+        self._publish_bundle_context()
+        # The two lines that used to be asserted at construction, reported
+        # here instead - each only when the thing it names actually happened,
+        # and each carrying the count that proves it.
+        if result is not None:
+            self._log(
+                "source",
+                f"local vault mounted · {len(result.recommendations)} records",
+            )
+        if stats:
+            self._log("engine", f"taste vector restored · {len(stats)} genres")
         self.advanced_operations_page.set_profile(profile)
+        self._refresh_compare_context()
         self.settings_page.set_context(profile)
         settings = self.settings_service.load()
         mal_connected = bool(profile and settings.client_id)
+        self._profile_name = profile.username if profile else None
+        self._mal_connected = mal_connected
         self.connection_status.set_status(
-            profile.username if profile else None,
+            self._profile_name,
             mal_connected=mal_connected,
         )
+        self._refresh_system_readout()
         more_available = bool(
             profile
             and result
@@ -380,6 +598,209 @@ class MainWindow(QMainWindow):
             else "Connect a MyAnimeList profile first.",
         )
 
+    # ---- group recommendation profiles -----------------------------------
+
+    def _resolve_group_profile(self, username: str) -> None:
+        """Look one added username up, and answer the pill when it lands.
+
+        Every profile is its own request. Five added at once become five
+        operations that start together and finish independently, so a slow
+        list never holds up the others and a failure is scoped to its own
+        pill.
+        """
+        result = self.profile_lookup.lookup(username)
+        if result is not None:
+            self._apply_profile_result(result)
+
+    def _retry_group_profile(self, username: str) -> None:
+        # Without forgetting the previous answer a retry would be served the
+        # failure that is already on screen, which is not a retry.
+        self.profile_lookup.forget(username)
+        self._resolve_group_profile(username)
+
+    def _on_profile_lookup_resolved(self, result) -> None:
+        self._apply_profile_result(result)
+
+    def _apply_profile_result(self, result) -> None:
+        page = getattr(self, "recommendations_page", None)
+        if page is None:
+            return
+        if result.ok:
+            page.set_profile_resolved(result.username, result.username)
+            self._log("uplink", f"profile resolved · {result.username}")
+        else:
+            page.set_profile_failed(result.username, result.message)
+            self._log("uplink", f"profile refused · {result.username}")
+        compare = getattr(self, "compare_page", None)
+        if compare is not None and compare.is_loading:
+            self._continue_comparison(result)
+
+    def _on_discover_filters_changed(self, parameters) -> None:
+        """Report what the feed is being asked for, and what cannot be honoured.
+
+        The genre, studio, year and score filters are applied to the records
+        already loaded, which is what the feed has always done. Ranking for
+        several profiles at once is not something the frontend can do or
+        should: it needs the scoring engine to blend several taste vectors,
+        and that does not exist. So the profiles are collected, reported, and
+        the surface says plainly that the results below are still the user's
+        own until a backend answers.
+        """
+        profiles = parameters.get("profile") or []
+        page = self.recommendations_page
+        if not profiles:
+            page.set_group_notice("")
+            return
+        page.set_group_notice(FILTER_TEXT.group_pending)
+
+    # ---- compare ---------------------------------------------------------
+
+    def _start_comparison(self, username: str) -> None:
+        """Ask the provider for one comparison and draw whatever comes back."""
+        page = self.compare_page
+        page.show_loading(username)
+        try:
+            report = self.compatibility_provider.compare(username)
+        except CompatibilityUnavailable as error:
+            page.show_unavailable(error, offer_sample=True)
+            return
+        page.show_report(report)
+        page.request_visible_covers()
+
+    def _show_sample_comparison(self) -> None:
+        """Draw the bundled example, stamped as one.
+
+        Offered from the "not built yet" state so the surface can be judged
+        before the capability exists - the same bargain the sample library
+        already makes for the feed, and marked the same way.
+        """
+        page = self.compare_page
+        username = page.username_input.text().strip()
+        if not username:
+            friends = ()
+            try:
+                friends = self.sample_compatibility_provider.friends()
+            except CompatibilityUnavailable:
+                pass
+            if not friends:
+                return
+            page.set_friends(friends)
+            username = friends[0].username
+        try:
+            report = self.sample_compatibility_provider.compare(username)
+        except CompatibilityUnavailable as error:
+            page.show_unavailable(error)
+            return
+        page.show_report(report)
+        page.request_visible_covers()
+
+    # ---- profile ---------------------------------------------------------
+
+    def _load_taste_profile(self) -> None:
+        """Ask the provider for this reader's profile and draw what comes back."""
+        page = self.profile_page
+        profile_id = (
+            self.active_profile.profile_id if self.active_profile is not None else None
+        )
+        if (
+            profile_id is not None
+            and profile_id == self._loaded_taste_profile_id
+            and not self._taste_profile_dirty
+        ):
+            page.request_visible_covers()
+            return
+        page.show_loading()
+        try:
+            profile = self.taste_profile_provider.taste_profile()
+        except TasteProfileUnavailable as error:
+            page.show_unavailable(error, offer_sample=True)
+            return
+        page.show_profile(profile)
+        page.request_visible_covers()
+
+    def _show_sample_taste_profile(self) -> None:
+        """Draw the bundled example, stamped as one.
+
+        Offered from the "not built yet" state, exactly as Compare offers its
+        sample comparison, so the surface can be judged before the capability
+        exists without any figure on it claiming to be the reader's own.
+        """
+        page = self.profile_page
+        try:
+            profile = self.sample_taste_profile_provider.taste_profile()
+        except TasteProfileUnavailable as error:
+            page.show_unavailable(error)
+            return
+        page.show_profile(profile)
+        if profile_id is not None:
+            self._loaded_taste_profile_id = profile_id
+            self._taste_profile_dirty = False
+        page.request_visible_covers()
+
+    def _request_aux_cover(self, url: str) -> None:
+        """Fetch artwork requested by Profile or Compare."""
+        cached = self._aux_cover_data.get(url)
+        if cached is not None:
+            self._deliver_aux_cover(url, cached)
+            return
+        if url in self._aux_cover_attempted:
+            return
+        self._aux_cover_attempted.add(url)
+        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+        operation_key = f"cover:{digest}"
+        self._aux_cover_operations[operation_key] = url
+        try:
+            self.worker_controller.start(
+                operation_key,
+                CoverDownloadWorker(self.cover_service, url),
+            )
+        except OperationAlreadyRunningError:
+            # A feed request for the same URL is already in flight. Both
+            # listeners receive its result, so keep this mapping until then.
+            pass
+
+    def _deliver_aux_cover(self, url: str, data: bytes) -> None:
+        for page in (self.profile_page, self.compare_page):
+            deliver = getattr(page, "deliver_cover", None)
+            if callable(deliver):
+                deliver(url, data)
+
+    def _filter_discover_by_metadata(self, kind, value: str) -> None:
+        """A genre or studio pressed on the Profile page.
+
+        Goes to the same filter state a card's tag goes to, and then to the
+        surface that state belongs to: pressing "Isekai" on a panel that has
+        just told you it is your weakest genre is a request to go and look at
+        the ones you have not watched.
+        """
+        self.recommendations_page.filter_state.add_value(kind, str(value))
+        self.navigate_to(PageId.DISCOVER)
+
+    def _continue_comparison(self, _result) -> None:
+        """Placeholder for the live path once a provider exists.
+
+        The lookup resolving is what would let a real provider start work. It
+        is not wired to one today because there is nothing to start, and
+        pretending otherwise would leave the surface spinning forever.
+        """
+        return
+
+    def _refresh_compare_context(self) -> None:
+        """Tell Compare who "you" are, and what its friends list can be.
+
+        Both facts move with the active profile: the friends list is that
+        account's, and comparing a list with itself is only refusable once the
+        surface knows which list is yours.
+        """
+        page = getattr(self, "compare_page", None)
+        if page is None:
+            return
+        page.set_own_username(self.active_profile.username if self.active_profile else None)
+        try:
+            page.set_friends(self.compatibility_provider.friends())
+        except CompatibilityUnavailable as error:
+            page.set_friends_unavailable(error.reason)
+
     def _build_shell(self) -> QWidget:
         shell = QWidget()
         shell.setObjectName("applicationShell")
@@ -389,44 +810,155 @@ class MainWindow(QMainWindow):
         layout.setSpacing(0)
         layout.addWidget(self._build_sidebar())
         layout.addWidget(self._build_content_area(), 1)
+        # CHANGE [CRT]: the raster goes on last and stays on top. Built after
+        # the layout so it is the final child, and it re-raises itself when
+        # anything else is added.
+        self.scanlines = Scanlines(shell)
+        self.scanlines.raise_()
         return shell
 
     def _build_sidebar(self) -> QFrame:
+        """The navigation rail, built as a workstation front panel.
+
+        Three destinations do not need three large pill buttons. They need an
+        index, a selection mark, and the space that buys back for telling you
+        what the machine is currently doing.
+        """
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setMinimumWidth(208)
-        sidebar.setMaximumWidth(248)
+        sidebar.setMinimumWidth(214)
+        sidebar.setMaximumWidth(238)
         sidebar.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
 
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(16, 24, 16, 20)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        title = QLabel(APP_NAME)
+        plate = QWidget()
+        plate.setObjectName("sidebarPlate")
+        plate_layout = QVBoxLayout(plate)
+        plate_layout.setContentsMargins(14, 14, 14, 12)
+        plate_layout.setSpacing(1)
+        title = QLabel(APP_NAME.upper())
         title.setObjectName("sidebarTitle")
         title.setAccessibleName("AniRec application title")
-        layout.addWidget(title)
-        layout.addSpacing(24)
+        subtitle = QLabel("アニレク")
+        subtitle.setObjectName("sidebarKana")
+        plate_layout.addWidget(title)
+        plate_layout.addWidget(subtitle)
+        layout.addWidget(plate)
+        layout.addWidget(self._hairline())
 
-        for definition in PAGE_DEFINITIONS:
-            button = QPushButton(definition.label)
+        for index, definition in enumerate(PAGE_DEFINITIONS, start=1):
+            # The index is part of the label rather than a separate widget so
+            # the whole row stays one focusable, clickable control.
+            button = QPushButton(f"{index:02d}   {definition.label.upper()}")
             button.setObjectName(f"navigationButton-{definition.page_id.value}")
+            button.setProperty("navItem", True)
             button.setCheckable(True)
             button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-            button.setMinimumHeight(42)
+            button.setMinimumHeight(34)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setAccessibleName(f"Open {definition.label} page")
+            # CHANGE [NUMBERED-NAV]: the 01-05 prefixes read as a sequence -
+            # a wizard you work through - on what is flat navigation you can
+            # enter at any point. Rather than drop them, they are made true:
+            # each number is now the key that reaches its page. The label
+            # stops being decoration and starts being documentation.
+            button.setShortcut(QKeySequence(f"Alt+{index}"))
+            button.setAccessibleName(f"Open {definition.label} page, Alt+{index}")
+            button.setToolTip(f"{definition.description}  (Alt+{index})")
+            button.setIcon(themed_ui_icon(nav_icon_name(definition.page_id)))
             button.clicked.connect(
                 lambda checked=False, page_id=definition.page_id: self.navigate_to(page_id)
             )
             self.navigation_buttons[definition.page_id] = button
             layout.addWidget(button)
 
-        layout.addStretch()
-        version_note = QLabel(UI_TEXT.sidebar_footer)
+        # One mark that travels between the rows, rather than a border colour
+        # that teleports. Parented to the rail so it can be positioned across
+        # button boundaries.
+        self.nav_marker = NavMarker(sidebar)
+
+        layout.addWidget(self._hairline())
+        self.system_readout = SystemReadout()
+        layout.addWidget(self.system_readout)
+        layout.addWidget(self._hairline())
+        # The console sits at the foot of the rail, under the spare height:
+        # it is ambient, and pinning it below the readout put a scrolling
+        # panel in the middle of the navigation.
+        layout.addStretch(1)
+        layout.addWidget(self._hairline())
+        self.system_log = SystemLog()
+        layout.addWidget(self.system_log)
+        layout.addWidget(self._hairline())
+
+        version_note = QLabel(f"BUILD {APP_VERSION}")
         version_note.setObjectName("sidebarFooter")
+        version_note.setContentsMargins(14, 8, 14, 12)
         layout.addWidget(version_note)
+        self._refresh_system_readout()
+        # CHANGE [TELEMETRY]: three of the four lines that used to be here
+        # were literals fired unconditionally at construction, before any
+        # profile, vault or settings had loaded. "taste vector restored" was
+        # the worst of them - it asserted a restore in the same frame the rail
+        # above it truthfully reported PROFILE --, in the one panel whose job
+        # is to show that this application does not invent state.
+        #
+        # "local vault mounted" and "taste vector restored" now come from
+        # refresh_dashboard, where the load actually happens and there is a
+        # real count to print. "scoring engine armed" is gone rather than
+        # relocated: nothing is armed at any particular moment, and the
+        # ENGINE row already reports readiness.
+        # Appended, not paced through ``boot()``. The boot gate holds
+        # ``_booting`` until its sequence finishes and queues every real event
+        # that arrives meanwhile; with a single line there is nothing to pace,
+        # and the gate only risks swallowing the genuine startup traffic that
+        # follows it. ``boot()`` stays for any caller with a real sequence.
+        self.system_log.append("boot", f"core {APP_VERSION} online")
         return sidebar
+
+    @staticmethod
+    def _hairline() -> QFrame:
+        line = QFrame()
+        line.setObjectName("railRule")
+        line.setFixedHeight(1)
+        return line
+
+    def _refresh_system_readout(self) -> None:
+        """Publish real machine state onto the rail.
+
+        Every row here corresponds to something the application actually
+        knows. Nothing is invented to fill the panel out.
+        """
+        readout = getattr(self, "system_readout", None)
+        if readout is None:
+            return
+        busy = self._engine_busy
+        readout.set_value("ENGINE", "BUSY" if busy else "READY", tone="busy" if busy else "ok")
+        # CHANGE [READOUT-HONESTY]: this said LIVE for anything that was not
+        # sample mode, including "you left the sample vault and connected
+        # nothing" - so the rail could read SOURCE LIVE directly above
+        # PROFILE -- and MAL OFFLINE, three rows apparently disagreeing about
+        # whether there was any data at all. LIVE now means what a reader
+        # takes it to mean: a real library is loaded.
+        profile_name = self._profile_name
+        if self.demo_mode:
+            source, source_tone = "SAMPLE", "warn"
+        elif profile_name:
+            source, source_tone = "LIVE", "ok"
+        else:
+            source, source_tone = "NONE", "idle"
+        readout.set_value("SOURCE", source, tone=source_tone)
+        readout.set_value("PROFILE", profile_name or "--", tone="ok" if profile_name else "idle")
+        connected = self._mal_connected
+        # "warn", not "idle". Offline is a state the user can act on; an
+        # absent profile is simply nothing yet. Both rendered identically
+        # before, so the cluster could not tell "not connected" from "not
+        # applicable" - and colour was the only thing distinguishing them.
+        readout.set_value(
+            "MAL", "ONLINE" if connected else "OFFLINE",
+            tone="ok" if connected else "warn",
+        )
 
     def _build_content_area(self) -> QWidget:
         content = QWidget()
@@ -449,7 +981,10 @@ class MainWindow(QMainWindow):
         banner_label = QLabel(WIZARD_TEXT.demo_banner)
         banner_label.setObjectName("demoBannerText")
         banner_button = QPushButton(WIZARD_TEXT.demo_banner_action)
-        banner_button.setProperty("buttonRole", "primary")
+        # Secondary, not primary: this is a standing notice, not the action
+        # the screen is asking for. Two solid amber buttons in the top 180px
+        # meant neither of them read as the primary one.
+        banner_button.setProperty("buttonRole", "secondary")
         banner_button.clicked.connect(self._leave_demo_mode)
         banner_layout.addWidget(banner_label)
         banner_layout.addWidget(banner_button)
@@ -479,6 +1014,18 @@ class MainWindow(QMainWindow):
                 )
                 self.recommendations_page.set_visible_states(DISCOVER_STATES)
                 self.recommendations_page.set_compact_header(True)
+                # Only Discover. My Library files what has already been
+                # decided, and another person's taste has no bearing on it.
+                self.recommendations_page.set_group_profiles_enabled(True)
+                self.recommendations_page.profile_requested.connect(
+                    self._resolve_group_profile
+                )
+                self.recommendations_page.profile_retry_requested.connect(
+                    self._retry_group_profile
+                )
+                self.recommendations_page.filters_changed.connect(
+                    self._on_discover_filters_changed
+                )
                 page = DiscoverPage(self.recommendations_page)
                 page.refresh_requested.connect(self.recommendations_requested.emit)
                 self.discover_page = page
@@ -490,6 +1037,21 @@ class MainWindow(QMainWindow):
                 self.library_page.set_visible_states(LIBRARY_STATES)
                 self.library_page.set_compact_header(True)
                 page = self.library_page
+            elif definition.page_id is PageId.PROFILE:
+                page = ProfilePage()
+                page.retry_requested.connect(self._load_taste_profile)
+                page.sample_requested.connect(self._show_sample_taste_profile)
+                page.metadata_filter_requested.connect(
+                    self._filter_discover_by_metadata
+                )
+                page.cover_requested.connect(self._request_aux_cover)
+                self.profile_page = page
+            elif definition.page_id is PageId.COMPARE:
+                page = ComparePage()
+                page.compare_requested.connect(self._start_comparison)
+                page.sample_requested.connect(self._show_sample_comparison)
+                page.cover_requested.connect(self._request_aux_cover)
+                self.compare_page = page
             elif definition.page_id is PageId.SETTINGS:
                 page = SettingsPage(
                     settings_service=self.settings_service,
@@ -509,6 +1071,10 @@ class MainWindow(QMainWindow):
             self.page_indexes[definition.page_id] = index
             self.page_widgets[definition.page_id] = page
         layout.addWidget(self.page_stack, 1)
+        # The page-change wipe rides on the stack itself, so it spans the
+        # page and nothing else. Bounded and opaque, unlike the whole-page
+        # fade it replaced.
+        self.page_wipe = ChannelWipe(self.page_stack)
         return content
 
     @staticmethod
@@ -582,6 +1148,11 @@ class MainWindow(QMainWindow):
             view.view_mode_changed.connect(self._persist_view_mode)
         # CHANGE [BUG2]: rebuild the sized widgets when the GUI scale changes.
         self.settings_page.gui_scale_changed.connect(self._on_gui_scale_changed)
+        self.settings_page.show_covers_changed.connect(self._on_show_covers_changed)
+        for view in self._recommendation_views():
+            view.artwork_retrieved.connect(
+                lambda title: self._log("retriev", f"artwork acquired · {title}")
+            )
         self.recommendations_page.more_requested.connect(
             lambda: self._start_more_recommendations(5)
         )
@@ -672,6 +1243,11 @@ class MainWindow(QMainWindow):
         # CHANGE [BUG1]: no progress window; the button and status line report it.
         return True
 
+    def _on_show_covers_changed(self, show_covers: bool) -> None:
+        """Artwork on or off, applied without re-running the whole settings."""
+        for view in self._recommendation_views():
+            view.set_show_covers(bool(show_covers))
+
     def _on_gui_scale_changed(self, factor: float) -> None:
         """CHANGE [BUG2]: cards and rows are built with fixed sizes, so a scale
         change has to rebuild them rather than just restyle."""
@@ -691,6 +1267,49 @@ class MainWindow(QMainWindow):
         except (AniRecError, OSError, TypeError, ValueError):
             # A preference is not worth interrupting the session over.
             return
+
+    def _publish_bundle_context(self) -> None:
+        """Give Discover what it needs to fold franchises, and only Discover.
+
+        My Library is a record of decisions the reader has already made about
+        individual titles. Collapsing three of them into "1 series" there
+        would hide the very thing that surface exists to show, so the library
+        explorer is handed the same context with bundling switched off.
+        """
+        directory = None
+        profile = self.active_profile
+        if profile is not None and self.profile_service is not None:
+            try:
+                directory = self.profile_service.directory(profile.profile_id)
+            except (AniRecError, OSError, TypeError, ValueError):
+                directory = None
+        context = self.bundle_context_service.load(directory)
+
+        feed = getattr(self, "recommendations_page", None)
+        if feed is not None:
+            feed.set_bundle_context(
+                context.graph, context.watched_mal_ids, enabled=True
+            )
+        library = getattr(self, "library_page", None)
+        if library is not None:
+            library.set_bundle_context({}, (), enabled=False)
+
+    def _publish_studio_names(self) -> None:
+        """Tell the taste sentence which of its ranked terms are studios.
+
+        The importance ranking mixes genres and studios in one list, which is
+        correct for scoring and wrong for a sentence: "You tend to enjoy
+        Samurai, Bandai Namco Pictures, Parody, Shaft" reads like a bug. The
+        explorer already keeps a catalogue of every studio it has actually
+        seen, so the split needs no new source of truth - only for the two
+        halves of the application to be introduced to each other.
+        """
+        names: set[str] = set()
+        for view in self._recommendation_views():
+            catalog = getattr(view, "metadata_catalog", None)
+            if catalog is not None:
+                names.update(catalog.studios)
+        self.discover_page.set_studio_names(names)
 
     def _recommendation_views(self):
         """Every explorer instance that should reflect the same library."""
@@ -721,6 +1340,14 @@ class MainWindow(QMainWindow):
                 gradient_start=settings.gradient_start,
                 gradient_end=settings.gradient_end,
             )
+        self._retint_icons()
+        profile_page = getattr(self, "profile_page", None)
+        if profile_page is not None:
+            profile_page.apply_scale()
+        self._log(
+            "render",
+            f"{settings.theme} palette bound · x{settings.gui_scale:.2f}",
+        )
         for view in self._recommendation_views():
             view.set_default_sort(settings.default_recommendation_sort)
             view.set_show_covers(settings.show_covers)
@@ -731,6 +1358,61 @@ class MainWindow(QMainWindow):
                     settings.include_hidden_recommendations
                 )
         self.advanced_operations_page.refresh_prerequisites()
+
+    # Human-readable names for the worker keys the controller emits.
+    _OPERATION_NAMES = {
+        "sync": "library uplink",
+        "recommendations": "scoring pass",
+        "more": "feed extension",
+    }
+
+    @staticmethod
+    def _operation_name(operation_key: str) -> str:
+        text = str(operation_key or "operation")
+        for token, name in MainWindow._OPERATION_NAMES.items():
+            if token in text:
+                return name
+        return text
+
+    def _log(self, tag: str, message: str) -> None:
+        """Write one line to the activity console, if it exists yet."""
+        console = getattr(self, "system_log", None)
+        if console is not None:
+            console.append(tag, message)
+
+    def _log_progress(self, tag: str, percent: float, message: str = "") -> None:
+        console = getattr(self, "system_log", None)
+        if console is not None:
+            console.progress(tag, percent, message)
+
+    def _retint_icons(self) -> None:
+        """Rebuild every themed glyph after the palette changes.
+
+        The rendered pixmaps are cached by colour, so the cache is dropped
+        first; otherwise the next request returns the previous theme's tint.
+        The cover placeholder is rendered the same way and goes with them.
+        """
+        clear_ui_icon_cache()
+        clear_cover_placeholder_cache()
+        console = getattr(self, "system_log", None)
+        if console is not None:
+            console.retint()
+        for definition in PAGE_DEFINITIONS:
+            button = self.navigation_buttons.get(definition.page_id)
+            if button is not None:
+                button.setIcon(themed_ui_icon(nav_icon_name(definition.page_id)))
+        # CHANGE [PROFILE]: Compare and Profile both paint state marks from
+        # the icon set, and Compare was not in this list, so its empty-state
+        # glyph kept the previous palette's tint until the page was rebuilt.
+        for page in (
+            self.discover_page,
+            self.compare_page,
+            self.profile_page,
+            *self._recommendation_views(),
+        ):
+            retint = getattr(page, "retint_icons", None)
+            if callable(retint):
+                retint()
 
     def _open_active_output_folder(self) -> None:
         if self.profile_service is None or self.active_profile is None:
@@ -746,9 +1428,16 @@ class MainWindow(QMainWindow):
         longer on screen. Discover carries the visible one.
         """
         self.home_page.show_activity(message, tone=tone)
-        self.discover_page.set_status(message)
+        self.discover_page.set_status(message, tone=tone)
+        self._log("error" if tone == "error" else "status", message)
 
     def _on_operation_started(self, operation_key: str) -> None:
+        if operation_key.startswith("cover:"):
+            return
+        self._active_engine_operations.add(operation_key)
+        self._engine_busy = bool(self._active_engine_operations)
+        self._refresh_system_readout()
+        self._log("engine", f"{self._operation_name(operation_key)} engaged")
         if operation_key.startswith("sync:"):
             self.home_page.set_operation_running(ACTION_SYNC, True)
             self.discover_page.set_refreshing(True)
@@ -759,6 +1448,12 @@ class MainWindow(QMainWindow):
             self.recommendations_page.set_more_running(True)
 
     def _on_operation_finished(self, operation_key: str) -> None:
+        if operation_key.startswith("cover:"):
+            return
+        self._active_engine_operations.discard(operation_key)
+        self._engine_busy = bool(self._active_engine_operations)
+        self._refresh_system_readout()
+        self._log("engine", f"{self._operation_name(operation_key)} resolved")
         if operation_key.startswith("sync:"):
             self.home_page.set_operation_running(ACTION_SYNC, False)
             self.discover_page.set_refreshing(False)
@@ -769,6 +1464,12 @@ class MainWindow(QMainWindow):
             self.recommendations_page.set_more_running(False)
 
     def _on_operation_result(self, operation_key: str, result: object) -> None:
+        if isinstance(result, CoverImageResult):
+            url = self._aux_cover_operations.pop(operation_key, None)
+            if url is not None:
+                self._aux_cover_data[url] = result.data
+                self._deliver_aux_cover(url, result.data)
+            return
         if not isinstance(result, PipelineResult):
             return
         if self.active_profile is None or self.result_service is None:
@@ -778,9 +1479,10 @@ class MainWindow(QMainWindow):
             return
         self.result_service.save_merged(self.active_profile.profile_id, result)
         if operation_key.startswith("sync:"):
+            self._taste_profile_dirty = True
             completed = result.user_stats.get("completed_count", 0)
             self._report_activity(
-                f"MAL data updated — {completed} completed titles synced.",
+                f"MAL data updated: {completed} completed titles synced.",
                 tone="success",
             )
         elif operation_key.startswith("more-recommendations:"):
@@ -796,6 +1498,9 @@ class MainWindow(QMainWindow):
         self.refresh_dashboard()
 
     def _on_operation_error(self, operation_key: str, error: object) -> None:
+        failed_cover = self._aux_cover_operations.pop(operation_key, None)
+        if failed_cover is not None:
+            self._aux_cover_attempted.discard(failed_cover)
         if operation_key.startswith("cover") or not isinstance(error, UserFacingError):
             return
         # An open modal wizard reports its own failures inline. Raising a second,
@@ -867,9 +1572,40 @@ class MainWindow(QMainWindow):
     def navigate_to(self, page_id: PageId | str) -> None:
         """Select a page and keep visual/navigation state synchronized."""
         resolved_page_id = PageId(page_id)
+        changed = self.page_stack.currentIndex() != self.page_indexes[resolved_page_id]
         self.page_stack.setCurrentIndex(self.page_indexes[resolved_page_id])
         for page_id, button in self.navigation_buttons.items():
             button.setChecked(page_id is resolved_page_id)
+        self._move_nav_marker(resolved_page_id)
+        if resolved_page_id is PageId.PROFILE and changed:
+            self._load_taste_profile()
+        if changed:
+            self._mark_page_change()
+
+    def _move_nav_marker(self, page_id: PageId) -> None:
+        """Send the rail's selection mark to the row that is now current."""
+        marker = getattr(self, "nav_marker", None)
+        button = self.navigation_buttons.get(page_id)
+        if marker is None or button is None:
+            return
+        # No guard on the target's geometry here. Before the rail is laid out
+        # a nav button reports the rail's full height rather than its own, so
+        # there is nothing to test for - the mark takes whatever it is given
+        # and NavMarker re-syncs itself when the rail lays out.
+        marker.move_to(button)
+
+    def _mark_page_change(self) -> None:
+        """Run the wipe across the top of the page that just came up.
+
+        Deliberately not an opacity fade over the page: that buffers the whole
+        surface every frame and measured at five to seven frames on the card
+        feed, which reads as a stutter. This is a two-pixel opaque strip and
+        costs nothing underneath it.
+        """
+        wipe = getattr(self, "page_wipe", None)
+        if wipe is None:
+            return
+        wipe.run()
 
     @property
     def current_page_id(self) -> PageId:

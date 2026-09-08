@@ -18,6 +18,13 @@ def test_release_version_launcher_and_spec_are_consistent(repo_root):
     assert 'version=str(version_info)' in spec
 
 
+def test_compare_frontend_assets_are_inside_the_packaged_resource_tree(repo_root):
+    resources = repo_root / "AniRec" / "gui" / "resources"
+
+    assert (resources / "icons" / "ui" / "nav-compare.svg").is_file()
+    assert (resources / "sample" / "sample_compatibility.json").is_file()
+
+
 def test_packaged_icon_contains_multiple_windows_icon_sizes(repo_root):
     icon = repo_root / "AniRec" / "gui" / "resources" / "icons" / "anirec.ico"
     payload = icon.read_bytes()
@@ -81,7 +88,7 @@ def test_second_computer_acceptance_tooling_is_hash_verified_and_non_destructive
     packager = (repo_root / "scripts" / "package_windows_acceptance.ps1").read_text(
         encoding="utf-8"
     )
-    template = (repo_root / "docs" / "USER_ACCEPTANCE_TEMPLATE.md").read_text(
+    template = (repo_root / "docs" / "release" / "ACCEPTANCE_TEMPLATE.md").read_text(
         encoding="utf-8"
     )
 

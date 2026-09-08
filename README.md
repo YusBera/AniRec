@@ -1,6 +1,6 @@
 # AniRec
 
-AniRec 1.3.0 is an open-source Windows desktop application that turns a MyAnimeList history into anime recommendations you can actually interrogate. Every score comes with a breakdown that adds up to it. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
+AniRec 1.4.0 is an open-source Windows desktop application that turns a MyAnimeList history into anime recommendations you can actually interrogate. Every score comes with a breakdown that adds up to it. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
 
 AniRec is unofficial and is not affiliated with or endorsed by MyAnimeList.
 
@@ -8,11 +8,13 @@ AniRec is unofficial and is not affiliated with or endorsed by MyAnimeList.
 
 The English desktop interface provides:
 
-- three surfaces: **Discover**, **My Library**, and **Settings**;
+- five surfaces: **Discover**, **My Library**, **My Profile**, **Compare**, and **Settings**;
 - a guided first run that links to the MyAnimeList API page, shows the exact redirect URI with a copy button, and explains every value it asks for;
 - a **look around with sample data** mode that needs no account at all;
 - recommendations scored from a learned taste profile, with a breakdown for each one that sums to the match percentage shown beside it;
 - a **Why these?** summary naming the genres driving the feed, including the ones AniRec has learned you avoid;
+- a local **My Profile** readout with rating, genre, studio, era, and seasonal statistics calculated from synced data;
+- a sample-backed **Compare** workspace for reviewing compatibility without presenting unavailable live data as real;
 - profile-local Liked, Not for me, and Watch Later collections keyed by MyAnimeList anime ID;
 - **Recommend 5 more** plus an automatic refill prompt when the feed is exhausted;
 - a single **Adventurousness** control in place of the sampler's internals;
@@ -110,7 +112,7 @@ The script builds [AniRec.spec](AniRec.spec) with PyInstaller and produces:
 dist\AniRec\AniRec.exe
 ```
 
-The `onedir` package includes the original application icon, light/dark QSS, placeholders, asset licensing, GPL-3.0 license, Qt runtime, and Python dependencies. `build/` and `dist/` are generated locally and ignored by Git. A `onefile` build is intentionally not shipped in 1.2.2.
+The `onedir` package includes the original application icon, light/dark QSS, placeholders, asset licensing, GPL-3.0 license, Qt runtime, and Python dependencies. `build/` and `dist/` are generated locally and ignored by Git. A `onefile` build is intentionally not shipped in 1.4.0.
 
 ## Command-line interface
 
@@ -163,7 +165,7 @@ AniRec stores writable data outside the program and repository under:
 | `cache\covers\` | Validated downloaded cover images |
 | `logs\` | Rotating, secret-redacted diagnostic logs |
 
-Client Secrets and OAuth tokens are protected by the current Windows user account and filesystem permissions, but 1.2.2 does not use Windows Credential Manager or another encrypted secret vault. Use **Settings → Data Management** for scoped cache, cover, or local-data deletion. Deletion requires an exact validated target and never follows an outside path.
+Client Secrets and OAuth tokens are protected by the current Windows user account and filesystem permissions, but 1.4.0 does not use Windows Credential Manager or another encrypted secret vault. Use **Settings → Data Management** for scoped cache, cover, or local-data deletion. Deletion requires an exact validated target and never follows an outside path.
 
 ## Tests
 
@@ -178,7 +180,7 @@ The suite uses mock and fault injection instead of a real account, and isolates 
 
 [tests/test_scoring_invariants.py](tests/test_scoring_invariants.py) states the properties the recommender must satisfy whatever the formula: that a match percentage does not depend on what else was ranked beside it, that the parts of an explanation add up to the score shown, that a genre you rate poorly is never presented as a reason to watch something, and that evidence tempers enthusiasm.
 
-The development-machine packaged-EXE matrix is recorded in [docs/EXE_SMOKE.md](docs/EXE_SMOKE.md).
+Packaging and acceptance evidence for past releases is recorded in [docs/release/HISTORY.md](docs/release/HISTORY.md).
 
 ## Troubleshooting
 
@@ -216,7 +218,7 @@ AniRec/
 │   ├── scoring/               # Taste profile, feature vocabulary, ranking
 │   └── services/              # UI-independent application services
 ├── tests/                     # Networkless regression and GUI smoke tests
-├── docs/                      # Screenshots, release notes, acceptance evidence
+├── docs/                      # Changelog, design handoffs, release evidence (start at docs/README.md)
 ├── packaging/                 # Windows version resource
 ├── scripts/build_windows.ps1  # Clean PyInstaller build
 ├── scripts/build_theme.py     # Regenerate the stylesheets from design tokens
@@ -234,10 +236,10 @@ AniRec is licensed under the [GNU General Public License v3.0](LICENSE).
 - Desktop GUI contribution: a PySide6 interface built on the original AniRec project
 - Original GUI assets and their licensing: [AniRec/gui/resources/ASSET_LICENSES.md](AniRec/gui/resources/ASSET_LICENSES.md)
 
-## Known limitations in 1.3.0
+## Known limitations in 1.4.0
 
 - The collaborative signal uses MyAnimeList's own recommendation edges. It is optional, cached, and absent by default until a run has walked the graph.
 - Live recommendations require a user-provided MyAnimeList Client ID and Secret, and a public anime list.
-- 1.3.0 was exercised on the development Windows 11 machine; a second Windows 10/11 computer acceptance run is still required.
+- 1.4.0 was exercised on the development Windows 11 machine; a second Windows 10/11 computer acceptance run is still required.
 - The package is unsigned and distributed as `onedir`; there is no installer, auto-update, code signing, or `onefile` artifact.
 - Local secrets are not stored in an encrypted operating-system credential vault.

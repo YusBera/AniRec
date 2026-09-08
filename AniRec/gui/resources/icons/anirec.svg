@@ -1,14 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <metadata>Original AniRec application icon, created for this GPL-3.0 project.</metadata>
-  <defs>
-    <linearGradient id="background" x1="24" y1="20" x2="232" y2="236" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F0958A"/>
-      <stop offset="1" stop-color="#C4503F"/>
-    </linearGradient>
-  </defs>
-  <rect width="256" height="256" rx="58" fill="#0B0B0F"/>
-  <path d="M43 178L105 54c9-18 35-18 44 0l64 124h-39l-14-29H94l-14 29H43z" fill="url(#background)"/>
-  <path d="M110 119h34l-17-37-17 37z" fill="#0B0B0F"/>
-  <circle cx="190" cy="66" r="19" fill="#E0685A"/>
-  <path d="M190 53v26M177 66h26" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+  <metadata>Original AniRec logo mark, created for this GPL-3.0 project.</metadata>
+  <rect width="256" height="256" fill="#070C09"/>
+  <rect x="11" y="11" width="234" height="234" fill="none" stroke="#1E2E24" stroke-width="3"/>
+  <path d="M11 30V11h19M226 11h19v19M245 226v19h-19M30 245H11v-19" fill="none" stroke="#2E4636" stroke-width="3"/>
+  <g shape-rendering="geometricPrecision">
+    <path fill-rule="evenodd" fill="#E2C489" d="M30 170 L74 52 H88 L132 170 H108 L99 146 H63 L54 170 Z M70 126 H92 L81 98 Z"/>
+    <rect x="142" y="52" width="22" height="118" fill="#E2C489"/>
+    <rect x="164" y="52" width="42" height="22" fill="#E2C489"/>
+    <rect x="184" y="52" width="22" height="62" fill="#E2C489"/>
+    <rect x="164" y="92" width="42" height="22" fill="#E2C489"/>
+    <path fill="#E2C489" d="M170 114 H192 L222 170 H200 Z"/>
+  </g>
+  <g shape-rendering="crispEdges">
+    <rect x="30" y="190" width="21" height="20" fill="#C6A15B"/>
+    <rect x="54" y="190" width="21" height="20" fill="#D8B570"/>
+    <rect x="78" y="190" width="21" height="20" fill="#E2C489"/>
+    <rect x="102" y="190" width="21" height="20" fill="#BFCB8A"/>
+    <rect x="126" y="190" width="21" height="20" fill="#8FD3A2"/>
+    <rect x="150" y="190" width="21" height="20" fill="#6FC6C0"/>
+    <rect x="174" y="190" width="21" height="20" fill="#23372C"/>
+    <rect x="198" y="190" width="21" height="20" fill="#182A21"/>
+  </g>
 </svg>

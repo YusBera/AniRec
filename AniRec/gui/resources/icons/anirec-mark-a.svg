@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <metadata>Original AniRec logo mark, created for this GPL-3.0 project.</metadata>
+  <rect width="256" height="256" fill="#070C09"/>
+  <rect x="11" y="11" width="234" height="234" fill="none" stroke="#1E2E24" stroke-width="3"/>
+  <path d="M11 30V11h19M226 11h19v19M245 226v19h-19M30 245H11v-19" fill="none" stroke="#2E4636" stroke-width="3"/>
+  <g transform="translate(128 111) scale(1.22) translate(-81 -111)">
+    <path fill-rule="evenodd" fill="#E2C489" d="M30 170 L74 52 H88 L132 170 H108 L99 146 H63 L54 170 Z M70 126 H92 L81 98 Z"/>
+  </g>
+  <g shape-rendering="crispEdges">
+    <rect x="58" y="196" width="20" height="22" fill="#C6A15B"/>
+    <rect x="81" y="196" width="20" height="22" fill="#D8B570"/>
+    <rect x="104" y="196" width="20" height="22" fill="#E2C489"/>
+    <rect x="127" y="196" width="20" height="22" fill="#BFCB8A"/>
+    <rect x="150" y="196" width="20" height="22" fill="#8FD3A2"/>
+    <rect x="173" y="196" width="20" height="22" fill="#6FC6C0"/>
+  </g>
+</svg>

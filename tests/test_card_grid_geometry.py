@@ -150,14 +150,39 @@ def test_cover_artwork_is_clipped_to_rounded_corners():
     assert image.pixelColor(60, 90).alpha() == 255, "the middle should be opaque"
 
 
-def test_cover_artwork_fills_the_frame_without_distortion():
-    """A wide source is centre-cropped, never squashed to fit."""
+def test_cover_artwork_fills_the_frame_without_letterboxing():
+    """Artwork covers the frame edge to edge; only the corners are cut away.
+
+    CHANGE [FILL]: this test used to assert the opposite - that a source with
+    the wrong aspect ratio was contained and letterboxed, leaving transparent
+    bands for the themed well to show through. Those bands were empty space
+    around the one thing a recommendation grid exists to show, and they meant
+    the match plate sat near the picture rather than on it. The invariant is
+    now the stronger one: whatever the source's shape, every pixel inside the
+    rounded frame is painted.
+    """
     create_application([])
     source = QPixmap(400, 100)
     source.fill(Qt.GlobalColor.blue)
 
     result = rounded_cover(source, 120, 180, 16)
+    image = result.toImage()
 
     assert result.width() == 120
     assert result.height() == 180
-    assert result.toImage().pixelColor(60, 90).alpha() == 255
+    # The two points that used to be letterbox are artwork now.
+    assert image.pixelColor(60, 10).alpha() == 255
+    assert image.pixelColor(60, 170).alpha() == 255
+    assert image.pixelColor(60, 90).alpha() == 255
+
+    # Nothing transparent anywhere except the rounded corners.
+    radius = 16
+    bare = [
+        (x, y)
+        for y in range(180)
+        for x in range(120)
+        if image.pixelColor(x, y).alpha() < 250
+        and radius <= x < 120 - radius
+        and radius <= y < 180 - radius
+    ]
+    assert not bare, f"{len(bare)} unpainted pixels away from the corners"

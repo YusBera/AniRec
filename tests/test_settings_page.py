@@ -4,6 +4,7 @@ import time
 
 from PySide6.QtWidgets import QMessageBox
 
+from AniRec.gui.instrument_widgets import SteppedSlider
 from AniRec.gui.main_window import MainWindow
 from AniRec.gui.settings_page import SettingsPage
 from AniRec.gui.workers import WorkerController
@@ -92,6 +93,8 @@ def test_all_recommendation_api_and_appearance_fields_round_trip_after_restart(
     assert page.recommendation_count_input.value() == 20
     assert page.candidate_pool_input.value() == 250
     assert page.randomness_input.value() == 7
+    assert isinstance(page.adventurousness_input, SteppedSlider)
+    assert page.adventurousness_input.property("technicalSlider") is True
     assert page.minimum_score_input.value() == 6.5
     assert page.seed_input.value() == 42
     assert page.default_sort_input.currentData() == "year"
@@ -259,7 +262,7 @@ def test_data_actions_confirm_exact_scope_reset_ui_and_preserve_outside_sentinel
     assert page.delete_data_scope(DataDeletionScope.CACHE)
     assert not (cache / "general.bin").exists()
     assert (covers / "cover.img").exists()
-    assert confirmed[-1].target == cache
+    assert confirmed[-1].target == cache.resolve()
     assert page.delete_data_scope(DataDeletionScope.COVERS)
     assert not covers.exists()
 
@@ -274,13 +277,50 @@ def test_data_actions_confirm_exact_scope_reset_ui_and_preserve_outside_sentinel
 
 
 def test_missing_client_id_save_error_names_the_required_field(system_temp_dir):
+    """A half-finished API configuration still names the field it needs.
+
+    CHANGE [DEMO-SAVE]: this used to press Save on a completely empty page and
+    expect the Client ID error, which pinned "Save always validates
+    credentials". That contract meant somebody looking around with sample data
+    could not change a single recommendation setting: ticking "Include NSFW
+    anime" and pressing Save answered with *"MAL client ID is required"* and
+    wrote nothing.
+
+    The invariant worth keeping is narrower and more useful - that a user who
+    is actually setting up API access is told which field is missing - so the
+    test now sets up that case: a secret typed, the ID left blank. The empty
+    page is covered by the test below.
+    """
     create_application([])
     page = SettingsPage(
         settings_service=SettingsService(root_override=system_temp_dir)
     )
 
+    page.client_secret_input.setText("a-secret-with-no-id")
+
     assert not page.save()
     assert "MAL client ID is required" in page.status_label.text()
+    page.close()
+
+
+def test_settings_are_savable_before_myanimelist_is_connected(system_temp_dir):
+    """The demo path can keep its own preferences.
+
+    Nothing about a content filter or a batch size needs credentials, and
+    requiring them made the whole Recommendation panel unreachable for anyone
+    who had not registered an API application yet.
+    """
+    create_application([])
+    service = SettingsService(root_override=system_temp_dir)
+    page = SettingsPage(settings_service=service)
+
+    before = service.load().pipeline.include_nsfw
+    page.include_nsfw_input.setChecked(not before)
+
+    assert page.save()
+    assert service.load().pipeline.include_nsfw is (not before)
+    # And it says so without pretending an account exists.
+    assert "not connected" in page.status_label.text().casefold()
     page.close()
 
 

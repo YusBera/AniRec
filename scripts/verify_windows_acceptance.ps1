@@ -1,6 +1,6 @@
 param(
     [switch]$Launch,
-    [string]$ExpectedVersion = "1.3.0"
+    [string]$ExpectedVersion = "1.4.0"
 )
 
 $ErrorActionPreference = "Stop"

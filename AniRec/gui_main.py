@@ -15,7 +15,7 @@ from .application.pipeline import PipelineOrchestrator
 from .errors import AuthError
 from .gui.main_window import MainWindow
 from .gui import stray_window_guard
-from .gui.resources import app_icon
+from .gui.resources import app_icon, load_bundled_fonts
 from .gui.texts import UI_TEXT
 from .gui.theme import ThemeManager
 from .infrastructure.logging_config import close_logger, configure_logging
@@ -58,6 +58,10 @@ def create_application(argv: Sequence[str] | None = None) -> QApplication:
     application.setOrganizationName(ORGANIZATION_NAME)
     application.setOrganizationDomain(ORGANIZATION_DOMAIN)
     QLocale.setDefault(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
+    # Before any widget is built: a stylesheet naming a family Qt has not
+    # registered silently falls back, and the fallback is what would then be
+    # measured by anything that lays out against the font.
+    load_bundled_fonts()
     application.setWindowIcon(app_icon())
     return application
 

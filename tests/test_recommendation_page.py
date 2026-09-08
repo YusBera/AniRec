@@ -171,10 +171,15 @@ def test_cover_requests_are_limited_to_visible_batch_instead_of_whole_collection
     page.set_recommendations(many)
     page.show()
     application.processEvents()
+    # Showing the page already runs one pass, so measure a pass rather than
+    # the running total: the constant bounds what a single pass may request,
+    # and the total is meant to grow as more of the feed is reached.
+    before = len(page._cover_attempted)
     page._request_visible_covers()
+    requested_this_pass = len(page._cover_attempted) - before
 
-    assert 0 < len(page._cover_attempted) <= page.MAX_COVER_REQUESTS_PER_PASS
-    assert len(page._cover_attempted) < len(many)
+    assert requested_this_pass <= page.MAX_COVER_REQUESTS_PER_PASS
+    assert 0 < len(page._cover_attempted) < len(many)
     page.close()
 
 
@@ -253,7 +258,9 @@ def test_feedback_moves_cards_between_real_taste_folders_and_updates_live_counts
     card.like_button.click()
     application.processEvents()
     assert service.load("profile-a").liked_mal_ids == frozenset((1,))
-    assert "1 liked" in page.feedback_summary_label.text()
+    # The summary is a status readout now, so its case is presentation.
+    # The invariant is that it reports the count.
+    assert "1 liked" in page.feedback_summary_label.text().casefold()
     assert "Alpha" not in titles(page.visible_models)
     assert page.liked_folder_action.text() == "Liked (1)"
     assert changed
@@ -261,8 +268,16 @@ def test_feedback_moves_cards_between_real_taste_folders_and_updates_live_counts
     page.library_tabs["liked"].click()
     application.processEvents()
     assert titles(page.visible_models) == ["Alpha"]
-    assert page._cards_by_key["mal:1"].like_button.text() == "Remove like"
-    assert page._cards_by_key["mal:1"].dislike_button.text() == "Move to Disliked"
+    # CHANGE [ICON-VERDICTS]: the verdict row is glyphs, so the state a label
+    # used to spell out lives in the accessible name - which is also the only
+    # place a screen reader could ever have read it from.
+    assert (
+        page._cards_by_key["mal:1"].like_button.accessibleName() == "Remove this like"
+    )
+    assert (
+        page._cards_by_key["mal:1"].dislike_button.accessibleName()
+        == "Move to Disliked"
+    )
     page._cards_by_key["mal:1"].dislike_button.click()
     application.processEvents()
     state = service.load("profile-a")
@@ -275,8 +290,11 @@ def test_feedback_moves_cards_between_real_taste_folders_and_updates_live_counts
     page.library_tabs["disliked"].click()
     application.processEvents()
     assert titles(page.visible_models) == ["Alpha"]
-    assert page._cards_by_key["mal:1"].like_button.text() == "Move to Liked"
-    assert page._cards_by_key["mal:1"].dislike_button.text() == "Remove dislike"
+    assert page._cards_by_key["mal:1"].like_button.accessibleName() == "Move to Liked"
+    assert (
+        page._cards_by_key["mal:1"].dislike_button.accessibleName()
+        == "Remove this dislike"
+    )
     page._cards_by_key["mal:1"].dislike_button.click()
     page.library_tabs["all"].click()
     application.processEvents()
@@ -339,12 +357,36 @@ def test_visible_library_tabs_allow_watch_later_to_be_reviewed_and_removed(
     assert titles(page.visible_models) == ["Alpha"]
     saved_card = page._cards_by_key["mal:1"]
     # Shortened for BUG2: the longer wording clipped at 75% GUI scale.
-    assert saved_card.watch_later_button.text() == "Saved"
+    assert (
+        saved_card.watch_later_button.accessibleName() == "Remove from Watch Later"
+    )
     assert saved_card.watch_later_button.isChecked()
     saved_card.watch_later_button.click()
     application.processEvents()
     assert not page.visible_models
-    assert page.library_tabs["watch-later"].text() == "Watch Later  0"
+    # CHANGE [CRT]: the tab labels are stencilled uppercase now - Qt has no
+    # text-transform, so the case lives in the string. What this test is for
+    # is the count going back to zero once the last saved item is removed, so
+    # it checks the label and the count separately rather than pinning one
+    # exact rendering of both.
+    watch_later_tab = page.library_tabs["watch-later"].text()
+    assert watch_later_tab.casefold().startswith("watch later")
+    assert watch_later_tab.split()[-1] == "0"
+    page.close()
+
+
+def test_library_never_enters_the_discover_autoload_state(system_temp_dir):
+    create_application([])
+    page = RecommendationExplorerPage(
+        state_service=RecommendationStateService(root_override=system_temp_dir)
+    )
+    page.set_visible_states(("liked", "watch-later", "disliked"))
+    page.set_more_available(True)
+    page.set_more_running(True)
+
+    assert not page._autoload_enabled
+    assert not page.more_button.isVisible()
+    assert not page.more_button.isEnabled()
     page.close()
 
 
@@ -391,4 +433,55 @@ def test_library_tabs_and_view_controls_fit_at_compact_desktop_width():
     assert page.cards_button.geometry().right() <= view_area
     assert page.list_button.geometry().right() <= view_area
     assert page.table_button.geometry().right() <= view_area
+    page.close()
+
+
+def test_a_cover_that_failed_to_download_is_asked_for_again(system_temp_dir):
+    """Addresses: covers that never appeared no matter how long you waited.
+
+    ``_request_cover`` refuses a url already in ``_cover_attempted``, and the
+    error handler used to drop only the operation mapping - so one transient
+    failure meant that card kept its placeholder for the rest of the session,
+    unrecoverable by scrolling, resizing or waiting.
+
+    It looked survivable because the detail dialog asks for
+    ``large_cover_url``, a different url that was never marked attempted, so
+    opening the breakdown fetched the artwork and made the feed look merely
+    slow rather than stuck.
+    """
+    create_application([])
+    page = RecommendationExplorerPage(
+        state_service=RecommendationStateService(root_override=system_temp_dir)
+    )
+    page.set_profile("profile")
+    page.set_view_mode(RecommendationViewMode.CARDS)
+    page.set_recommendations(recommendations())
+
+    url = "https://cdn.example.test/1.jpg"
+    page._cover_attempted.add(url)
+    page._cover_operation_urls["cover:test"] = url
+
+    page._on_worker_error("cover:test", RuntimeError("connection reset"))
+
+    assert url not in page._cover_attempted, "a failed cover must be retryable"
+    page.close()
+
+
+def test_a_dead_cover_url_stops_being_retried(system_temp_dir):
+    """A retry that never ends would re-request on every scroll for ever."""
+    create_application([])
+    page = RecommendationExplorerPage(
+        state_service=RecommendationStateService(root_override=system_temp_dir)
+    )
+    page.set_profile("profile")
+    page.set_view_mode(RecommendationViewMode.CARDS)
+    page.set_recommendations(recommendations())
+
+    url = "https://cdn.example.test/1.jpg"
+    for _attempt in range(page.MAX_COVER_ATTEMPTS):
+        page._cover_attempted.add(url)
+        page._cover_operation_urls["cover:test"] = url
+        page._on_worker_error("cover:test", RuntimeError("gone"))
+
+    assert url in page._cover_attempted
     page.close()

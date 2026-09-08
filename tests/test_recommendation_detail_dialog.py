@@ -6,7 +6,6 @@ from PySide6.QtGui import QImage
 from AniRec.gui.recommendation_detail_dialog import (
     DETAIL_COVER_HEIGHT,
     DETAIL_COVER_WIDTH,
-    NO_ALTERNATIVE_TITLES,
     NO_GENRE_CONTRIBUTIONS,
     RecommendationDetailDialog,
 )
@@ -64,10 +63,16 @@ def test_detail_dialog_renders_all_metadata_reason_and_scored_contributions():
     assert dialog.episodes_label.text() == "Episodes: 28 episodes"
     assert dialog.status_label.text() == "Status: Finished Airing"
     assert dialog.year_label.text() == "Airing year: 2023"
-    assert dialog.dates_label.text() == "Aired: 2023-09-29 — 2024-03-22"
+    assert dialog.dates_label.text() == "Aired: 2023-09-29 to 2024-03-22"
     assert dialog.synopsis_label.text().startswith("An elf mage")
     assert dialog.reason_label.text().startswith("Matches your interest")
     assert dialog.contributions_label.text() == "Fantasy: +52.25\nDrama: +21.50"
+    assert dialog.score_track.contributions == (
+        ("Fantasy", 52.25),
+        ("Drama", 21.5),
+    )
+    assert dialog.sum_total_label.text() == "73.75  →  94.2%"
+    assert dialog.synopsis_label.isHidden()
     assert dialog.scroll.widgetResizable()
     dialog.close()
 
@@ -93,7 +98,12 @@ def test_detail_dialog_fallbacks_never_show_raw_none_nan_or_collections():
         )
     )
 
-    assert dialog.alternative_titles_label.text() == NO_ALTERNATIVE_TITLES
+    # CHANGE [NO-NULL-PROSE]: a title with no alternative names hides the
+    # row rather than spending the line under the heading saying so.
+    assert dialog.alternative_titles_label.text() == ""
+    assert not dialog.alternative_titles_label.isVisible()
+    assert dialog.dates_label.text() == ""
+    assert not dialog.dates_label.isVisible()
     assert dialog.contributions_label.text() == NO_GENRE_CONTRIBUTIONS
     assert "None" not in rendered
     assert "nan" not in rendered.casefold()
@@ -143,4 +153,8 @@ def test_explorer_reuses_one_owned_dialog_across_repeated_open_close_cycles():
     assert page.detail_dialog is first_dialog
     assert page.detail_dialog.model is second_model
     assert page.detail_dialog.title_label.text() == "Second"
+    assert page.detail_dialog.navigation_label.text() == "02 / 02"
+    page.detail_dialog.next_requested.emit()
+    assert page.detail_dialog.model is first_model
+    assert page.detail_dialog.navigation_label.text() == "01 / 02"
     page.close()

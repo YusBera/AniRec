@@ -27,6 +27,7 @@ class OperationKind(str, Enum):
     API_TEST = "api-test"
     PROFILE = "profile"
     COVER = "cover"
+    PROFILE_LOOKUP = "profile-lookup"
     MORE_RECOMMENDATIONS = "more-recommendations"
 
 
@@ -94,6 +95,42 @@ class ProfileValidationWorker(BaseWorker):
     def execute(self) -> object:
         return self.profiles.add_public_profile(
             self.profile_reference,
+            self.client_id,
+            cancellation=self.cancellation_token,
+        )
+
+
+class PublicProfileLookupWorker(BaseWorker):
+    """Check that one public MyAnimeList list can be read, and nothing more.
+
+    ``ProfileValidationWorker`` beside this looks similar and is not
+    interchangeable: it *adds* the profile - writes a directory, saves a
+    profile.json, and makes it the active one. That is right for setup and
+    wrong here. Adding a friend to a group recommendation, or comparing
+    against them, must not silently switch whose library the application is
+    showing.
+
+    So this calls the validating half of the service on its own. The
+    exceptions it raises are the ones the interface needs to tell apart -
+    absent user, private list, rate limit, outage - and they reach the surface
+    through the standard error path rather than being flattened here.
+    """
+
+    def __init__(
+        self,
+        profiles: ProfileService,
+        username: str,
+        client_id: str,
+        **worker_options,
+    ) -> None:
+        super().__init__(**worker_options)
+        self.profiles = profiles
+        self.username = username
+        self.client_id = client_id
+
+    def execute(self) -> object:
+        return self.profiles.validate_public_profile(
+            self.username,
             self.client_id,
             cancellation=self.cancellation_token,
         )

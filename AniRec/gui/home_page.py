@@ -336,7 +336,7 @@ class HomePage(QWidget):
         strongest = sorted(genres, key=lambda item: item.importance_score, reverse=True)[:5]
         self.genre_list.clear()
         self.genre_list.addItems(
-            [f"{item.genre} — {item.importance_score:.1f}" for item in strongest]
+            [f"{item.genre}: {item.importance_score:.1f}" for item in strongest]
             or [DASHBOARD_TEXT.no_genres]
         )
         maximum = max((item.importance_score for item in strongest), default=1.0)
@@ -457,7 +457,7 @@ def _fit_home_cover(source: QPixmap) -> QPixmap:
     scaled = source.scaled(
         HOME_COVER_WIDTH,
         HOME_COVER_HEIGHT,
-        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.AspectRatioMode.KeepAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )
     canvas = QPixmap(HOME_COVER_WIDTH, HOME_COVER_HEIGHT)
