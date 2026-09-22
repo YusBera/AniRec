@@ -335,6 +335,12 @@ class RecommendationCard(QFrame):
     not_interested_requested = Signal(object)
     watch_later_requested = Signal(object)
 
+    external_opened = Signal(object)
+
+    def _open_activity_mal(self):
+        if open_mal_url(self.model.mal_url, opener=self._mal_opener):
+            self.external_opened.emit(self.model)
+
     def __init__(
         self,
         model: RecommendationViewModel,
@@ -541,7 +547,7 @@ class RecommendationCard(QFrame):
         self.mal_button.setAccessibleName("Open this anime on MyAnimeList")
         self.mal_button.setEnabled(bool(model.mal_url))
         self.mal_button.clicked.connect(
-            lambda: open_mal_url(self.model.mal_url, opener=self._mal_opener)
+            self._open_activity_mal
         )
         # Identity first, then the decision, then the supporting detail.
         #

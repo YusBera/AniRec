@@ -7,6 +7,7 @@ FEAT2 (badge colours follow the theme).
 from __future__ import annotations
 
 import hashlib
+from uuid import uuid4
 from time import monotonic
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -20,6 +21,7 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QAbstractItemView,
     QLineEdit,
     QButtonGroup,
@@ -42,6 +44,12 @@ from PySide6.QtWidgets import (
 )
 
 from ..models import Recommendation
+from ..services.recommendation_event_service import (
+    MODEL_VERSION,
+    RecommendationEventService,
+    ExposureTracker,
+    feed_fingerprint,
+)
 from ..services import (
     CoverImageResult,
     CoverImageService,
@@ -372,6 +380,11 @@ class RecommendationExplorerPage(QWidget):
         self.worker_controller = worker_controller
         self.cover_service = cover_service or CoverImageService()
         self.state_service = state_service or RecommendationStateService()
+        self.activity = RecommendationEventService(getattr(self.state_service, "_root_override", None))
+        self._activity_request = str(uuid4())
+        self._activity_model_version = MODEL_VERSION
+        self._activity_feed = feed_fingerprint((), self._activity_model_version)
+        self._exposures = ExposureTracker()
         self.profile_id: str | None = None
         self.local_state = RecommendationLocalState()
         self._models: tuple[RecommendationViewModel, ...] = ()
@@ -427,6 +440,109 @@ class RecommendationExplorerPage(QWidget):
             self.worker_controller.result_ready.connect(self._on_worker_result)
             self.worker_controller.error_occurred.connect(self._on_worker_error)
         self.set_recommendations(())
+        self._activity_timer = QTimer(self)
+        self._activity_timer.setInterval(250)
+        self._activity_timer.timeout.connect(self._poll_activity)
+        self._activity_timer.start()
+
+
+    def _sync_activity_controls(self):
+        enabled = bool(self.profile_id and not self._ephemeral)
+        self.activity_enabled_action.blockSignals(True)
+        self.activity_enabled_action.setChecked(enabled and self.activity.status(self.profile_id)["enabled"])
+        self.activity_enabled_action.setEnabled(enabled)
+        self.activity_clear_action.setEnabled(enabled)
+        self.activity_enabled_action.blockSignals(False)
+
+    def _set_activity_enabled(self, enabled):
+        if not self.profile_id or self._ephemeral:
+            self._sync_activity_controls()
+            return
+        try:
+            self.activity.set_enabled(self.profile_id, enabled)
+            self._exposures.reset()
+            self._activity_request = str(uuid4())
+            self.activity_button.setToolTip("Saved locally only; retained for up to 90 days and 50,000 events")
+        except OSError:
+            self.activity_button.setToolTip("Could not save the activity setting. Check local storage.")
+        self._sync_activity_controls()
+
+    def _clear_activity(self):
+        if self.profile_id and not self._ephemeral:
+            try:
+                self.activity.clear(self.profile_id)
+                self._exposures.reset()
+                self._activity_request = str(uuid4())
+                self.activity_button.setToolTip("Saved recommendation activity cleared")
+            except Exception:
+                self.activity_button.setToolTip("Could not clear activity. Check local storage.")
+
+    def _record_activity(self, model, action, position=None):
+        if not self.profile_id or self._ephemeral or model is None or model.mal_id is None:
+            return False
+        if position is None:
+            # Use the actual rendered order: folded franchise cards and table
+            # sorting can differ from the flat recommendation model list.
+            if self._view_mode is RecommendationViewMode.TABLE:
+                for row in range(self.table.rowCount()):
+                    cell = self.table.item(row, 0)
+                    shown = self._model_by_key.get(cell.data(Qt.ItemDataRole.UserRole)) if cell else None
+                    if shown and shown.mal_id == model.mal_id:
+                        position = row + 1
+                        break
+            elif self._view_mode is RecommendationViewMode.CARDS:
+                position = next((i + 1 for i, (_, shown) in enumerate(self._display_entries())
+                                 if not isinstance(shown, BundleViewModel) and shown.mal_id == model.mal_id), None)
+            else:
+                position = next((i + 1 for i, shown in enumerate(self._visible_models)
+                                 if shown.mal_id == model.mal_id), None)
+        # An item reached only through detail navigation has no feed position.
+        if position is None:
+            return False
+        return self.activity.record(self.profile_id, request_id=self._activity_request,
+            feed_id=self._activity_feed, action=action, mal_id=model.mal_id,
+            position=position, model_rank=model.rank,
+            surface="native_" + self._view_mode.value,
+            model_version=self._activity_model_version)
+
+    def _poll_activity(self):
+        visible = {}
+        if (self.profile_id and not self._ephemeral and self.isVisible()
+                and self.window().isActiveWindow() and QApplication.activeModalWidget() is None
+                and QApplication.activePopupWidget() is None
+                and not (self.detail_dialog and self.detail_dialog.isVisible())
+                and self.activity.status(self.profile_id)["enabled"]):
+            if self._view_mode is RecommendationViewMode.TABLE:
+                viewport = self.table.viewport()
+                for row in range(self.table.rowCount()):
+                    cell = self.table.item(row, 0)
+                    if not cell:
+                        continue
+                    rect = self.table.visualItemRect(self.table.item(row, 1))
+                    model = self._model_by_key.get(cell.data(Qt.ItemDataRole.UserRole))
+                    if model and model.mal_id and rect.height() > 0:
+                        overlap = rect.intersected(viewport.rect())
+                        if overlap.width() * overlap.height() >= rect.width() * rect.height() * .5:
+                            visible[(self._view_mode.value, model.mal_id)] = (model, row + 1)
+            else:
+                scroll = self.card_scroll if self._view_mode is RecommendationViewMode.CARDS else self.list_scroll
+                viewport = scroll.viewport()
+                widgets = self._cards_by_key if self._view_mode is RecommendationViewMode.CARDS else self._rows_by_key
+                ordered = sorted(widgets.values(), key=lambda w: (w.y(), w.x()))
+                for position, widget in enumerate(ordered, 1):
+                    # A collapsed franchise tile is not an impression of all its titles.
+                    if isinstance(widget, BundleCard) or not widget.isVisible():
+                        continue
+                    model = widget.model
+                    rect = widget.rect().translated(widget.mapTo(viewport, QPoint(0, 0)))
+                    overlap = rect.intersected(viewport.rect())
+                    if model.mal_id and rect.width() * rect.height() > 0:
+                        if overlap.width() * overlap.height() >= .5 * rect.width() * rect.height():
+                            visible[(self._view_mode.value, model.mal_id)] = (model, position)
+        for key in self._exposures.update(visible, monotonic()):
+            model, position = visible[key]
+            if self._record_activity(model, "impression", position):
+                self._exposures.acknowledge(key)
 
     @property
     def visible_models(self) -> tuple[RecommendationViewModel, ...]:
@@ -467,6 +583,10 @@ class RecommendationExplorerPage(QWidget):
         # user was mid-scroll, which is what read as flickering. An append is
         # not a refresh: nothing above the new cards changed.
         extended = len(models) > len(self._models) and models[: len(self._models)] == self._models
+        if not extended:
+            self._activity_request = str(uuid4())
+            self._exposures.reset()
+        self._activity_feed = feed_fingerprint(models, self._activity_model_version)
         self._models = models
         if not extended:
             self._sweep_feed()
@@ -480,6 +600,15 @@ class RecommendationExplorerPage(QWidget):
         self._selected_key = previous_key if previous_key in self._model_by_key else None
         self._populate_filter_options()
         self._apply_query()
+
+    def set_activity_model_version(self, value: str) -> None:
+        version = str(value or MODEL_VERSION).strip()[:200] or MODEL_VERSION
+        if version == self._activity_model_version:
+            return
+        self._activity_model_version = version
+        self._activity_request = str(uuid4())
+        self._exposures.reset()
+        self._activity_feed = feed_fingerprint(self._models, version)
 
     def set_more_available(self, available: bool, reason: str = "") -> None:
         self._more_available = bool(available)
@@ -539,6 +668,9 @@ class RecommendationExplorerPage(QWidget):
             return
         self._profile_loaded = True
         self.profile_id = profile_id
+        self._activity_request = str(uuid4())
+        self._exposures.reset()
+        self._sync_activity_controls()
         self.local_state = (
             self.state_service.load(profile_id)
             if profile_id is not None
@@ -887,6 +1019,17 @@ class RecommendationExplorerPage(QWidget):
         view_row.addWidget(self.feedback_summary_label)
         view_row.addStretch(1)
         view_row.addWidget(self.more_button)
+        self.activity_button = QPushButton("Activity")
+        self.activity_button.setToolTip("Optional recommendation activity stored on this device only")
+        menu = QMenu(self.activity_button)
+        self.activity_enabled_action = menu.addAction("Save activity on this device")
+        self.activity_enabled_action.setCheckable(True)
+        self.activity_enabled_action.toggled.connect(self._set_activity_enabled)
+        self.activity_clear_action = menu.addAction("Clear saved activity")
+        self.activity_clear_action.triggered.connect(self._clear_activity)
+        menu.aboutToShow.connect(self._sync_activity_controls)
+        self.activity_button.setMenu(menu)
+        view_row.addWidget(self.activity_button)
         self.filter_toggle_button = QPushButton("Filters")
         self.filter_toggle_button.setIcon(themed_ui_icon("filter"))
         self.filter_toggle_button.setObjectName("recommendationFilterToggle")
@@ -1894,6 +2037,7 @@ class RecommendationExplorerPage(QWidget):
             lambda _model, selected_key=key: self.select_key(selected_key)
         )
         row.details_requested.connect(self._open_details)
+        row.external_opened.connect(lambda model: self._record_activity(model, "external_open"))
         row.not_interested_requested.connect(self._toggle_hidden)
         row.watch_later_requested.connect(self._toggle_watch_later)
         row.cover_requested.connect(
@@ -2058,6 +2202,7 @@ class RecommendationExplorerPage(QWidget):
             lambda _model, selected_key=key: self.select_key(selected_key)
         )
         card.details_requested.connect(self._open_details)
+        card.external_opened.connect(lambda model: self._record_activity(model, "external_open"))
         card.not_interested_requested.connect(self._toggle_hidden)
         card.watch_later_requested.connect(self._toggle_watch_later)
         card.cover_requested.connect(
@@ -2347,6 +2492,7 @@ class RecommendationExplorerPage(QWidget):
                 model.mal_id,
                 wanted,
             )
+        self._record_activity(model, "dismiss" if wanted else "restore")
         self._update_feedback_summary()
         self._apply_query()
         self._sync_detail_local_state()
@@ -2366,6 +2512,7 @@ class RecommendationExplorerPage(QWidget):
                 model.mal_id,
                 wanted,
             )
+        self._record_activity(model, "watch_later_add" if wanted else "watch_later_remove")
         self._apply_query()
         self._sync_detail_local_state()
 
@@ -2407,6 +2554,7 @@ class RecommendationExplorerPage(QWidget):
         if self.detail_dialog is None:
             self.detail_dialog = RecommendationDetailDialog(self)
             self.detail_dialog.cover_requested.connect(self._request_detail_cover)
+            self.detail_dialog.external_opened.connect(lambda model: self._record_activity(model, "external_open"))
             self.detail_dialog.not_interested_requested.connect(self._toggle_hidden)
             self.detail_dialog.watch_later_requested.connect(self._toggle_watch_later)
             self.detail_dialog.previous_requested.connect(
@@ -2419,6 +2567,7 @@ class RecommendationExplorerPage(QWidget):
         self.detail_dialog.show()
         self.detail_dialog.raise_()
         self.detail_dialog.activateWindow()
+        self._record_activity(model, "detail_open")
 
     def _set_detail_model(self, model: RecommendationViewModel) -> None:
         if self.detail_dialog is None:
@@ -2456,7 +2605,9 @@ class RecommendationExplorerPage(QWidget):
             current_index = models.index(self.detail_dialog.model)
         except ValueError:
             current_index = 0
-        self._set_detail_model(models[(current_index + offset) % len(models)])
+        model = models[(current_index + offset) % len(models)]
+        self._set_detail_model(model)
+        self._record_activity(model, "detail_open")
 
     def _sync_detail_local_state(self) -> None:
         if self.detail_dialog is None or self.detail_dialog.model is None:

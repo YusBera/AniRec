@@ -1,5 +1,15 @@
 # AniRec migration handoff
 
+> **Historical migration record.** Start at `docs/START_HERE.md`. Current scope
+> and authority live in `docs/CURRENT_TASK.md` and `docs/DECISIONS.md`.
+
+> **Superseded in part, 2026-09-20.** AniRec is now web-first: the browser client
+> is the product, the PySide application is deprecated to a development tool, and
+> AniRec owns its accounts and catalogue. Read `AGENTS.md` and `docs/DECISIONS.md`
+> before this file. What follows is retained for its evidence and its record of how
+> the work was done; where it assumes a desktop-first product, the decisions
+> supersede it.
+
 **Latest continuation (2026-09-06): [Latest agent handoff](LATEST_AGENT_HANDOFF.md).**
 Read it first for the user's updated next-tab scope, required skills, selected
 Library-led concept, portrait-poster requirement, dirty-tree transfer checklist and
@@ -244,7 +254,7 @@ redirect PySide through FastAPI · rewrite recommendation or ML code · move
 inference to Rust · start mobile/Expo/PWA work · redesign Discover · introduce
 a remote production backend · delete the existing Python packaging path.
 
-PySide remains a working fallback throughout, because once migration starts it
+PySide remains a working developer fallback throughout, because once migration starts it
 is what every migrated page is checked against.
 
 ---

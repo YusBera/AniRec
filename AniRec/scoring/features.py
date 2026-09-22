@@ -4,11 +4,11 @@ One vocabulary is shared by the taste profile, the ranker, and the
 explanation, so a weight learned for a feature always refers to the same
 thing wherever it is used.
 
-MyAnimeList's v2 API returns genres, themes, and demographics together in a
-single ``genres`` array, so they share the ``genre`` namespace. Axes the API
-does keep separate get their own, and each is optional: a row that carries no
-studio simply contributes no ``studio`` token, which lets the extractor run
-unchanged before and after the catalogue gains those fields.
+AniRec preserves each name returned in MyAnimeList's ``genres`` array in one
+``genre`` namespace; it does not infer a separate theme or demographic class.
+Axes the API keeps separate get their own namespace, and each is optional: a
+row that carries no studio simply contributes no ``studio`` token, which lets
+the extractor run unchanged before and after the catalogue gains those fields.
 """
 
 from __future__ import annotations

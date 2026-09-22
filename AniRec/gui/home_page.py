@@ -66,7 +66,11 @@ class RecentRecommendationCard(QFrame):
         title = QLabel(recommendation.anime.display_title)
         title.setObjectName("homeRecommendationTitle")
         title.setWordWrap(True)
-        score = QLabel(f"{recommendation.match_score:.0f}% match")
+        score = QLabel(
+            f"{recommendation.match_score:.0f}% match"
+            if recommendation.match_score_available
+            else "AI-ranked recommendation"
+        )
         score.setObjectName("homeRecommendationScore")
         genres = QLabel(" · ".join(recommendation.anime.genres[:3]) or "Discover something new")
         genres.setObjectName("homeRecommendationMeta")

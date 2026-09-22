@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import random
 from collections.abc import Callable
+from datetime import date
 
 import pandas as pd
 
@@ -21,7 +23,16 @@ try:
         RankingParameters,
         RankingRequest,
     )
-    from ..scoring.engines import HeuristicRankingEngine
+    from ..scoring.engines import (
+        FallbackRankingEngine,
+        HeuristicRankingEngine,
+        OnnxSequenceRankingEngine,
+    )
+    from ..scoring.eligibility import (
+        EligibilityAudit,
+        EligibilityContext,
+        FinalEligibilityPolicy,
+    )
     from ..scoring.serialization import profile_to_frame
     from ..scoring.taste import build_taste_profile
 except ImportError:  # Compatibility with the S01 top-level test import path.
@@ -38,7 +49,16 @@ except ImportError:  # Compatibility with the S01 top-level test import path.
         RankingParameters,
         RankingRequest,
     )
-    from scoring.engines import HeuristicRankingEngine
+    from scoring.engines import (
+        FallbackRankingEngine,
+        HeuristicRankingEngine,
+        OnnxSequenceRankingEngine,
+    )
+    from scoring.eligibility import (
+        EligibilityAudit,
+        EligibilityContext,
+        FinalEligibilityPolicy,
+    )
     from scoring.serialization import profile_to_frame
     from scoring.taste import build_taste_profile
 
@@ -49,15 +69,27 @@ class RecommendationService:
         *,
         random_int: Callable[[int, int], int] = random.randint,
         ranker: RankingEngine | None = None,
+        eligibility_policy: FinalEligibilityPolicy | None = None,
     ) -> None:
         self._random_int = random_int
         self._ranker = ranker if ranker is not None else HeuristicRankingEngine()
+        self._eligibility_policy = eligibility_policy or FinalEligibilityPolicy()
         self._last_ranking_metadata: RankingEngineMetadata | None = None
+        self._last_eligibility_audit: EligibilityAudit | None = None
 
     @property
     def last_ranking_metadata(self) -> RankingEngineMetadata | None:
         """Provenance from the latest completed ranking operation."""
         return self._last_ranking_metadata
+
+    @property
+    def last_eligibility_audit(self) -> EligibilityAudit | None:
+        """Aggregate policy provenance from the candidates actually scored."""
+        return self._last_eligibility_audit
+
+    @property
+    def requires_user_history(self) -> bool:
+        return bool(getattr(self._ranker, "requires_user_history", False))
 
     def impute_missing_scores(self, completed: pd.DataFrame) -> pd.DataFrame:
         medians = calculate_genre_medians(completed)
@@ -83,6 +115,20 @@ class RecommendationService:
     ) -> pd.DataFrame:
         return filter_recommendation_candidates(completed, top_anime)
 
+    def candidate_catalog(
+        self,
+        *,
+        include_nsfw: bool = False,
+        as_of: date | None = None,
+    ) -> pd.DataFrame | None:
+        provider = getattr(self._ranker, "candidate_catalog", None)
+        if not callable(provider):
+            return None
+        rows = provider(include_nsfw=include_nsfw, as_of=as_of)
+        if rows is None:
+            return None
+        return pd.DataFrame.from_records(rows)
+
     def recommend(
         self,
         candidates: pd.DataFrame,
@@ -93,17 +139,72 @@ class RecommendationService:
         excluded_mal_ids: set[int] | frozenset[int] = frozenset(),
         excluded_titles: set[str] | frozenset[str] = frozenset(),
         collaborative_scores: dict[int, float] | None = None,
+        user_history: pd.DataFrame | None = None,
+        fallback_candidates: pd.DataFrame | None = None,
+        consumed_mal_ids: set[int] | frozenset[int] = frozenset(),
+        include_nsfw: bool = False,
+        as_of: date | None = None,
     ) -> pd.DataFrame:
         random_state = (
             settings.seed
             if settings.seed is not None
             else self._random_int(1, 1_000_000)
         )
+        history_records = (
+            tuple(user_history.to_dict("records"))
+            if user_history is not None
+            else ()
+        )
+        provider = getattr(self._ranker, "eligibility_context", None)
+        context = provider() if callable(provider) else EligibilityContext()
+        candidate_records, candidate_audit = self._eligibility_policy.apply(
+            tuple(candidates.to_dict("records")),
+            context=context,
+            user_history=history_records,
+            consumed_mal_ids=consumed_mal_ids,
+            excluded_mal_ids=excluded_mal_ids,
+            excluded_titles=excluded_titles,
+            include_nsfw=include_nsfw,
+            as_of=as_of,
+        )
+        fallback_records = None
+        fallback_audit = None
+        if fallback_candidates is not None:
+            fallback_records, fallback_audit = self._eligibility_policy.apply(
+                tuple(fallback_candidates.to_dict("records")),
+                context=context,
+                user_history=history_records,
+                consumed_mal_ids=consumed_mal_ids,
+                excluded_mal_ids=excluded_mal_ids,
+                excluded_titles=excluded_titles,
+                include_nsfw=include_nsfw,
+                as_of=as_of,
+            )
+        request_context: dict[str, object] = {
+            "eligibility": candidate_audit.as_dict(),
+        }
+        if fallback_records is not None:
+            request_context.update(
+                {
+                    "fallback_candidates": fallback_records,
+                    "fallback_candidate_columns": tuple(
+                        str(column) for column in fallback_candidates.columns
+                    ),
+                    "fallback_eligibility": fallback_audit.as_dict(),
+                }
+            )
         request = RankingRequest(
-            candidates=tuple(candidates.to_dict("records")),
+            candidates=candidate_records,
             taste_profile=tuple(genre_importance.to_dict("records")),
             candidate_columns=tuple(str(column) for column in candidates.columns),
             profile_columns=tuple(str(column) for column in genre_importance.columns),
+            user_history=history_records,
+            history_columns=(
+                tuple(str(column) for column in user_history.columns)
+                if user_history is not None
+                else ()
+            ),
+            context=request_context,
             parameters=RankingParameters(
                 recommendation_count=settings.recommendation_count,
                 candidate_pool_size=settings.candidate_pool_size,
@@ -118,10 +219,38 @@ class RecommendationService:
         )
         result = self._ranker.rank(request)
         self._last_ranking_metadata = result.metadata
+        eligibility_audit = (
+            fallback_audit
+            if result.metadata.fallback_used and fallback_audit is not None
+            else candidate_audit
+        )
+        self._last_eligibility_audit = eligibility_audit
         ranked = pd.DataFrame.from_records(
             result.ranked_candidates,
             columns=list(result.columns) or None,
         )
         ranked.attrs["ranking_engine"] = result.metadata
         ranked.attrs["ranking_warnings"] = result.warnings
+        ranked.attrs["eligibility_audit"] = eligibility_audit
         return ranked
+
+
+MODEL_BUNDLE_ENV = "ANIREC_MODEL_BUNDLE"
+
+
+def build_recommendation_service(
+    *,
+    model_bundle: str | None = None,
+    random_int: Callable[[int, int], int] = random.randint,
+) -> RecommendationService:
+    """Use the verified ONNX model when configured, with honest fallback."""
+    bundle = model_bundle or os.environ.get(MODEL_BUNDLE_ENV)
+    if not bundle:
+        return RecommendationService(random_int=random_int)
+    return RecommendationService(
+        random_int=random_int,
+        ranker=FallbackRankingEngine(
+            OnnxSequenceRankingEngine(bundle),
+            HeuristicRankingEngine(),
+        ),
+    )

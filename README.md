@@ -1,5 +1,10 @@
 # AniRec
 
+> **Project direction changed after the 1.3.0 desktop release.** The React web
+> client is now the primary product and PySide is a development tool. Start new
+> work at [docs/START_HERE.md](docs/START_HERE.md). Release instructions and
+> screenshots below describe the earlier desktop release unless stated otherwise.
+
 AniRec 1.3.0 is an open-source Windows desktop application that turns a MyAnimeList history into anime recommendations you can actually interrogate. Every score comes with a breakdown that adds up to it. It includes a PySide6 GUI, a reusable service pipeline, and the original command-line workflow.
 
 AniRec is unofficial and is not affiliated with or endorsed by MyAnimeList.
@@ -180,7 +185,8 @@ The suite uses mock and fault injection instead of a real account, and isolates 
 
 [tests/test_scoring_invariants.py](tests/test_scoring_invariants.py) states the properties the recommender must satisfy whatever the formula: that a match percentage does not depend on what else was ranked beside it, that the parts of an explanation add up to the score shown, that a genre you rate poorly is never presented as a reason to watch something, and that evidence tempers enthusiasm.
 
-Packaging and acceptance evidence for past releases is recorded in [docs/release/HISTORY.md](docs/release/HISTORY.md).
+Release notes and retained verification summaries are recorded in
+[docs/CHANGELOG.md](docs/CHANGELOG.md).
 
 ## Troubleshooting
 

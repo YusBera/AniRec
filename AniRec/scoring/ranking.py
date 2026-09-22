@@ -4,8 +4,10 @@ The final score is a weighted sum:
 
     final = w_content * content + w_quality * quality + w_collaborative * collab
 
-``content`` is the cosine between the user vector and the anime's feature
-vector, which keeps a broadly tagged title from outscoring a precise match
+``content`` is the cosine between the IDF-weighted user vector and the anime's
+binary feature vector. Rarity therefore shapes how much a learned preference
+matters without being applied again merely because the candidate carries the
+same tag. Cosine keeps a broadly tagged title from outscoring a precise match
 simply by carrying more tags. ``quality`` is a confidence weighted community
 score, so an obscure title with a handful of perfect ratings does not displace
 a widely loved one.
@@ -182,16 +184,17 @@ def score_candidate(
     content_weight, quality_weight, collaborative_weight = weights
 
     user_norm = profile.norm()
-    anime_norm = math.sqrt(
-        sum(profile.feature_idf(feature) ** 2 for feature in features)
-    )
+    # ``profile.weight`` is already affinity * IDF. Candidate membership is
+    # binary, so weighting this side by IDF as well would square rarity in the
+    # dot product and make a rare tag count twice.
+    anime_norm = math.sqrt(len(features))
 
     # Per-feature share of the cosine. These sum to the cosine exactly.
     per_feature: dict[str, float] = {}
     if user_norm > 0 and anime_norm > 0:
         divisor = user_norm * anime_norm
         for feature in features:
-            component = profile.weight(feature) * profile.feature_idf(feature)
+            component = profile.weight(feature)
             if component:
                 per_feature[feature] = component / divisor
     content = sum(per_feature.values())

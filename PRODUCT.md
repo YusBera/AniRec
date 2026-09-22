@@ -10,49 +10,64 @@ web
 
 Help people choose anime through recommendations they can inspect and understand,
 manage their library, understand their taste, and compare interests and ratings.
-This record scopes the React migration; PySide remains the shipping application.
+
+The web client is the product. Mobile follows it; a third-party recommendation
+API follows that. See `docs/PROJECT_DEFINITION.md` for the binding order.
 
 ## Operating Context
 
-React 18 and TypeScript consume a local FastAPI boundary over existing Python
-services. Discover is implemented as a browser proof of concept. Other desktop
-surfaces are being explored for migration. No Tauri shell is currently implemented.
+React 18 and TypeScript over a FastAPI boundary on the existing Python services.
+Discover, My Library, Profile, Compare and Settings are implemented in the
+browser workspace.
+
+The PySide application is deprecated and is being retired to a development and
+power-user tool (`docs/DECISIONS.md` D-004). It is not the shipping application
+and is not the visual authority for new work.
+
+The service layer behind the API still assumes one user in one process. Accounts,
+per-request identity, and an owned catalogue are the named gaps in
+`docs/ARCHITECTURE.md`.
 
 ## Capabilities and Constraints
 
 - Discover supports filtering, sorting, explanation inspection, saving for later,
   and setting prospects aside. Discover decisions are not ratings of unseen shows.
-- PySide supplies Library, Profile, Compare, and Settings reference surfaces.
+- A web surface that instructs the reader to install a desktop application is a
+  defect, not a limitation.
 - Profile and Compare include explicitly labelled bundled demonstration payloads;
   a demonstration is not evidence that a live backend capability exists.
 - Sample data must remain distinguishable and must not write to a real profile.
-- API schemas are generated from Python models; UI must not invent scores or
+- API schemas are generated from Python models; the UI must not invent scores or
   infer unavailable connection state from unrelated signals.
+- Recommendation and evidence rules are binding and live in `docs/DOMAIN_RULES.md`.
 
 ## Brand Commitments
 
-The user named PySide screens and AniRec handoffs as authority and authorized
-reimagining tab layouts while preserving the core purpose, theme, and feel.
-The user requested visual concepts before implementation for the other tabs.
+The established visual world - green-black ground, bone text, brass personal
+signals, aqua community and focus, compact typography, thin near-square borders,
+2:3 portrait posters - is preserved. `DESIGN.md` records it.
+
+That world is now carried by the web client, which owns its own layout decisions.
+Preserving the feel does not mean reproducing desktop geometry.
 
 ## Evidence on Hand
 
-`docs/design/MIGRATION_HANDOFF.md`, `docs/design/FRONTEND_HANDOFF.md`,
-`docs/design/REACT_PRESERVATION_AUDIT.md`, current `AniRec/gui` implementations,
-shared design tokens, and bundled sample payloads in `AniRec/gui/resources/sample`.
-Live isolated PySide captures supplement stale handoff geometry where necessary.
+`docs/design/RECOMMENDER_EVALUATION.md` for measured ranking behaviour.
+`docs/design/REACT_PRESERVATION_AUDIT.md`, `docs/design/FRONTEND_HANDOFF.md` and
+`docs/design/MIGRATION_HANDOFF.md` for the migration record. Shared design tokens
+and bundled sample payloads in `AniRec/gui/resources/sample`.
 
 ## Product Principles
 
 - Preserve useful workflows while improving clarity and layout.
 - Every score, status, comparison, and explanation must have evidence.
 - Keep real profile data separate from sample data and design demonstrations.
-- Make the interface usable with a keyboard and at narrow web viewport widths.
+- Make the interface usable with a keyboard, by a screen reader, and at 375px.
+- Do not recommend a continuation of a story the reader has not started.
 
-## Approved Direction and Open Decisions
+## Open Decisions
 
-The user selected concept C, the Library-led workspace, through the concept
-selection page. Anime artwork must be 2:3 portrait posters, including compact
-list/table thumbnails; square shapes in generated concepts are not authoritative.
-Live Profile/Compare service availability and full account setup in the browser
-must still be validated before those features are represented as production-ready.
+Recorded in `docs/DECISIONS.md`. The two that block launch messaging: what the
+match figure claims to mean (D-008), and which ranking engine ships (D-006).
+Account setup in the browser must exist before the product can be described as
+usable without the desktop application.

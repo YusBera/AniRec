@@ -21,7 +21,7 @@ from .mal_sync_service import (
 )
 from .onboarding_service import OnboardingService
 from .profile_service import ProfileService
-from .recommendation_service import RecommendationService
+from .recommendation_service import RecommendationService, build_recommendation_service
 from .recommendation_state_service import (
     RecommendationFeedback,
     RecommendationLocalState,
@@ -57,6 +57,7 @@ __all__ = [
     "OnboardingService",
     "ProfileService",
     "RecommendationService",
+    "build_recommendation_service",
     "RecommendationFeedback",
     "RecommendationLocalState",
     "RecommendationStateService",

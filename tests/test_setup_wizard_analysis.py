@@ -178,7 +178,7 @@ def test_analysis_failure_names_step_and_allows_retry(system_temp_dir):
     page.start_button.click()
     wait_until(application, lambda: page.start_button.isEnabled())
     assert not page.is_complete
-    assert "Failed during Fetch top anime" in page.status_label.text()
+    assert "Failed during Load candidate catalogue" in page.status_label.text()
     assert page.start_button.text() == WIZARD_TEXT.analysis_retry
 
     pipeline.fail = False

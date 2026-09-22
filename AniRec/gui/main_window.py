@@ -81,6 +81,7 @@ from ..services import (
     TasteFeedbackService,
     TokenStore,
 )
+from ..services.recommendation_event_service import activity_model_version
 from .advanced_operations_page import AdvancedOperationsPage
 from .about_page import AboutPage
 from .compare_page import ComparePage
@@ -508,6 +509,7 @@ class MainWindow(QMainWindow):
             # watch the feed respond is the point of looking around.
             view.set_profile(None)
             view.set_ephemeral(True)
+            view.set_activity_model_version(activity_model_version(result.user_stats))
             view.set_recommendations(result.recommendations)
         self.discover_page.set_genre_stats(result.genre_stats)
         self._publish_studio_names()
@@ -582,6 +584,9 @@ class MainWindow(QMainWindow):
         # given the same profile and the same recommendations.
         for view in self._recommendation_views():
             view.set_profile(profile.profile_id if profile else None)
+            view.set_activity_model_version(
+                activity_model_version(result.user_stats if result else {})
+            )
             view.set_recommendations(
                 display_result.recommendations if display_result else ()
             )

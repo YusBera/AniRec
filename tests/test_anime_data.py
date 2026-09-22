@@ -8,6 +8,13 @@ from core.mal_mapping import ANIME_FIELDS
 from errors import InvalidResponseError, NetworkError
 
 
+def test_requested_fields_exclude_mal_rank_and_popularity():
+    requested = set(ANIME_FIELDS.split(","))
+
+    assert "rank" not in requested
+    assert "popularity" not in requested
+
+
 class FakeResponse:
     def __init__(self, payload=None, error=None, json_error=None):
         self.payload = payload

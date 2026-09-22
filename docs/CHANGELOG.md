@@ -1,7 +1,7 @@
 # AniRec changelog
 
-Release notes for every shipped version, newest first.
-Packaging and acceptance evidence for superseded versions is in [release/HISTORY.md](release/HISTORY.md).
+Release notes and retained verification summaries for every shipped version,
+newest first.
 
 ---
 

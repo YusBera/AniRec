@@ -44,9 +44,15 @@ from ..application.pipeline import CancellationToken
 from ..models import PipelineProgress
 from ..presentation import recommendation_view_models
 from ..services import ApiConnectionService
+from ..services.recommendation_event_service import (
+    RecommendationEventService,
+    activity_model_version,
+    feed_fingerprint,
+)
 from .container import ApiContainer, build_container
 from .workspace import workspace_router
 from .models import (
+    ActivityStatus, ActivitySetting, ActivityEvent, ActivityReceipt,
     Catalogue,
     ErrorEnvelope,
     FeedbackRequest,
@@ -347,7 +353,50 @@ def create_app(
             catalogue=catalogue_to_dict(models),
             state=EMPTY_LOCAL_STATE if state is None else local_state_to_dict(state),
             user_stats=dict(result.user_stats),
+            activity_feed_id=feed_fingerprint(
+                models, activity_model_version(result.user_stats)
+            ),
         )
+
+    def activity_context():
+        profile = services.profiles.active_profile()
+        if profile is None:
+            raise HTTPException(status_code=409, detail="Connect a profile to save local activity.")
+        activity = RecommendationEventService(getattr(services.recommendation_state, "_root_override", None))
+        return activity, profile.profile_id
+
+    @app.get("/api/discover/activity", response_model=ActivityStatus)
+    def activity_status():
+        if services.profiles.active_profile() is None:
+            return ActivityStatus(enabled=False)
+        activity, profile = activity_context()
+        return ActivityStatus(**activity.status(profile))
+
+    @app.post("/api/discover/activity/settings", response_model=ActivityStatus)
+    def activity_settings(payload: ActivitySetting):
+        activity, profile = activity_context()
+        return ActivityStatus(**activity.set_enabled(profile, payload.enabled))
+
+    @app.delete("/api/discover/activity", response_model=ActivityStatus)
+    def activity_clear():
+        activity, profile = activity_context()
+        activity.clear(profile)
+        return ActivityStatus(**activity.status(profile))
+
+    @app.post("/api/discover/activity", response_model=ActivityReceipt)
+    def activity_event(payload: ActivityEvent):
+        activity, profile = activity_context()
+        feed = discover_feed(include_hidden=True)
+        if profile != payload.profile_id or feed.state_profile_id != profile or feed.ephemeral or feed.activity_feed_id != payload.feed_id:
+            return ActivityReceipt(recorded=False)
+        model = next((m for m in feed.recommendations if m.mal_id == payload.mal_id), None)
+        if model is None:
+            return ActivityReceipt(recorded=False)
+        return ActivityReceipt(recorded=activity.record(profile,
+            request_id=str(payload.request_id), event_id=str(payload.event_id),
+            feed_id=payload.feed_id, action=payload.action, mal_id=payload.mal_id,
+            position=payload.position, model_rank=model.rank, surface=payload.surface,
+            model_version=activity_model_version(feed.user_stats)))
 
     @app.post("/api/discover/feedback", response_model=FeedbackResponse)
     def discover_feedback(payload: FeedbackRequest) -> FeedbackResponse:

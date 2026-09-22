@@ -1,5 +1,12 @@
 # Latest agent handoff — Library-led workspace
 
+> **Superseded in part, 2026-09-20.** AniRec is now web-first: the browser client
+> is the product, the PySide application is deprecated to a development tool, and
+> AniRec owns its accounts and catalogue. Read `AGENTS.md` and `docs/DECISIONS.md`
+> before this file. What follows is retained for its evidence and its record of how
+> the work was done; where it assumes a desktop-first product, the decisions
+> supersede it.
+
 Updated 2026-09-07. Read this first. Prepared for review on another PC in
 `YusBera/AniRec`, branch `codex/library-led-workspace-handoff`, based on
 `feat/react-fastapi-boundary` at commit
@@ -17,7 +24,7 @@ not a deployment, packaged release, or merge into the original branch.
 
 ## Read order and binding decisions
 
-1. This file, then `PRODUCT.md` and `DESIGN.md`.
+1. `AGENTS.md` and its imported docs first, then this file, `PRODUCT.md` and `DESIGN.md`.
 2. `docs/design/LIBRARY_WORKSPACE_SPEC.md` and `WORKSPACE_FUNCTIONAL_EXTENSION.md`.
 3. `docs/design/REACT_PRESERVATION_AUDIT.md` and
    `reports/ui-tabs-concepts/README.md` for Discover preservation and concept provenance.
@@ -26,7 +33,8 @@ not a deployment, packaged release, or merge into the original branch.
 5. Current source and verification reports. `WORKSPACE_IMPLEMENTATION.md` describes
    the earlier bounded implementation; its read-only/sample-only limits are historical.
 
-Preserve PySide's visual authority and the existing Discover work. Concept C,
+Preserve the established visual world and the existing Discover work; the web
+client, not PySide, is now the visual authority (`docs/DECISIONS.md` D-004). Concept C,
 Library-led workspace, is approved as a composition reference. Do not reopen the
 A/B/C decision without a new reason from the user. Every anime image and fallback,
 including compact thumbnails, must be a **2:3 portrait poster**. Discover's reference

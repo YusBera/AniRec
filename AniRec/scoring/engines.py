@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import date
+import hashlib
+import json
+import math
+from pathlib import Path
+import random
 from time import perf_counter
 
 import pandas as pd
 
 try:
     from ..recommendation_system import rank_recommendations
+    from ..title_utils import normalize_title_key
     from .contracts import (
         RANKING_INPUT_SCHEMA_VERSION,
         RankingEngine,
@@ -16,8 +23,10 @@ try:
         RankingRequest,
         RankingResult,
     )
+    from .eligibility import EligibilityContext
 except ImportError:  # Compatibility with the sibling import path used by tests.
     from recommendation_system import rank_recommendations
+    from title_utils import normalize_title_key
     from scoring.contracts import (
         RANKING_INPUT_SCHEMA_VERSION,
         RankingEngine,
@@ -25,6 +34,7 @@ except ImportError:  # Compatibility with the sibling import path used by tests.
         RankingRequest,
         RankingResult,
     )
+    from scoring.eligibility import EligibilityContext
 
 
 class RankingEngineUnavailable(RuntimeError):
@@ -85,6 +95,498 @@ class HeuristicRankingEngine:
         )
 
 
+class OnnxSequenceRankingEngine:
+    """Rank AniRec candidates with a versioned AniRecTrainer SASRec bundle."""
+
+    engine_id = "sasrec-onnx"
+    feature_schema_version = "anirec-sasrec-history-v1"
+    requires_user_history = True
+
+    _TYPE_COMPLETED = 1
+    _TYPE_WATCHING = 2
+    _TYPE_WATCHING_NO_PROGRESS = 3
+    _TYPE_PLAN_TO_WATCH = 4
+    _TYPE_DROPPED = 5
+    _TYPE_ON_HOLD = 6
+    _TYPE_UNKNOWN = 7
+
+    def __init__(self, bundle: str | Path, *, session_factory=None) -> None:
+        self._bundle = Path(bundle).expanduser().resolve()
+        self._session_factory = session_factory
+        self._bundle_loaded = False
+        self._loaded = False
+
+    def candidate_catalog(
+        self,
+        *,
+        include_nsfw: bool = False,
+        as_of: date | None = None,
+    ) -> tuple[dict, ...]:
+        """Return the frozen, model-aligned catalogue eligible for serving."""
+        self._ensure_bundle_loaded()
+        cutoff = as_of or date.today()
+        rows = []
+        for position, source in enumerate(self._catalog):
+            if not bool(self._candidate_mask[position]):
+                continue
+            start_date = str(source.get("start_date") or "").strip()
+            try:
+                released = date.fromisoformat(start_date)
+            except ValueError:
+                continue
+            status = str(source.get("airing_status") or "").strip()
+            if released > cutoff or status.casefold() == "not yet aired":
+                continue
+            rating = str(source.get("content_rating") or "").strip()
+            if not include_nsfw and rating.startswith(("R+", "Rx")):
+                continue
+            mal_id = int(self._items[position])
+            episodes = self._positive_int(source.get("episodes"))
+            english = str(source.get("title_english") or "").strip() or None
+            rows.append(
+                {
+                    "Anime ID": mal_id,
+                    "Title": str(source.get("title") or "").strip(),
+                    "English Title": english,
+                    "Alternative Titles": [english] if english else [],
+                    "Genres": list(source.get("genres") or ()),
+                    "Mean Score": None,
+                    "Picture URL": None,
+                    "Large Picture URL": None,
+                    "Episodes": episodes,
+                    "Anime Status": status,
+                    "Start Date": start_date,
+                    "End Date": None,
+                    "Year": released.year,
+                    "Synopsis": None,
+                    "MAL URL": f"https://myanimelist.net/anime/{mal_id}",
+                    "Studios": list(source.get("studios") or ()),
+                    "Source": source.get("source"),
+                    "Media Type": source.get("media_type"),
+                    "Scoring Users": None,
+                    "Content Rating": rating or None,
+                    "Catalog Members": source.get("members"),
+                    "Catalog Popularity": source.get("popularity"),
+                }
+            )
+        return tuple(rows)
+
+    def eligibility_context(self) -> EligibilityContext:
+        """Expose versioned catalogue policy data without exposing model tensors."""
+        self._ensure_bundle_loaded()
+        return self._eligibility_context
+
+    @property
+    def engine_version(self) -> str:
+        if not self._loaded:
+            return "unloaded"
+        checkpoint = self._manifest.get("checkpoint", {})
+        return str(checkpoint.get("sha256") or "unknown")[:12]
+
+    def rank(self, request: RankingRequest) -> RankingResult:
+        if request.input_schema_version != RANKING_INPUT_SCHEMA_VERSION:
+            raise IncompatibleRankingEngine(
+                "The sequence engine does not support ranking input schema "
+                f"{request.input_schema_version!r}."
+            )
+        self._ensure_loaded()
+        if not request.user_history:
+            raise IncompatibleRankingEngine(
+                "The sequence model requires current MyAnimeList history."
+            )
+
+        import numpy as np
+
+        history_ids = self._known_history_ids(request.user_history)
+        inputs = self._history_inputs(request.user_history)
+        consumed_history_ids = self._consumed_history_ids(request.user_history)
+        started = perf_counter()
+        try:
+            logits = self._session.run(
+                ["logits"],
+                {
+                    "items": inputs[0],
+                    "types": inputs[1],
+                    "scores": inputs[2],
+                },
+            )[0]
+        except Exception as error:
+            raise RankingEngineUnavailable(
+                "The sequence model could not run in this environment."
+            ) from error
+        elapsed_ms = (perf_counter() - started) * 1000.0
+        scores = np.asarray(logits, dtype=np.float32)
+        if scores.shape != (1, len(self._items)) or not np.isfinite(scores).all():
+            raise RankingEngineUnavailable("The sequence model returned invalid scores.")
+
+        excluded_titles = {
+            key
+            for value in request.excluded_titles
+            if (key := normalize_title_key(value))
+        }
+        eligible = []
+        seen_candidates = set()
+        for row in request.candidates:
+            mal_id = self._positive_int(row.get("Anime ID"))
+            if mal_id is None or mal_id in history_ids or mal_id in request.excluded_mal_ids:
+                continue
+            if mal_id in seen_candidates:
+                continue
+            seen_candidates.add(mal_id)
+            position = self._position_by_mal_id.get(mal_id)
+            if position is None or not bool(self._candidate_mask[position]):
+                continue
+            prerequisites = self._prerequisites_by_position.get(position)
+            if prerequisites and prerequisites.isdisjoint(consumed_history_ids):
+                continue
+            if excluded_titles and normalize_title_key(row.get("Title")) in excluded_titles:
+                continue
+            mean_score = self._finite_float(row.get("Mean Score"))
+            if (
+                request.parameters.minimum_mean_score is not None
+                and (mean_score is None or mean_score < request.parameters.minimum_mean_score)
+            ):
+                continue
+            eligible.append(
+                (
+                    float(scores[0, position]),
+                    mean_score if mean_score is not None else -math.inf,
+                    mal_id,
+                    str(row.get("Title") or ""),
+                    dict(row),
+                )
+            )
+        if not eligible:
+            raise RankingEngineUnavailable(
+                "No current candidates are covered by the installed sequence model."
+            )
+
+        eligible.sort(key=lambda value: (-value[0], -value[1], value[2], value[3]))
+        pool_limit = max(
+            request.parameters.recommendation_count,
+            request.parameters.candidate_pool_size,
+        )
+        pool = eligible[:pool_limit]
+        sampling_limit = max(
+            request.parameters.recommendation_count,
+            round(len(pool) * request.parameters.randomness_factor / 10),
+        )
+        sampling_pool = pool[:sampling_limit]
+        if len(sampling_pool) > request.parameters.recommendation_count:
+            selected = random.Random(request.parameters.random_seed).sample(
+                sampling_pool, request.parameters.recommendation_count
+            )
+            selected.sort(key=lambda value: (-value[0], -value[1], value[2], value[3]))
+        else:
+            selected = sampling_pool
+        rank_by_mal_id = {value[2]: rank for rank, value in enumerate(eligible)}
+        ranked_rows = []
+        for raw_score, _mean, mal_id, _title, row in selected:
+            global_rank = rank_by_mal_id[mal_id]
+            row.update(
+                {
+                    "Recommendation Score": raw_score,
+                    "Match Score": 0.0,
+                    "Match Score Available": False,
+                    "Genre Contributions": [],
+                    "Contributing Genres": [],
+                    "Recommendation Reason": (
+                        "Sequential-model pick based on your MAL activity "
+                        f"(candidate rank {global_rank + 1})."
+                    ),
+                }
+            )
+            ranked_rows.append(row)
+        columns = tuple(dict.fromkeys(
+            (*request.candidate_columns, "Recommendation Score", "Match Score",
+             "Match Score Available",
+             "Genre Contributions", "Contributing Genres", "Recommendation Reason")
+        ))
+        return RankingResult(
+            ranked_candidates=tuple(ranked_rows),
+            columns=columns,
+            metadata=RankingEngineMetadata(
+                engine_id=self.engine_id,
+                engine_version=self.engine_version,
+                feature_schema_version=self.feature_schema_version,
+                explanation_type="sequence-score",
+                inference_ms=elapsed_ms,
+            ),
+            warnings=(
+                "MAL list update times approximate viewing order; the model score is not a calibrated match percentage.",
+                "Later-released entries with reciprocal MAL prequel/sequel relations require a consumed direct prequel.",
+            ),
+        )
+
+    def _ensure_loaded(self) -> None:
+        if self._loaded:
+            return
+        self._ensure_bundle_loaded()
+        try:
+            factory = self._session_factory
+            if factory is None:
+                import onnxruntime as ort
+
+                factory = lambda path: ort.InferenceSession(
+                    str(path), providers=["CPUExecutionProvider"]
+                )
+            self._session = factory(self._bundle / "model.onnx")
+            self._loaded = True
+        except RankingEngineUnavailable:
+            raise
+        except Exception as error:
+            raise RankingEngineUnavailable(
+                "The sequence model could not start in this environment."
+            ) from error
+
+    def _ensure_bundle_loaded(self) -> None:
+        if self._bundle_loaded:
+            return
+        try:
+            import numpy as np
+
+            manifest_path = self._bundle / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("bundle_version") != 3 or manifest.get("format") != "onnx":
+                raise ValueError("unsupported bundle manifest")
+            if not manifest.get("parity", {}).get("parity_pass"):
+                raise ValueError("bundle parity is not verified")
+            for name in (
+                "model.onnx",
+                "items.npy",
+                "candidate_mask.npy",
+                "prerequisites.npz",
+                "catalog.json",
+            ):
+                path = self._bundle / name
+                expected = manifest.get("files", {}).get(name, {}).get("sha256")
+                if not expected or self._sha256(path) != expected:
+                    raise ValueError(f"bundle hash mismatch: {name}")
+            items = np.load(self._bundle / "items.npy", allow_pickle=False)
+            candidate_mask = np.load(
+                self._bundle / "candidate_mask.npy", allow_pickle=False
+            )
+            if items.ndim != 1 or candidate_mask.shape != items.shape:
+                raise ValueError("bundle item arrays are incompatible")
+            expected_items = int(manifest.get("data", {}).get("n_items", -1))
+            if len(items) != expected_items or len(set(map(int, items))) != len(items):
+                raise ValueError("bundle item catalogue is invalid")
+            catalog = json.loads(
+                (self._bundle / "catalog.json").read_text(encoding="utf-8")
+            )
+            if (
+                not isinstance(catalog, list)
+                or len(catalog) != len(items)
+                or any(
+                    not isinstance(row, dict)
+                    or self._positive_int(row.get("anime_id")) != int(items[position])
+                    or not str(row.get("title") or "").strip()
+                    for position, row in enumerate(catalog)
+                )
+            ):
+                raise ValueError("bundle serving catalogue is invalid")
+            self._manifest = manifest
+            self._items = items.astype(np.int64, copy=False)
+            self._candidate_mask = candidate_mask.astype(bool, copy=False)
+            self._catalog = tuple(catalog)
+            self._position_by_mal_id = {
+                int(mal_id): position for position, mal_id in enumerate(self._items)
+            }
+            prerequisite_data = np.load(
+                self._bundle / "prerequisites.npz", allow_pickle=False
+            )
+            candidate = prerequisite_data["candidate"]
+            prequel = prerequisite_data["prequel"]
+            if (
+                candidate.ndim != 1
+                or prequel.shape != candidate.shape
+                or ((candidate < 0) | (candidate >= len(items))).any()
+                or ((prequel < 0) | (prequel >= len(items))).any()
+                or (candidate == prequel).any()
+            ):
+                raise ValueError("bundle prerequisite relations are invalid")
+            prerequisites_by_position = {}
+            for candidate_position, prequel_position in zip(candidate, prequel):
+                prerequisites_by_position.setdefault(
+                    int(candidate_position), set()
+                ).add(int(self._items[int(prequel_position)]))
+            self._prerequisites_by_position = {
+                key: frozenset(value)
+                for key, value in prerequisites_by_position.items()
+            }
+            files = manifest.get("files", {})
+            catalogue_fingerprint = ":".join(
+                str(files.get(name, {}).get("sha256") or "missing")[:12]
+                for name in ("catalog.json", "candidate_mask.npy", "prerequisites.npz")
+            )
+            prerequisite_ids = {
+                int(self._items[position]): frozenset(prequels)
+                for position, prequels in self._prerequisites_by_position.items()
+            }
+            self._eligibility_context = EligibilityContext(
+                catalog_version=f"onnx-v3:{catalogue_fingerprint}",
+                catalog_by_mal_id={
+                    int(self._items[position]): dict(row)
+                    for position, row in enumerate(self._catalog)
+                },
+                covered_mal_ids=frozenset(
+                    int(self._items[position])
+                    for position in range(len(self._items))
+                    if bool(self._candidate_mask[position])
+                ),
+                prerequisites_by_mal_id=prerequisite_ids,
+                strict_release_dates=True,
+            )
+            self._sequence_length = int(manifest.get("contract", {}).get(
+                "sequence_length", manifest.get("model", {}).get("maxlen", 0)
+            ))
+            if self._sequence_length <= 0:
+                raise ValueError("bundle sequence length is invalid")
+            self._bundle_loaded = True
+        except RankingEngineUnavailable:
+            raise
+        except Exception as error:
+            raise RankingEngineUnavailable(
+                "The installed sequence-model bundle is unavailable or invalid."
+            ) from error
+
+    def _known_history_ids(self, history) -> set[int]:
+        return {
+            mal_id
+            for row in history
+            if (mal_id := self._positive_int(row.get("Anime ID"))) is not None
+        }
+
+    def _consumed_history_ids(self, history) -> set[int]:
+        consumed = set()
+        for row in history:
+            mal_id = self._positive_int(row.get("Anime ID"))
+            if mal_id is None:
+                continue
+            episodes = self._nonnegative_int(row.get("Episodes Watched"))
+            event_type = self._interaction_type(
+                row.get("Status"), episodes, row.get("Is Rewatching")
+            )
+            if event_type in {self._TYPE_COMPLETED, self._TYPE_WATCHING}:
+                consumed.add(mal_id)
+        return consumed
+
+    def _history_inputs(self, history):
+        import numpy as np
+
+        events = []
+        seen = set()
+        for row in history:
+            mal_id = self._positive_int(row.get("Anime ID"))
+            dense_position = self._position_by_mal_id.get(mal_id)
+            if dense_position is None:
+                continue
+            if mal_id in seen:
+                raise IncompatibleRankingEngine(
+                    "MyAnimeList history contains duplicate anime IDs."
+                )
+            seen.add(mal_id)
+            updated_at = str(row.get("Updated At") or "").strip()
+            if not updated_at:
+                raise IncompatibleRankingEngine(
+                    "MyAnimeList history is missing update timestamps."
+                )
+            episodes = self._nonnegative_int(row.get("Episodes Watched"))
+            score = self._bounded_score(row.get("User Score"))
+            event_type = self._interaction_type(
+                row.get("Status"), episodes, row.get("Is Rewatching")
+            )
+            # AniRecTrainer orders equal timestamps by MAL anime ID.
+            events.append((updated_at, mal_id, dense_position + 1, event_type, score))
+        if not events:
+            raise IncompatibleRankingEngine(
+                "No history entries are covered by the installed sequence model."
+            )
+        events.sort(key=lambda value: (value[0], value[1]))
+        events = events[-self._sequence_length :]
+        inputs = [np.zeros((1, self._sequence_length), dtype=np.int64) for _ in range(3)]
+        start = self._sequence_length - len(events)
+        for offset, event in enumerate(events, start=start):
+            inputs[0][0, offset] = event[2]
+            inputs[1][0, offset] = event[3]
+            inputs[2][0, offset] = event[4]
+        return tuple(inputs)
+
+    def _interaction_type(self, status, episodes: int, rewatch) -> int:
+        if self._truthy(rewatch):
+            return self._TYPE_WATCHING
+        key = str(status or "").strip().casefold().replace("-", "_").replace(" ", "_")
+        if key == "completed":
+            return self._TYPE_COMPLETED
+        if key == "watching":
+            return self._TYPE_WATCHING if episodes > 0 else self._TYPE_WATCHING_NO_PROGRESS
+        if key == "plan_to_watch":
+            return self._TYPE_PLAN_TO_WATCH
+        if key == "dropped":
+            return self._TYPE_DROPPED
+        if key == "on_hold":
+            return self._TYPE_ON_HOLD
+        return self._TYPE_UNKNOWN
+
+    @staticmethod
+    def _positive_int(value) -> int | None:
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
+    @staticmethod
+    def _nonnegative_int(value) -> int:
+        try:
+            number = int(value)
+        except (TypeError, ValueError) as error:
+            raise IncompatibleRankingEngine(
+                "MyAnimeList history contains invalid episode progress."
+            ) from error
+        if number < 0:
+            raise IncompatibleRankingEngine(
+                "MyAnimeList history contains negative episode progress."
+            )
+        return number
+
+    @staticmethod
+    def _bounded_score(value) -> int:
+        try:
+            score = int(value)
+        except (TypeError, ValueError) as error:
+            raise IncompatibleRankingEngine(
+                "MyAnimeList history contains an invalid personal score."
+            ) from error
+        if not 0 <= score <= 10:
+            raise IncompatibleRankingEngine(
+                "MyAnimeList history contains a personal score outside 0..10."
+            )
+        return score
+
+    @staticmethod
+    def _truthy(value) -> bool:
+        if isinstance(value, str):
+            return value.strip().casefold() in {"1", "true", "yes"}
+        return bool(value)
+
+    @staticmethod
+    def _finite_float(value) -> float | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) else None
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while block := handle.read(8 << 20):
+                digest.update(block)
+        return digest.hexdigest()
+
+
 class FallbackRankingEngine:
     """Try a preferred engine and fall back only for availability failures.
 
@@ -99,11 +601,49 @@ class FallbackRankingEngine:
         self._preferred = preferred
         self._fallback = fallback
 
+    @property
+    def requires_user_history(self) -> bool:
+        return bool(getattr(self._preferred, "requires_user_history", False))
+
+    def candidate_catalog(self, **kwargs):
+        provider = getattr(self._preferred, "candidate_catalog", None)
+        if not callable(provider):
+            return None
+        try:
+            return provider(**kwargs)
+        except RankingEngineUnavailable:
+            return None
+
+    def eligibility_context(self) -> EligibilityContext:
+        provider = getattr(self._preferred, "eligibility_context", None)
+        if not callable(provider):
+            return EligibilityContext()
+        try:
+            return provider()
+        except RankingEngineUnavailable:
+            return EligibilityContext()
+
     def rank(self, request: RankingRequest) -> RankingResult:
         try:
             return self._preferred.rank(request)
         except RankingEngineUnavailable as error:
-            result = self._fallback.rank(request)
+            fallback_request = request
+            fallback_candidates = request.context.get("fallback_candidates")
+            if fallback_candidates is not None:
+                fallback_context = dict(request.context)
+                if "fallback_eligibility" in fallback_context:
+                    fallback_context["eligibility"] = fallback_context[
+                        "fallback_eligibility"
+                    ]
+                fallback_request = replace(
+                    request,
+                    candidates=tuple(fallback_candidates),
+                    candidate_columns=tuple(
+                        request.context.get("fallback_candidate_columns") or ()
+                    ),
+                    context=fallback_context,
+                )
+            result = self._fallback.rank(fallback_request)
             return replace(
                 result,
                 metadata=replace(

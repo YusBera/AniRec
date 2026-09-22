@@ -35,7 +35,7 @@ def test_progress_dialog_maps_step_and_determinate_values():
 
     dialog.apply_progress(PipelineProgress("fetch_top", "ignored", 2, 5, True))
 
-    assert dialog.step_label.text() == "Fetch top anime"
+    assert dialog.step_label.text() == "Load candidate catalogue"
     assert dialog.progress_bar.minimum() == 0
     assert dialog.progress_bar.maximum() == 5
     assert dialog.progress_bar.value() == 2
@@ -69,7 +69,7 @@ def test_progress_dialog_filters_operations_and_cancel_button_stops_worker():
 
     controller.start("sync:p1", ProgressSlowWorker())
     wait_until(application, lambda: dialog.cancel_button.isEnabled())
-    assert dialog.step_label.text() == "Fetch top anime"
+    assert dialog.step_label.text() == "Load candidate catalogue"
 
     dialog.cancel_button.click()
     assert dialog.cancel_button.text() == UI_TEXT.progress_cancelling

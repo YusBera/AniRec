@@ -507,9 +507,11 @@ class RecommendationDetailDialog(QDialog):
             source.fill(Qt.GlobalColor.transparent)
         self.cover_label.setPixmap(_fit_detail_cover(source))
 
+    external_opened = Signal(object)
+
     def _open_mal(self) -> None:
-        if self.model is not None:
-            open_mal_url(self.model.mal_url, opener=self._mal_opener)
+        if self.model is not None and open_mal_url(self.model.mal_url, opener=self._mal_opener):
+            self.external_opened.emit(self.model)
 
 
 def _fit_detail_cover(source: QPixmap) -> QPixmap:

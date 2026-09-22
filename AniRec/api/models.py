@@ -18,7 +18,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from uuid import UUID
 
 
 class ApiModel(BaseModel):
@@ -126,6 +127,7 @@ class FeedResponse(ApiModel):
     catalogue: Catalogue
     state: LocalState
     user_stats: dict[str, Any]
+    activity_feed_id: str = ""
 
 
 FeedbackAction = Literal["hidden", "watch_later", "sentiment"]
@@ -140,6 +142,32 @@ class FeedbackRequest(ApiModel):
     sentiment: Sentiment | None = None
     genres: tuple[str, ...] = ()
     title: str = ""
+
+
+class ActivityStatus(ApiModel):
+    enabled: bool
+    local_only: bool = True
+    retention_days: int = 90
+
+
+class ActivitySetting(ApiModel):
+    enabled: bool
+
+
+class ActivityEvent(ApiModel):
+    profile_id: str = Field(min_length=1, max_length=200)
+    event_id: UUID
+    request_id: UUID
+    feed_id: str = Field(pattern="^[a-f0-9]{64}$")
+    action: Literal["impression", "detail_open", "external_open", "watch_later_add", "watch_later_remove", "dismiss", "restore"]
+    mal_id: int = Field(gt=0)
+    position: int = Field(gt=0, le=100000)
+    model_rank: int | None = Field(default=None, gt=0)
+    surface: Literal["web_cards"]
+
+
+class ActivityReceipt(ApiModel):
+    recorded: bool
 
 
 class FeedbackResponse(ApiModel):

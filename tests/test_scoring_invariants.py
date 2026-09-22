@@ -13,6 +13,7 @@ model that had stopped measuring preference at all.
 
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 
@@ -164,6 +165,26 @@ def test_repeating_a_tag_does_not_raise_a_title():
     )
     scores = dict(zip(*_rank(candidates, weights)[["Anime ID", "Recommendation Score"]].values.T))
     assert scores[2] == pytest.approx(scores[1])
+
+
+def test_rarity_weight_is_applied_once_in_the_content_cosine():
+    """A candidate's binary feature vector must not square user-side IDF."""
+    from scoring.ranking import score_candidate
+    from scoring.taste import TasteProfile
+
+    profile = TasteProfile(
+        affinities={"genre:Rare": 1.0, "genre:Common": 1.0},
+        idf={"genre:Rare": 4.0, "genre:Common": 1.0},
+    )
+
+    scored = score_candidate(
+        {"Genres": ["Rare", "Common"]},
+        profile,
+    )
+
+    expected = (4.0 + 1.0) / (math.sqrt(4.0**2 + 1.0**2) * math.sqrt(2.0))
+    assert scored.content_score == pytest.approx(expected)
+    assert scored.content_score < 1.0
 
 
 def test_raising_a_weight_never_lowers_a_title_carrying_it():

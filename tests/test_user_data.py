@@ -153,3 +153,46 @@ def test_completed_anime_skips_malformed_records(monkeypatch):
     )
     result = user_data.get_user_completed_animes("fixture-user", "fake-token")
     assert result["Title"].tolist() == ["Valid Fixture"]
+
+
+def test_full_history_preserves_sequence_model_fields(monkeypatch):
+    calls = []
+
+    def fake_get(url, headers, params, timeout):
+        calls.append(params)
+        return FakeResponse(
+            {
+                "data": [
+                    {
+                        "node": {"id": 7, "title": "History Fixture"},
+                        "list_status": {
+                            "status": "watching",
+                            "score": 9,
+                            "num_episodes_watched": 3,
+                            "is_rewatching": True,
+                            "updated_at": "2026-09-18T12:00:00+00:00",
+                        },
+                    }
+                ],
+                "paging": {},
+            }
+        )
+
+    monkeypatch.setattr(user_data.requests, "get", fake_get)
+
+    result = user_data.get_user_anime_history("fixture-user", "fake-token")
+
+    assert result.to_dict("records") == [
+        {
+            "Anime ID": 7,
+            "Title": "History Fixture",
+            "Status": "watching",
+            "User Score": 9,
+            "Episodes Watched": 3,
+            "Is Rewatching": True,
+            "Updated At": "2026-09-18T12:00:00+00:00",
+        }
+    ]
+    assert calls == [
+        {"fields": "list_status", "limit": 1000, "sort": "list_updated_at"}
+    ]

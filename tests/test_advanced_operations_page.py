@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from AniRec.application.pipeline import CANDIDATE_CATALOGUE_FILENAME
 from AniRec.gui.advanced_operations_page import ADVANCED_OPERATIONS, AdvancedOperationsPage
 from AniRec.gui.workers import WorkerController
 from AniRec.gui_main import create_application
@@ -104,7 +105,9 @@ def test_file_prerequisites_unlock_in_dependency_order(system_temp_dir):
     assert page.widgets["genre_importance"].run_button.isEnabled()
     assert not page.widgets["generate_candidates"].run_button.isEnabled()
 
-    (directory / "top_anime.csv").write_text("Title,Genres\n", encoding="utf-8")
+    (directory / CANDIDATE_CATALOGUE_FILENAME).write_text(
+        "Title,Genres\n", encoding="utf-8"
+    )
     page.refresh_prerequisites()
     assert page.widgets["generate_candidates"].run_button.isEnabled()
     assert not page.widgets["generate_recommendations"].run_button.isEnabled()
@@ -122,7 +125,7 @@ def test_each_action_uses_the_expected_worker_and_reaches_terminal_status(system
     directory = profiles.directory(profile.profile_id)
     for name in (
         "completed_anime.csv",
-        "top_anime.csv",
+        CANDIDATE_CATALOGUE_FILENAME,
         "recommendation_candidates.csv",
         "genre_importance.csv",
     ):
@@ -169,7 +172,7 @@ def test_output_open_rejects_paths_outside_profile_and_opens_verified_file(
     opened = []
     profiles, profile, settings = state(system_temp_dir)
     directory = profiles.directory(profile.profile_id)
-    output = directory / "top_anime.csv"
+    output = directory / CANDIDATE_CATALOGUE_FILENAME
     output.write_text("fixture", encoding="utf-8")
     page = AdvancedOperationsPage(
         orchestrator=FakeOrchestrator(),
@@ -187,4 +190,26 @@ def test_output_open_rejects_paths_outside_profile_and_opens_verified_file(
     page._result_outputs["fetch_top"] = sentinel
     assert not page.open_output("fetch_top")
     assert sentinel.read_text(encoding="utf-8") == "do not touch"
+    page.close()
+
+
+def test_installed_catalogue_step_does_not_require_a_mal_client_id(system_temp_dir):
+    create_application([])
+    profiles, profile, _settings = state(system_temp_dir)
+
+    class NoClientSettings:
+        def load(self):
+            return AppSettings()
+
+    page = AdvancedOperationsPage(
+        orchestrator=FakeOrchestrator(),
+        profile_service=profiles,
+        settings_service=NoClientSettings(),
+        auth_service=FakeAuthService(),
+    )
+    page.set_profile(profile)
+
+    assert page.widgets["fetch_top"].run_button.isEnabled()
+    assert not page.widgets["fetch_completed"].run_button.isEnabled()
+
     page.close()

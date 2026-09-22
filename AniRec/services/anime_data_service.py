@@ -9,11 +9,11 @@ import pandas as pd
 try:
     from ..anime_data import get_top_anime
     from ..infrastructure.mal_client import MALClient
-    from ..user_data import get_user_completed_animes
+    from ..user_data import get_user_anime_history, get_user_completed_animes
 except ImportError:  # Compatibility with the S01 top-level test import path.
     from anime_data import get_top_anime
     from infrastructure.mal_client import MALClient
-    from user_data import get_user_completed_animes
+    from user_data import get_user_anime_history, get_user_completed_animes
 
 
 class AnimeDataService:
@@ -23,11 +23,13 @@ class AnimeDataService:
         http_get: Callable | None = None,
         top_fetcher: Callable = get_top_anime,
         completed_fetcher: Callable = get_user_completed_animes,
+        history_fetcher: Callable = get_user_anime_history,
         client: MALClient | None = None,
     ) -> None:
         self._client = client or MALClient(http_get=http_get)
         self._top_fetcher = top_fetcher
         self._completed_fetcher = completed_fetcher
+        self._history_fetcher = history_fetcher
 
     def fetch_top_anime(
         self,
@@ -57,6 +59,24 @@ class AnimeDataService:
         cancellation_token=None,
     ) -> pd.DataFrame:
         return self._completed_fetcher(
+            username,
+            access_token,
+            client_id=client_id,
+            include_nsfw=include_nsfw,
+            client=self._client,
+            cancellation=cancellation_token,
+        )
+
+    def fetch_user_history(
+        self,
+        username: str,
+        access_token: str | None = None,
+        *,
+        client_id: str | None = None,
+        include_nsfw: bool = False,
+        cancellation_token=None,
+    ) -> pd.DataFrame:
+        return self._history_fetcher(
             username,
             access_token,
             client_id=client_id,

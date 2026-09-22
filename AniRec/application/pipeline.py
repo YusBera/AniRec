@@ -12,7 +12,7 @@ import pandas as pd
 
 try:
     from ..core.mal_mapping import anime_from_row
-    from ..errors import CancelledError, DataError
+    from ..errors import AniRecError, CancelledError, DataError
     from ..genre_utils import parse_genres
     from ..infrastructure.csv_storage import CsvStorage
     from ..models import (
@@ -38,7 +38,7 @@ try:
     from ..title_utils import normalize_title_key
 except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
     from core.mal_mapping import anime_from_row
-    from errors import CancelledError, DataError
+    from errors import AniRecError, CancelledError, DataError
     from genre_utils import parse_genres
     from infrastructure.csv_storage import CsvStorage
     from models import (
@@ -77,13 +77,21 @@ SYNC_STEP_IDS = ("fetch_top", "fetch_completed")
 SINGLE_STEP_IDS = (OAUTH_STEP_ID, *FULL_PIPELINE_STEP_IDS)
 STEP_LABELS = {
     OAUTH_STEP_ID: "Connect MyAnimeList account",
-    "fetch_top": "Fetch top anime",
+    # The stable step id is retained for API compatibility; the operation now
+    # loads the installed AniRec catalogue and only uses MAL ranking as an
+    # explicitly labelled legacy fallback when no catalogue is installed.
+    "fetch_top": "Load candidate catalogue",
     "fetch_completed": "Fetch completed anime",
     "impute_scores": "Handle missing scores",
     "genre_importance": "Calculate genre importance",
     "generate_candidates": "Generate recommendation candidates",
     "generate_recommendations": "Generate recommendations",
 }
+
+CANDIDATE_CATALOGUE_FILENAME = "candidate_catalogue.csv"
+CATALOGUE_SOURCE_COLUMN = "Candidate Catalogue Source"
+OWNED_CATALOGUE_SOURCE = "installed-model-catalogue"
+LEGACY_MAL_CATALOGUE_SOURCE = "mal-ranking-legacy"
 
 
 def _default_clock() -> datetime:
@@ -138,7 +146,7 @@ class PipelineOrchestrator:
         progress_callback: Callable[[PipelineProgress], None] | None = None,
         cancellation_token: CancellationToken | None = None,
     ) -> PipelineResult:
-        """Fetch and atomically persist the two MAL source datasets."""
+        """Persist the candidate catalogue and current MAL user datasets."""
         token = cancellation_token or CancellationToken()
         profile = self._profiles.resolve_profile(username)
         directory = self._profiles.directory(profile.profile_id, create=True)
@@ -147,13 +155,9 @@ class PipelineOrchestrator:
 
         self._emit(progress_callback, "fetch_top", 1, len(SYNC_STEP_IDS))
         token.raise_if_cancelled()
-        top_anime = self._anime_data.fetch_top_anime(
-            limit=settings.top_anime_limit,
-            include_nsfw=settings.include_nsfw,
-            **credentials,
-            cancellation_token=token,
+        candidate_catalogue = self._load_candidate_catalogue(
+            settings, token, credentials=credentials
         )
-        self._require_nonempty(top_anime, "MyAnimeList returned no top anime data.")
         token.raise_if_cancelled()
         self._emit(progress_callback, "fetch_completed", 2, len(SYNC_STEP_IDS))
         token.raise_if_cancelled()
@@ -164,12 +168,18 @@ class PipelineOrchestrator:
             cancellation_token=token,
         )
         self._require_nonempty(completed, "MyAnimeList returned no completed anime data.")
+        history = self._fetch_user_history(
+            username, settings, credentials, token
+        )
         token.raise_if_cancelled()
-        top_path, completed_path = self._storage.write_batch(
-            (
-                (top_anime, directory / "top_anime.csv"),
-                (completed, directory / "completed_anime.csv"),
-            ),
+        sources = [
+            (candidate_catalogue, directory / CANDIDATE_CATALOGUE_FILENAME),
+            (completed, directory / "completed_anime.csv"),
+        ]
+        if history is not None and not history.empty:
+            sources.append((history, directory / "user_history.csv"))
+        generated = self._storage.write_batch(
+            tuple(sources),
             cancellation_check=token.raise_if_cancelled,
         )
         self._profiles.mark_synced(profile)
@@ -177,11 +187,14 @@ class PipelineOrchestrator:
         return PipelineResult(
             user_stats={
                 "username": username,
-                "top_anime_count": len(top_anime),
+                "candidate_catalogue_count": len(candidate_catalogue),
+                "candidate_catalogue_source": self._catalogue_source(
+                    candidate_catalogue
+                ),
                 "completed_count": len(completed),
                 "rated_count": self._rated_count(completed),
             },
-            generated_files=(str(top_path), str(completed_path)),
+            generated_files=tuple(str(path) for path in generated),
             started_at=started_at,
             completed_at=self._timestamp(),
         )
@@ -204,13 +217,9 @@ class PipelineOrchestrator:
 
         self._emit(progress_callback, "fetch_top", 1, 6)
         token.raise_if_cancelled()
-        top_anime = self._anime_data.fetch_top_anime(
-            limit=settings.top_anime_limit,
-            include_nsfw=settings.include_nsfw,
-            **credentials,
-            cancellation_token=token,
+        candidate_catalogue = self._load_candidate_catalogue(
+            settings, token, credentials=credentials
         )
-        self._require_nonempty(top_anime, "MyAnimeList returned no top anime data.")
         token.raise_if_cancelled()
 
         self._emit(progress_callback, "fetch_completed", 2, 6)
@@ -222,11 +231,17 @@ class PipelineOrchestrator:
             cancellation_token=token,
         )
         self._require_nonempty(completed, "MyAnimeList returned no completed anime data.")
+        history = self._fetch_user_history(
+            username, settings, credentials, token
+        )
         token.raise_if_cancelled()
 
         self._emit(progress_callback, "impute_scores", 3, 6)
         token.raise_if_cancelled()
         imputed = self._recommendations.impute_missing_scores(completed)
+        fallback_candidates = self._recommendations.create_candidates(
+            imputed, candidate_catalogue
+        )
         token.raise_if_cancelled()
 
         self._emit(progress_callback, "genre_importance", 4, 6)
@@ -235,14 +250,16 @@ class PipelineOrchestrator:
         # frame. Feeding filled-in scores back in made AniRec measure its own
         # guesses and counted unrated titles toward every genre's share.
         genre_importance = self._recommendations.calculate_genre_importance(
-            completed, top_anime
+            completed, candidate_catalogue
         )
         self._require_nonempty(genre_importance, "No genre importance scores were generated.")
         token.raise_if_cancelled()
 
         self._emit(progress_callback, "generate_candidates", 5, 6)
         token.raise_if_cancelled()
-        candidates = self._recommendations.create_candidates(imputed, top_anime)
+        candidates = self._recommendations.create_candidates(
+            imputed, candidate_catalogue
+        )
         self._require_nonempty(candidates, "No recommendation candidates were generated.")
         token.raise_if_cancelled()
 
@@ -258,19 +275,29 @@ class PipelineOrchestrator:
             genre_adjustments=genre_adjustments,
             excluded_mal_ids=set(excluded_mal_ids) | franchise_ids,
             collaborative_scores=collaborative,
+            user_history=history,
+            fallback_candidates=fallback_candidates,
+            consumed_mal_ids=self._mal_ids(completed),
+            include_nsfw=settings.include_nsfw,
+            as_of=self._clock().date(),
         )
         self._require_nonempty(ranked, "No recommendations were generated.")
+        ranking_metadata = ranked.attrs.get("ranking_engine")
+        eligibility_audit = ranked.attrs.get("eligibility_audit")
         token.raise_if_cancelled()
         recommendation_path = directory / f"{profile.profile_id}_recommendations.csv"
+        outputs = [
+            (candidate_catalogue, directory / CANDIDATE_CATALOGUE_FILENAME),
+            (completed, directory / "completed_anime.csv"),
+            (imputed, directory / "completed_anime_imputed.csv"),
+            (genre_importance, directory / "genre_importance.csv"),
+            (candidates, directory / "recommendation_candidates.csv"),
+            (ranked, recommendation_path),
+        ]
+        if history is not None and not history.empty:
+            outputs.append((history, directory / "user_history.csv"))
         generated_paths = self._storage.write_batch(
-            (
-                (top_anime, directory / "top_anime.csv"),
-                (completed, directory / "completed_anime.csv"),
-                (imputed, directory / "completed_anime_imputed.csv"),
-                (genre_importance, directory / "genre_importance.csv"),
-                (candidates, directory / "recommendation_candidates.csv"),
-                (ranked, recommendation_path),
-            ),
+            tuple(outputs),
             cancellation_check=token.raise_if_cancelled,
         )
         self._profiles.mark_synced(profile)
@@ -282,7 +309,15 @@ class PipelineOrchestrator:
                 "completed_count": len(completed),
                 "rated_count": self._rated_count(completed),
                 "candidate_count": len(candidates),
+                "candidate_catalogue_count": len(candidate_catalogue),
+                "candidate_catalogue_source": self._catalogue_source(
+                    candidate_catalogue
+                ),
                 "recommendation_count": len(ranked),
+                **self._ranking_user_stats(
+                    ranking_metadata,
+                    eligibility_audit,
+                ),
             },
             generated_files=tuple(str(path) for path in generated_paths),
             started_at=started_at,
@@ -317,6 +352,10 @@ class PipelineOrchestrator:
             directory / "genre_importance.csv",
             required_columns=["Genre", "Importance_Score"],
         )
+        history = self._read_user_history(directory)
+        completed = self._read_completed(directory)
+        candidate_catalogue = self._read_candidate_catalogue(directory)
+        fallback_candidates = candidates
         excluded_ids = {
             item.anime.mal_id
             for item in existing_recommendations
@@ -342,8 +381,15 @@ class PipelineOrchestrator:
             genre_adjustments=genre_adjustments,
             excluded_mal_ids=excluded_ids,
             excluded_titles=excluded_titles,
+            user_history=history,
+            fallback_candidates=fallback_candidates,
+            consumed_mal_ids=self._mal_ids(completed),
+            include_nsfw=settings.include_nsfw,
+            as_of=self._clock().date(),
         )
         self._require_nonempty(ranked, "No unseen recommendations remain in the candidate pool.")
+        ranking_metadata = ranked.attrs.get("ranking_engine")
+        eligibility_audit = ranked.attrs.get("eligibility_audit")
         token.raise_if_cancelled()
         new_recommendations = self._recommendation_models(ranked)
         combined = tuple(existing_recommendations) + new_recommendations
@@ -355,6 +401,15 @@ class PipelineOrchestrator:
             user_stats={
                 "recommendation_count": len(combined),
                 "added_recommendation_count": len(new_recommendations),
+                "candidate_catalogue_count": len(candidate_catalogue),
+                "candidate_catalogue_source": self._catalogue_source(
+                    candidate_catalogue
+                ),
+                "candidate_snapshot_count": len(candidates),
+                **self._ranking_user_stats(
+                    ranking_metadata,
+                    eligibility_audit,
+                ),
             },
             started_at=started_at,
             completed_at=self._timestamp(),
@@ -384,14 +439,20 @@ class PipelineOrchestrator:
             return self._step_result(started_at, user_stats={"oauth_connected": 1})
 
         if step_id == "fetch_top":
-            frame = self._anime_data.fetch_top_anime(
-                limit=settings.top_anime_limit,
-                include_nsfw=settings.include_nsfw,
-                **self._checked_credentials(token),
-                cancellation_token=token,
+            frame = self._load_candidate_catalogue(
+                settings,
+                token,
             )
-            self._require_nonempty(frame, "MyAnimeList returned no top anime data.")
-            return self._write_step(frame, directory / "top_anime.csv", started_at, token)
+            return self._write_step(
+                frame,
+                directory / CANDIDATE_CATALOGUE_FILENAME,
+                started_at,
+                token,
+                user_stats={
+                    "candidate_catalogue_count": len(frame),
+                    "candidate_catalogue_source": self._catalogue_source(frame),
+                },
+            )
 
         if step_id == "fetch_completed":
             frame = self._anime_data.fetch_completed_anime(
@@ -401,6 +462,22 @@ class PipelineOrchestrator:
                 cancellation_token=token,
             )
             self._require_nonempty(frame, "MyAnimeList returned no completed anime data.")
+            history = self._fetch_user_history(
+                username, settings, self._checked_credentials(token), token
+            )
+            if history is not None and not history.empty:
+                paths = self._storage.write_batch(
+                    (
+                        (frame, directory / "completed_anime.csv"),
+                        (history, directory / "user_history.csv"),
+                    ),
+                    cancellation_check=token.raise_if_cancelled,
+                )
+                return PipelineResult(
+                    generated_files=tuple(str(path) for path in paths),
+                    started_at=started_at,
+                    completed_at=self._timestamp(),
+                )
             return self._write_step(
                 frame,
                 directory / "completed_anime.csv",
@@ -419,7 +496,10 @@ class PipelineOrchestrator:
             )
 
         if step_id == "genre_importance":
-            frame = self._recommendations.calculate_genre_importance(completed)
+            candidate_catalogue = self._read_candidate_catalogue(directory)
+            frame = self._recommendations.calculate_genre_importance(
+                completed, candidate_catalogue
+            )
             self._require_nonempty(frame, "No genre importance scores were generated.")
             path = directory / "genre_importance.csv"
             result = self._write_step(frame, path, started_at, token)
@@ -430,12 +510,11 @@ class PipelineOrchestrator:
                 completed_at=result.completed_at,
             )
 
-        top_anime = self._storage.read(
-            directory / "top_anime.csv",
-            required_columns=["Title", "Genres"],
-        )
+        candidate_catalogue = self._read_candidate_catalogue(directory)
         if step_id == "generate_candidates":
-            frame = self._recommendations.create_candidates(completed, top_anime)
+            frame = self._recommendations.create_candidates(
+                completed, candidate_catalogue
+            )
             self._require_nonempty(frame, "No recommendation candidates were generated.")
             return self._write_step(
                 frame,
@@ -452,8 +531,19 @@ class PipelineOrchestrator:
             directory / "genre_importance.csv",
             required_columns=["Genre", "Importance_Score"],
         )
-        ranked = self._recommendations.recommend(candidates, importance, settings)
+        ranked = self._recommendations.recommend(
+            candidates,
+            importance,
+            settings,
+            user_history=self._read_user_history(directory),
+            fallback_candidates=candidates,
+            consumed_mal_ids=self._mal_ids(completed),
+            include_nsfw=settings.include_nsfw,
+            as_of=self._clock().date(),
+        )
         self._require_nonempty(ranked, "No recommendations were generated.")
+        ranking_metadata = ranked.attrs.get("ranking_engine")
+        eligibility_audit = ranked.attrs.get("eligibility_audit")
         result = self._write_step(
             ranked,
             directory / f"{profile.profile_id}_recommendations.csv",
@@ -462,6 +552,17 @@ class PipelineOrchestrator:
         )
         return PipelineResult(
             recommendations=self._recommendation_models(ranked),
+            user_stats={
+                "candidate_catalogue_count": len(candidate_catalogue),
+                "candidate_catalogue_source": self._catalogue_source(
+                    candidate_catalogue
+                ),
+                "candidate_snapshot_count": len(candidates),
+                **self._ranking_user_stats(
+                    ranking_metadata,
+                    eligibility_audit,
+                ),
+            },
             generated_files=result.generated_files,
             started_at=result.started_at,
             completed_at=result.completed_at,
@@ -493,16 +594,103 @@ class PipelineOrchestrator:
         path = imputed if imputed.exists() else directory / "completed_anime.csv"
         return self._storage.read(path, required_columns=["Title", "Genres", "User Score"])
 
+    def _read_candidate_catalogue(self, directory: Path) -> pd.DataFrame:
+        current = directory / CANDIDATE_CATALOGUE_FILENAME
+        if current.exists():
+            return self._storage.read(current, required_columns=["Title", "Genres"])
+
+        # Existing profiles may predate the owned-catalogue boundary. Preserve
+        # their ability to finish a staged operation, but label the old source
+        # explicitly instead of presenting it as AniRec-owned data.
+        legacy = self._storage.read(
+            directory / "top_anime.csv",
+            required_columns=["Title", "Genres"],
+        ).copy()
+        legacy[CATALOGUE_SOURCE_COLUMN] = LEGACY_MAL_CATALOGUE_SOURCE
+        return legacy
+
+    def _read_user_history(self, directory: Path) -> pd.DataFrame | None:
+        if not self._recommendations.requires_user_history:
+            return None
+        path = directory / "user_history.csv"
+        if not path.exists():
+            return None
+        return self._storage.read(
+            path,
+            required_columns=[
+                "Anime ID",
+                "Status",
+                "User Score",
+                "Episodes Watched",
+                "Is Rewatching",
+                "Updated At",
+            ],
+        )
+
+    def _fetch_user_history(self, username, settings, credentials, token):
+        if not self._recommendations.requires_user_history:
+            return None
+        try:
+            return self._anime_data.fetch_user_history(
+                username,
+                include_nsfw=settings.include_nsfw,
+                **credentials,
+                cancellation_token=token,
+            )
+        except CancelledError:
+            raise
+        except AniRecError:
+            # The fallback engine will report that current history was unavailable.
+            return None
+
+    def _load_candidate_catalogue(
+        self,
+        settings: PipelineSettings,
+        token: CancellationToken,
+        *,
+        credentials: dict[str, str] | None = None,
+    ) -> pd.DataFrame:
+        owned = self._recommendations.candidate_catalog(
+            include_nsfw=settings.include_nsfw,
+            as_of=self._clock().date(),
+        )
+        if owned is not None:
+            if owned.empty:
+                raise DataError(
+                    "The installed candidate catalogue has no eligible titles; "
+                    "refusing to switch silently to MyAnimeList ranking data."
+                )
+            catalogue = owned.copy()
+            catalogue[CATALOGUE_SOURCE_COLUMN] = OWNED_CATALOGUE_SOURCE
+            return catalogue
+
+        token.raise_if_cancelled()
+        legacy = self._anime_data.fetch_top_anime(
+            limit=settings.top_anime_limit,
+            include_nsfw=settings.include_nsfw,
+            **(credentials or self._checked_credentials(token)),
+            cancellation_token=token,
+        )
+        self._require_nonempty(legacy, "No installed catalogue or MAL ranking data is available.")
+        catalogue = legacy.copy()
+        catalogue[CATALOGUE_SOURCE_COLUMN] = LEGACY_MAL_CATALOGUE_SOURCE
+        return catalogue
+
     def _write_step(
         self,
         frame: pd.DataFrame,
         path: Path,
         started_at: str,
         token: CancellationToken,
+        user_stats: dict[str, int | float | str] | None = None,
     ) -> PipelineResult:
         token.raise_if_cancelled()
         output = self._storage.write(frame, path)
-        return self._step_result(started_at, generated_files=(str(output),))
+        return self._step_result(
+            started_at,
+            generated_files=(str(output),),
+            user_stats=user_stats,
+        )
 
     def _step_result(
         self,
@@ -531,6 +719,17 @@ class PipelineOrchestrator:
         return int((scores > 0).sum())
 
     @staticmethod
+    def _catalogue_source(frame: pd.DataFrame) -> str:
+        if CATALOGUE_SOURCE_COLUMN not in frame.columns or frame.empty:
+            return "unknown"
+        values = {
+            str(value).strip()
+            for value in frame[CATALOGUE_SOURCE_COLUMN].dropna().tolist()
+            if str(value).strip()
+        }
+        return next(iter(values)) if len(values) == 1 else "mixed"
+
+    @staticmethod
     def _emit(
         callback: Callable[[PipelineProgress], None] | None,
         step_id: str,
@@ -549,6 +748,43 @@ class PipelineOrchestrator:
             )
 
     @staticmethod
+    def _ranking_user_stats(metadata, eligibility=None) -> dict[str, int | str]:
+        stats: dict[str, int | str] = {}
+        if metadata is not None:
+            stats.update({
+                "ranking_engine_id": metadata.engine_id,
+                "ranking_engine_version": metadata.engine_version,
+                "ranking_fallback_used": int(metadata.fallback_used),
+            })
+            if metadata.requested_engine_id:
+                stats["ranking_requested_engine_id"] = metadata.requested_engine_id
+        if eligibility is not None:
+            stats.update({
+                "eligibility_policy_version": eligibility.policy_version,
+                "eligibility_catalog_version": eligibility.catalog_version,
+                "eligibility_input_count": eligibility.input_candidates,
+                "eligibility_eligible_count": eligibility.eligible_candidates,
+                "eligibility_excluded_count": eligibility.excluded_candidates,
+            })
+            stats.update({
+                f"eligibility_excluded_{reason}": count
+                for reason, count in eligibility.excluded_by_reason.items()
+            })
+        return stats
+
+    @staticmethod
+    def _mal_ids(frame: pd.DataFrame) -> set[int]:
+        if "Anime ID" not in frame.columns:
+            return set()
+        return set(
+            pd.to_numeric(frame["Anime ID"], errors="coerce")
+            .dropna()
+            .astype(int)
+            .loc[lambda values: values > 0]
+            .tolist()
+        )
+
+    @staticmethod
     def _recommendation_models(frame: pd.DataFrame) -> tuple[Recommendation, ...]:
         models = []
         for rank, (_, row) in enumerate(frame.iterrows(), start=1):
@@ -557,6 +793,7 @@ class PipelineOrchestrator:
                 Recommendation(
                     anime=anime,
                     match_score=row.get("Match Score", 0.0),
+                    match_score_available=bool(row.get("Match Score Available", True)),
                     raw_score=row.get("Recommendation Score", 0.0),
                     contributing_genres=tuple(row.get("Contributing Genres") or ()),
                     genre_contributions=tuple(row.get("Genre Contributions") or ()),

@@ -1,8 +1,13 @@
 # AniRec visual authority
 
-This records the established visual world for concept work, not a new theme.
-Current PySide screens and `docs/design` handoffs remain authoritative; current
-implementation takes precedence over stale dimensions and obsolete button descriptions.
+This records the established visual world, not a new theme.
+
+**The web client is the visual authority** (`docs/DECISIONS.md` D-004). The retired
+PySide screens are where this world came from and stay useful reference for
+palette, density and proportion, but they no longer govern layout: web-first means
+the browser client owns its own composition, at its own breakpoints. Preserving the
+feel does not mean reproducing desktop geometry. Current implementation takes
+precedence over stale dimensions and obsolete button descriptions.
 
 ## Existing visual system
 
@@ -29,10 +34,15 @@ implementation takes precedence over stale dimensions and obsolete button descri
 
 ## Scope of current concepts
 
-Layout and information hierarchy may change in the other tabs, with the user's
-permission. Each still serves its existing task: manage the library, understand
-taste through evidence, compare two people, or configure the application.
-Concept images are proposals, not screenshots of implemented features.
+Layout and information hierarchy are the web client's to decide. Each surface
+still serves its existing task: manage the library, understand taste through
+evidence, compare two people, or configure the application. Concept images are
+proposals, not screenshots of implemented features.
+
+Two constraints now outrank the concept boards. Every surface must work at 375px,
+by keyboard and with a screen reader; and a feed that can grow must paginate or
+virtualise rather than mount in full. Where a board and those constraints
+conflict, the constraints win.
 
 ## Approved next-tab composition
 
@@ -133,8 +143,11 @@ Existing stepped Discover motion remains governed by the pinned motion rule abov
 
 ## Do's and Don'ts
 
-- **Do** preserve all incumbent visual authority and the approved C corrections
-  above when extending these React patterns.
+- **Do** preserve the established visual world - ground, brass/aqua roles, density,
+  2:3 posters - and the approved C corrections above when extending these patterns.
+- **Do** treat mobile as a first-class target rather than a narrow desktop. Touch
+  targets are at least 44px on coarse pointers; verify the computed value, since
+  stylesheet order has silently defeated that rule before.
 - **Do** keep source evidence, sample labels, unavailable states and real capability
   limits visible without letting notices displace the title evidence.
 - **Do** carry the Profile provider's additional archetype, histogram, genre/studio
@@ -144,7 +157,9 @@ Existing stepped Discover motion remains governed by the pinned motion rule abov
   counts describe returned completed titles; scores pair the local snapshot with
   the named public list, and compatibility stays N/A. Unrated shared titles are
   separate. NSFW preference affects returned titles.
-- **Don't** claim full desktop parity or populated live-result browser verification.
+- **Don't** reach for desktop parity as a goal. Parity with a retired application is
+  not a target; the web surface is judged on its own terms (`docs/DECISIONS.md` D-004).
+- **Don't** claim populated live-result browser verification.
   The two-account API check passed for the existing NeoBalls_ snapshot against
   Kuroboshi_'s live completed list; it does not establish a fresh local sync.
 - **Don't** canonize the four-screen concept board as a single-route pixel target.

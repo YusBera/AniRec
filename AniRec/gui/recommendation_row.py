@@ -48,6 +48,7 @@ class RecommendationRow(QFrame):
 
     selection_requested = Signal(object)
     details_requested = Signal(object)
+    external_opened = Signal(object)
     not_interested_requested = Signal(object)
     watch_later_requested = Signal(object)
     cover_requested = Signal(str)
@@ -281,7 +282,10 @@ class RecommendationRow(QFrame):
         self.style().polish(self)
 
     def open_mal(self) -> bool:
-        return open_mal_url(self.model.mal_url, opener=self._mal_opener)
+        opened = open_mal_url(self.model.mal_url, opener=self._mal_opener)
+        if opened:
+            self.external_opened.emit(self.model)
+        return opened
 
     # -- interaction ---------------------------------------------------------
 

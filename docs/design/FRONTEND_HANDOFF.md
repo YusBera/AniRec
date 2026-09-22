@@ -1,5 +1,15 @@
 # AniRec frontend handoff
 
+> **Historical desktop design record.** The React client is now the product and
+> visual authority. Start at `docs/README.md` and `frontend/README.md`.
+
+> **Superseded in part, 2026-09-20.** AniRec is now web-first: the browser client
+> is the product, the PySide application is deprecated to a development tool, and
+> AniRec owns its accounts and catalogue. Read `AGENTS.md` and `docs/DECISIONS.md`
+> before this file. What follows is retained for its evidence and its record of how
+> the work was done; where it assumes a desktop-first product, the decisions
+> supersede it.
+
 You are the brutal frontend developer on this project.
 
 Brutal is not a licence to be rude about other people's work — it is a standard you

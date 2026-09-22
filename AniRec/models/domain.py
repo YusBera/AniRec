@@ -193,6 +193,7 @@ class Anime:
 class Recommendation:
     anime: Anime
     match_score: float = 0.0
+    match_score_available: bool = True
     raw_score: float = 0.0
     contributing_genres: tuple[str, ...] = ()
     genre_contributions: tuple[tuple[str, float], ...] = ()
@@ -202,6 +203,7 @@ class Recommendation:
     def __post_init__(self) -> None:
         score = _optional_float(self.match_score)
         object.__setattr__(self, "match_score", score if score is not None else 0.0)
+        object.__setattr__(self, "match_score_available", bool(self.match_score_available))
         raw_score = _optional_float(self.raw_score)
         object.__setattr__(self, "raw_score", raw_score if raw_score is not None else 0.0)
         contributions = []
@@ -228,6 +230,7 @@ class Recommendation:
             "schema_version": MODEL_SCHEMA_VERSION,
             "anime": self.anime.to_dict(),
             "match_score": self.match_score,
+            "match_score_available": self.match_score_available,
             "raw_score": self.raw_score,
             "contributing_genres": list(self.contributing_genres),
             "genre_contributions": [
@@ -250,6 +253,7 @@ class Recommendation:
         return cls(
             anime=Anime.from_dict(data["anime"]),
             match_score=data.get("match_score", 0.0),
+            match_score_available=data.get("match_score_available", True),
             raw_score=data.get("raw_score", 0.0),
             contributing_genres=tuple(data.get("contributing_genres") or ()),
             genre_contributions=tuple(contribution_values),

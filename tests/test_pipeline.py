@@ -7,14 +7,21 @@ import pandas as pd
 import pytest
 
 from AniRec.application.pipeline import (
+    CANDIDATE_CATALOGUE_FILENAME,
+    CATALOGUE_SOURCE_COLUMN,
     FULL_PIPELINE_STEP_IDS,
+    LEGACY_MAL_CATALOGUE_SOURCE,
+    OWNED_CATALOGUE_SOURCE,
     SINGLE_STEP_IDS,
     CancellationToken,
     PipelineOrchestrator,
 )
-from AniRec.errors import CancelledError
+from AniRec.errors import CancelledError, DataError
 from AniRec.infrastructure.csv_storage import CsvStorage
 from AniRec.models import PipelineSettings
+from AniRec.scoring.engines import HeuristicRankingEngine
+from AniRec.scoring.contracts import RankingEngineMetadata
+from AniRec.scoring.eligibility import EligibilityAudit
 from AniRec.services import AnimeDataService, ProfileService, RecommendationService
 
 
@@ -24,6 +31,7 @@ def _orchestrator(
     completed_anime_df,
     *,
     anime_data=None,
+    recommendations=None,
 ):
     instant = datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc)
     data_service = anime_data or AnimeDataService(
@@ -33,7 +41,10 @@ def _orchestrator(
     return PipelineOrchestrator(
         anime_data=data_service,
         profiles=ProfileService(root_override=system_temp_dir / "app-data", clock=lambda: instant),
-        recommendations=RecommendationService(random_int=lambda _start, _end: 42),
+        recommendations=(
+            recommendations
+            or RecommendationService(random_int=lambda _start, _end: 42)
+        ),
         storage=CsvStorage(),
         access_token_provider=lambda: "fake-access-token",
         clock=lambda: instant,
@@ -65,8 +76,124 @@ def test_full_pipeline_runs_six_steps_in_order_and_returns_typed_result(
     assert len(result.recommendations) == 2
     assert len(result.genre_stats) >= 1
     assert result.user_stats["completed_count"] == 3
+    assert result.user_stats["eligibility_policy_version"] == "anirec-final-eligibility-v1"
+    assert result.user_stats["eligibility_input_count"] == 2
+    assert result.user_stats["eligibility_eligible_count"] == 2
+    assert result.user_stats["candidate_catalogue_source"] == LEGACY_MAL_CATALOGUE_SOURCE
     assert len(result.generated_files) == 6
     assert all(pd.io.common.file_exists(path) for path in result.generated_files)
+    catalogue_path = next(
+        Path(path)
+        for path in result.generated_files
+        if path.endswith(CANDIDATE_CATALOGUE_FILENAME)
+    )
+    persisted_catalogue = pd.read_csv(catalogue_path)
+    assert set(persisted_catalogue[CATALOGUE_SOURCE_COLUMN]) == {
+        LEGACY_MAL_CATALOGUE_SOURCE
+    }
+
+
+def test_sequence_pipeline_fetches_persists_and_passes_full_history(
+    system_temp_dir,
+    top_anime_df,
+    completed_anime_df,
+):
+    history = pd.DataFrame(
+        [
+            {
+                "Anime ID": 101,
+                "Title": "Chronology source",
+                "Status": "completed",
+                "User Score": 8,
+                "Episodes Watched": 12,
+                "Is Rewatching": False,
+                "Updated At": "2026-08-01T12:00:00+00:00",
+            }
+        ]
+    )
+    history_calls = []
+
+    class CapturingRanker:
+        requires_user_history = True
+
+        def __init__(self):
+            self.requests = []
+            self.delegate = HeuristicRankingEngine()
+
+        def rank(self, request):
+            self.requests.append(request)
+            return self.delegate.rank(request)
+
+        def candidate_catalog(self, *, include_nsfw, as_of):
+            assert include_nsfw is False
+            assert as_of.isoformat() == "2026-08-03"
+            return (
+                {
+                    "Anime ID": 200,
+                    "Title": "Frozen catalogue one",
+                    "Genres": ["Action"],
+                    "Mean Score": None,
+                },
+                {
+                    "Anime ID": 201,
+                    "Title": "Frozen catalogue two",
+                    "Genres": ["Drama"],
+                    "Mean Score": None,
+                },
+            )
+
+    ranker = CapturingRanker()
+    data_service = AnimeDataService(
+        top_fetcher=lambda **_kwargs: pytest.fail(
+            "installed catalogue must bypass the MAL ranking endpoint"
+        ),
+        completed_fetcher=lambda *_args, **_kwargs: completed_anime_df,
+        history_fetcher=lambda *_args, **_kwargs: (
+            history_calls.append("fetch") or history.copy()
+        ),
+    )
+    orchestrator = PipelineOrchestrator(
+        anime_data=data_service,
+        profiles=ProfileService(root_override=system_temp_dir / "app-data"),
+        recommendations=RecommendationService(ranker=ranker),
+        storage=CsvStorage(),
+        access_token_provider=lambda: "fake-access-token",
+        clock=lambda: datetime(2026, 8, 3, 12, 0, tzinfo=timezone.utc),
+    )
+
+    result = orchestrator.run_full(
+        "fixture-user",
+        PipelineSettings(
+            top_anime_limit=3,
+            recommendation_count=2,
+            candidate_pool_size=2,
+        ),
+    )
+
+    assert history_calls == ["fetch"]
+    assert ranker.requests[0].user_history == tuple(history.to_dict("records"))
+    assert {row.get("Anime ID") for row in ranker.requests[0].candidates} == {200, 201}
+    assert {
+        row.get("Anime ID")
+        for row in ranker.requests[0].context["fallback_candidates"]
+    } == {200, 201}
+    assert result.user_stats["ranking_engine_id"] == "heuristic"
+    assert result.user_stats["ranking_engine_version"] == "1"
+    assert result.user_stats["candidate_count"] == 2
+    assert result.user_stats["candidate_catalogue_count"] == 2
+    assert result.user_stats["candidate_catalogue_source"] == OWNED_CATALOGUE_SOURCE
+    catalogue_paths = [
+        Path(path)
+        for path in result.generated_files
+        if path.endswith(CANDIDATE_CATALOGUE_FILENAME)
+    ]
+    assert len(catalogue_paths) == 1
+    saved_catalogue = pd.read_csv(catalogue_paths[0])
+    assert set(saved_catalogue[CATALOGUE_SOURCE_COLUMN]) == {OWNED_CATALOGUE_SOURCE}
+    history_paths = [Path(path) for path in result.generated_files if path.endswith("user_history.csv")]
+    assert len(history_paths) == 1
+    saved = pd.read_csv(history_paths[0])
+    assert saved["Anime ID"].tolist() == [101]
 
 
 def test_run_more_appends_unseen_feedback_aware_recommendations_from_saved_candidates(
@@ -92,10 +219,115 @@ def test_run_more_appends_unseen_feedback_aware_recommendations_from_saved_candi
 
     assert len(expanded.recommendations) == 2
     assert expanded.user_stats["added_recommendation_count"] == 1
+    assert expanded.user_stats["candidate_catalogue_source"] == (
+        LEGACY_MAL_CATALOGUE_SOURCE
+    )
+    assert expanded.user_stats["candidate_catalogue_count"] == initial.user_stats[
+        "candidate_catalogue_count"
+    ]
+    assert expanded.user_stats["candidate_snapshot_count"] == initial.user_stats[
+        "candidate_count"
+    ]
     assert (
         expanded.recommendations[0].anime.title
         != expanded.recommendations[1].anime.title
     )
+
+    regenerated = orchestrator.run_step(
+        "generate_recommendations", "fixture-user", settings
+    )
+    assert regenerated.user_stats["candidate_catalogue_source"] == (
+        LEGACY_MAL_CATALOGUE_SOURCE
+    )
+    assert regenerated.user_stats["candidate_catalogue_count"] == (
+        initial.user_stats["candidate_catalogue_count"]
+    )
+    assert regenerated.user_stats["candidate_snapshot_count"] == (
+        initial.user_stats["candidate_count"]
+    )
+
+
+def test_run_more_rechecks_persisted_candidates_with_current_eligibility(
+    system_temp_dir,
+    top_anime_df,
+    completed_anime_df,
+):
+    orchestrator = _orchestrator(system_temp_dir, top_anime_df, completed_anime_df)
+    settings = PipelineSettings(
+        top_anime_limit=3,
+        recommendation_count=1,
+        candidate_pool_size=3,
+        randomness_factor=1,
+    )
+    initial = orchestrator.run_full("fixture-user", settings)
+    profile = orchestrator._profiles.resolve_profile("fixture-user")
+    directory = orchestrator._profiles.directory(profile.profile_id)
+    candidate_path = directory / "recommendation_candidates.csv"
+    persisted = pd.read_csv(candidate_path)
+    future = {column: None for column in persisted.columns}
+    future.update({
+        "Anime ID": 999999,
+        "Title": "Future injected candidate",
+        "Genres": "['Action']",
+        "Mean Score": 10.0,
+        "Start Date": "2030-01-01",
+        "Anime Status": "not_yet_aired",
+    })
+    pd.concat([persisted, pd.DataFrame([future])], ignore_index=True).to_csv(
+        candidate_path, index=False
+    )
+
+    expanded = orchestrator.run_more(
+        "fixture-user",
+        settings,
+        existing_recommendations=initial.recommendations,
+        count=1,
+    )
+
+    assert all(item.anime.mal_id != 999999 for item in expanded.recommendations)
+    assert expanded.user_stats["eligibility_excluded_not_released"] == 1
+
+
+def test_pipeline_uses_result_owned_provenance_instead_of_shared_last_state(
+    system_temp_dir,
+    top_anime_df,
+    completed_anime_df,
+):
+    class MisleadingLastStateService(RecommendationService):
+        def recommend(self, *args, **kwargs):
+            ranked = super().recommend(*args, **kwargs)
+            self._last_ranking_metadata = RankingEngineMetadata(
+                engine_id="raced-engine",
+                engine_version="wrong",
+                feature_schema_version="wrong",
+                explanation_type="wrong",
+            )
+            self._last_eligibility_audit = EligibilityAudit(
+                policy_version="raced-policy",
+                catalog_version="wrong",
+                input_candidates=999,
+                eligible_candidates=0,
+                excluded_by_reason={"wrong": 999},
+            )
+            return ranked
+
+    service = MisleadingLastStateService(random_int=lambda _start, _end: 42)
+    orchestrator = _orchestrator(
+        system_temp_dir,
+        top_anime_df,
+        completed_anime_df,
+        recommendations=service,
+    )
+
+    result = orchestrator.run_full(
+        "fixture-user",
+        PipelineSettings(recommendation_count=1, candidate_pool_size=2),
+    )
+
+    assert service.last_ranking_metadata.engine_id == "raced-engine"
+    assert result.user_stats["ranking_engine_id"] == "heuristic"
+    assert result.user_stats["eligibility_policy_version"] == "anirec-final-eligibility-v1"
+    assert result.user_stats["eligibility_input_count"] == 2
 
 
 def test_sync_prefers_client_id_and_does_not_require_oauth_token(
@@ -137,6 +369,75 @@ def test_sync_prefers_client_id_and_does_not_require_oauth_token(
     assert all("access_token" not in call for call in calls)
 
 
+def test_installed_catalogue_bypasses_ranking_for_sync_and_single_step(
+    system_temp_dir,
+    completed_anime_df,
+):
+    class InstalledCatalogue:
+        requires_user_history = False
+
+        def candidate_catalog(self, **_kwargs):
+            return (
+                {
+                    "Anime ID": 200,
+                    "Title": "Owned catalogue title",
+                    "Genres": ["Action"],
+                },
+            )
+
+    data = AnimeDataService(
+        top_fetcher=lambda **_kwargs: pytest.fail(
+            "installed catalogue must bypass MAL ranking"
+        ),
+        completed_fetcher=lambda *_args, **_kwargs: completed_anime_df,
+    )
+    orchestrator = PipelineOrchestrator(
+        anime_data=data,
+        profiles=ProfileService(root_override=system_temp_dir / "owned-app-data"),
+        recommendations=RecommendationService(ranker=InstalledCatalogue()),
+        storage=CsvStorage(),
+        access_token_provider=lambda: pytest.fail(
+            "catalogue-only single step must not request OAuth"
+        ),
+        client_id_provider=lambda: "fixture-client-id",
+    )
+
+    synced = orchestrator.run_sync("fixture-user", PipelineSettings())
+    loaded = orchestrator.run_step("fetch_top", "fixture-user", PipelineSettings())
+
+    assert synced.user_stats["candidate_catalogue_source"] == OWNED_CATALOGUE_SOURCE
+    assert loaded.user_stats["candidate_catalogue_source"] == OWNED_CATALOGUE_SOURCE
+    saved = pd.read_csv(loaded.generated_files[0])
+    assert set(saved[CATALOGUE_SOURCE_COLUMN]) == {OWNED_CATALOGUE_SOURCE}
+
+
+def test_empty_installed_catalogue_fails_without_calling_mal_ranking(
+    system_temp_dir,
+    completed_anime_df,
+):
+    class EmptyInstalledCatalogue:
+        requires_user_history = False
+
+        def candidate_catalog(self, **_kwargs):
+            return ()
+
+    orchestrator = PipelineOrchestrator(
+        anime_data=AnimeDataService(
+            top_fetcher=lambda **_kwargs: pytest.fail(
+                "empty installed catalogue must not switch to MAL ranking"
+            ),
+            completed_fetcher=lambda *_args, **_kwargs: completed_anime_df,
+        ),
+        profiles=ProfileService(root_override=system_temp_dir / "empty-app-data"),
+        recommendations=RecommendationService(ranker=EmptyInstalledCatalogue()),
+        storage=CsvStorage(),
+        client_id_provider=lambda: "fixture-client-id",
+    )
+
+    with pytest.raises(DataError, match="installed candidate catalogue has no eligible"):
+        orchestrator.run_full("fixture-user", PipelineSettings())
+
+
 def test_single_step_contract_contains_oauth_and_six_pipeline_actions(
     system_temp_dir,
     top_anime_df,
@@ -172,6 +473,8 @@ def test_pipeline_resolves_persisted_mal_id_profile_for_single_step_outputs(
     result = orchestrator.run_step("fetch_top", "fixture-user", PipelineSettings())
 
     assert Path(result.generated_files[0]).parent == directory
+    assert Path(result.generated_files[0]).name == CANDIDATE_CATALOGUE_FILENAME
+    assert result.user_stats["candidate_catalogue_source"] == LEGACY_MAL_CATALOGUE_SOURCE
     assert not any(
         path.name.startswith("user-fixture-user-")
         for path in directory.parent.iterdir()
@@ -214,7 +517,7 @@ def test_cancellation_stops_before_next_step_and_leaves_no_partial_csv(
     assert len(profile_roots) == 1
     profile_dir = profile_roots[0]
     assert calls == ["fetch_top"]
-    assert not (profile_dir / "top_anime.csv").exists()
+    assert not (profile_dir / CANDIDATE_CATALOGUE_FILENAME).exists()
     assert list(profile_dir.glob("*.tmp")) == []
 
 
@@ -258,7 +561,7 @@ def test_sync_cancellation_preserves_both_previous_valid_files(
     )
     profile = orchestrator._profiles.create_profile("fixture-user")
     directory = orchestrator._profiles.directory(profile.profile_id, create=True)
-    top_path = directory / "top_anime.csv"
+    top_path = directory / CANDIDATE_CATALOGUE_FILENAME
     completed_path = directory / "completed_anime.csv"
     top_path.write_text("old-top", encoding="utf-8")
     completed_path.write_text("old-completed", encoding="utf-8")

@@ -17,7 +17,7 @@ a = Analysis(
         (str(resources), "gui/resources"),
         (str(project_root / "LICENSE"), "."),
     ],
-    hiddenimports=[],
+    hiddenimports=["onnxruntime"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

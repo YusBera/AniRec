@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..application.pipeline import PipelineOrchestrator
+from ..application.pipeline import CANDIDATE_CATALOGUE_FILENAME, PipelineOrchestrator
 from ..errors import UserFacingError
 from ..models import PipelineProgress, PipelineResult, UserProfile
 from ..services import AuthService, ProfileService, SettingsService
@@ -37,9 +37,9 @@ class AdvancedOperationDefinition:
 ADVANCED_OPERATIONS = (
     AdvancedOperationDefinition(
         "fetch_top",
-        "Fetch popular anime data",
-        "Download the current popular anime catalogue used to build the candidate pool.",
-        "top_anime.csv",
+        "Load candidate catalogue",
+        "Load the installed AniRec catalogue, or label the legacy MAL ranking fallback explicitly.",
+        CANDIDATE_CATALOGUE_FILENAME,
     ),
     AdvancedOperationDefinition(
         "fetch_completed",
@@ -68,7 +68,7 @@ ADVANCED_OPERATIONS = (
     AdvancedOperationDefinition(
         "generate_candidates",
         "Generate recommendation candidates",
-        "Exclude watched titles and combine the popular and completed anime datasets.",
+        "Exclude watched titles from the persisted candidate catalogue.",
         "recommendation_candidates.csv",
     ),
     AdvancedOperationDefinition(
@@ -232,7 +232,12 @@ class AdvancedOperationsPage(QWidget):
             return True, ""
         if self.orchestrator is None:
             return False, "Pipeline services are not configured."
-        if step_id in {"fetch_top", "fetch_completed"}:
+        if step_id == "fetch_top":
+            # An installed catalogue is local and needs no MAL credential. If
+            # no usable catalogue exists, the orchestrator reports that the
+            # legacy MAL fallback needs credentials.
+            return True, ""
+        if step_id == "fetch_completed":
             if not settings.client_id:
                 return False, "Save a MyAnimeList Client ID in Settings first."
             return True, ""
@@ -251,8 +256,11 @@ class AdvancedOperationsPage(QWidget):
         if step_id == "generate_candidates":
             if not completed.is_file():
                 return False, "Run 'Fetch the user's anime list' first."
-            if not (directory / "top_anime.csv").is_file():
-                return False, "Run 'Fetch popular anime data' first."
+            if not (
+                (directory / CANDIDATE_CATALOGUE_FILENAME).is_file()
+                or (directory / "top_anime.csv").is_file()
+            ):
+                return False, "Run 'Load candidate catalogue' first."
             return True, ""
         if step_id == "generate_recommendations":
             if not (directory / "recommendation_candidates.csv").is_file():

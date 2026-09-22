@@ -22,6 +22,16 @@ except ImportError:  # Backward compatibility for direct script-style imports.
 API_BASE_URL = "https://api.myanimelist.net/v2"
 REQUEST_TIMEOUT_SECONDS = 15
 
+USER_HISTORY_COLUMNS = [
+    "Anime ID",
+    "Title",
+    "Status",
+    "User Score",
+    "Episodes Watched",
+    "Is Rewatching",
+    "Updated At",
+]
+
 
 def get_user_completed_animes(
     username,
@@ -76,6 +86,64 @@ def get_user_completed_animes(
             )
             anime_rows.append(row)
     return pd.DataFrame(anime_rows, columns=COMPLETED_ANIME_CSV_COLUMNS)
+
+
+def get_user_anime_history(
+    username,
+    access_token=None,
+    *,
+    client_id=None,
+    include_nsfw=False,
+    http_get=None,
+    client=None,
+    cancellation=None,
+):
+    """Fetch the current full MAL list with the fields used by sequence models.
+
+    MAL's ``updated_at`` orders list edits, so it is the best chronology the API
+    exposes. It remains a proxy for viewing order; the ranking engine rejects
+    missing timestamps rather than inventing an order.
+    """
+    url = f"{API_BASE_URL}/users/{quote(str(username), safe='')}/animelist"
+    params = {
+        "fields": "list_status",
+        "limit": 1000,
+        "sort": LIST_SYNC_SORT,
+    }
+    if include_nsfw:
+        params["nsfw"] = "true"
+    api_client = client or MALClient(http_get=http_get or requests.get)
+    rows = []
+    for data in api_client.iter_pages(
+        url,
+        params=params,
+        access_token=access_token,
+        client_id=client_id,
+        cancellation=cancellation,
+    ):
+        for item in data.get("data", []):
+            if not isinstance(item, dict):
+                continue
+            node = item.get("node")
+            list_status = item.get("list_status")
+            if not isinstance(node, dict) or not isinstance(list_status, dict):
+                continue
+            mal_id = node.get("id")
+            updated_at = list_status.get("updated_at")
+            if not isinstance(mal_id, int) or mal_id <= 0:
+                continue
+            rows.append(
+                {
+                    "Anime ID": mal_id,
+                    "Title": str(node.get("title") or ""),
+                    "Status": str(list_status.get("status") or ""),
+                    "User Score": list_status.get("score") or 0,
+                    "Episodes Watched": list_status.get("num_episodes_watched") or 0,
+                    "Is Rewatching": bool(list_status.get("is_rewatching", False)),
+                    "Updated At": updated_at if isinstance(updated_at, str) else "",
+                }
+            )
+    return pd.DataFrame(rows, columns=USER_HISTORY_COLUMNS)
 
 
 # Sorting by list_updated_at is what makes a routine sync cheap: MyAnimeList

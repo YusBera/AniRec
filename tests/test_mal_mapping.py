@@ -29,6 +29,14 @@ def _rich_node():
         "end_date": "1999-04-24",
         "start_season": {"year": 1998, "season": "spring"},
         "synopsis": "A fixture synopsis.",
+        "studios": [{"id": 14, "name": "Sunrise"}],
+        "source": "original",
+        "media_type": "tv",
+        "num_scoring_users": 987654,
+        # AniRec deliberately does not request or map MAL rank/popularity into
+        # the heuristic scorer.
+        "rank": 42,
+        "popularity": 99,
     }
 
 
@@ -48,6 +56,12 @@ def test_rich_mal_node_maps_to_complete_anime_and_safe_url():
     assert anime.episodes == 26
     assert anime.year == 1998
     assert anime.mal_url == "https://myanimelist.net/anime/1"
+    assert anime.studios == ("Sunrise",)
+    assert anime.source == "original"
+    assert anime.media_type == "tv"
+    assert anime.scoring_users == 987654
+    assert "rank" not in anime.to_dict()
+    assert "popularity" not in anime.to_dict()
 
 
 def test_missing_optional_fields_are_safe_and_missing_identity_is_skipped():
@@ -57,6 +71,15 @@ def test_missing_optional_fields_are_safe_and_missing_identity_is_skipped():
     assert anime.display_score == "Not rated"
     assert anime_from_node({"title": "Missing ID"}) is None
     assert anime_from_node({"id": 10}) is None
+
+
+def test_year_falls_back_to_start_season_when_start_date_is_missing():
+    node = _rich_node()
+    node.pop("start_date")
+
+    anime = anime_from_node(node)
+
+    assert anime.year == 1998
 
 
 def test_anime_csv_row_schema_round_trip():

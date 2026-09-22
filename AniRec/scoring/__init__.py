@@ -27,7 +27,14 @@ try:
         FallbackRankingEngine,
         HeuristicRankingEngine,
         IncompatibleRankingEngine,
+        OnnxSequenceRankingEngine,
         RankingEngineUnavailable,
+    )
+    from .eligibility import (
+        ELIGIBILITY_POLICY_VERSION,
+        EligibilityAudit,
+        EligibilityContext,
+        FinalEligibilityPolicy,
     )
     from .features import extract_features, feature_label
     from .ranking import ScoredCandidate, score_candidates
@@ -46,7 +53,14 @@ except ImportError:  # Compatibility with the sibling import path used by tests.
         FallbackRankingEngine,
         HeuristicRankingEngine,
         IncompatibleRankingEngine,
+        OnnxSequenceRankingEngine,
         RankingEngineUnavailable,
+    )
+    from eligibility import (
+        ELIGIBILITY_POLICY_VERSION,
+        EligibilityAudit,
+        EligibilityContext,
+        FinalEligibilityPolicy,
     )
     from features import extract_features, feature_label
     from ranking import ScoredCandidate, score_candidates
@@ -55,8 +69,10 @@ except ImportError:  # Compatibility with the sibling import path used by tests.
 
 __all__ = [
     "FallbackRankingEngine",
+    "FinalEligibilityPolicy",
     "HeuristicRankingEngine",
     "IncompatibleRankingEngine",
+    "OnnxSequenceRankingEngine",
     "RankingEngine",
     "RankingEngineMetadata",
     "RankingEngineUnavailable",
@@ -65,6 +81,9 @@ __all__ = [
     "RankingParameters",
     "RankingRequest",
     "RankingResult",
+    "EligibilityAudit",
+    "EligibilityContext",
+    "ELIGIBILITY_POLICY_VERSION",
     "ScoredCandidate",
     "TasteProfile",
     "build_taste_profile",

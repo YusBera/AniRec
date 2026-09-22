@@ -1,47 +1,56 @@
-# AniRec docs
+# AniRec documentation
 
-Read this page first and open only what you need. Everything is **live**
-(describes the product or work in flight) or **historical** (kept for citation,
-not guidance).
+New agents start with [START_HERE.md](START_HERE.md), then read
+[CURRENT_TASK.md](CURRENT_TASK.md) and [DOMAIN_RULES.md](DOMAIN_RULES.md).
+Do not begin with a handoff document.
 
-Start with the row that matches what you are about to touch. Opening more than
-that costs context you will want later.
+## Core documents
 
-## Live
+| Document | Purpose |
+| --- | --- |
+| [START_HERE.md](START_HERE.md) | Short project orientation and conditional reading order |
+| [CURRENT_TASK.md](CURRENT_TASK.md) | The only active or paused implementation scope |
+| [NEXT_GOALS.md](NEXT_GOALS.md) | Ordered backend roadmap, outcomes, estimates, and gates |
+| [DOMAIN_RULES.md](DOMAIN_RULES.md) | Product invariants that implementation must preserve |
+| [CODEMAP.md](CODEMAP.md) | Routes from a concern to its owning code and tests |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Implemented state separated from target state |
+| [DECISIONS.md](DECISIONS.md) | Durable decisions and their reasons |
+| [TASK_HISTORY.md](TASK_HISTORY.md) | Completed tasks, evidence, and remaining limits |
+| [PROJECT_DEFINITION.md](PROJECT_DEFINITION.md) | Product, platform order, audience, and external constraints |
 
-| Document | Status | Open it when |
-|---|---|---|
-| [design/MIGRATION_HANDOFF.md](design/MIGRATION_HANDOFF.md) | direction decided, mostly unbuilt | **Any frontend work.** PySide is the reference implementation for the React migration; this says what that forbids. |
-| [design/FRONTEND_HANDOFF.md](design/FRONTEND_HANDOFF.md) | the working standard | Changing anything the user sees in the PySide app. Palette, geometry, motion, and the Qt traps that have already caused bugs. |
-| [design/BACKEND_HANDOFF.md](design/BACKEND_HANDOFF.md) | open P0s | Scoring or service work. What the frontend needs and has not received — including the match-score calibration P0. |
-| [design/POST_MODEL_FEATURES.md](design/POST_MODEL_FEATURES.md) | unbuilt, ordered | Work that only becomes possible once the neural recommender ships. Impression logging must land first; it cannot be added retroactively. |
-| [design/BUNDLE_HANDOFF.md](design/BUNDLE_HANDOFF.md) | presentation done, data blocked | Series bundles. The unsolved part is franchise-relation data, not the card. |
-| [design/ICON_HANDOFF.md](design/ICON_HANDOFF.md) | live spec | Adding or regenerating a UI icon. Geometry is enforced by `scripts/build_ui_icons.py`. |
-| [CHANGELOG.md](CHANGELOG.md) | live | What shipped in 1.3.0, 1.2.2 or 1.2.0. |
-| [release/ACCEPTANCE_TEMPLATE.md](release/ACCEPTANCE_TEMPLATE.md) | live template | Running second-computer acceptance. Edit in place; do not fork a per-version copy. |
+Only `START_HERE.md`, `CURRENT_TASK.md`, and `DOMAIN_RULES.md` are required at
+the beginning of ordinary work. Open the rest when the current task points to
+them.
 
-## Historical
+## Feature references
 
-| Document | Open it when |
-|---|---|
-| [release/HISTORY.md](release/HISTORY.md) | You need a past artifact hash, gate result, a limitation carried forward from 1.2.x, or the pointer to a retired document. |
+| Document | Read it for |
+| --- | --- |
+| [MAL_DATA_SEMANTICS.md](MAL_DATA_SEMANTICS.md) | MAL field mapping, unknown values, and scoring use |
+| [ONNX_MODEL_SERVING.md](ONNX_MODEL_SERVING.md) | Bundle verification, model catalogue, and fallback behavior |
+| [RECOMMENDATION_ACTIVITY.md](RECOMMENDATION_ACTIVITY.md) | Activity events, privacy, retention, and attribution |
+| [UI_ENGINE_INTEGRATION.md](UI_ENGINE_INTEGRATION.md) | This checkout, launch commands, and last integration evidence |
+| [design/RECOMMENDER_EVALUATION.md](design/RECOMMENDER_EVALUATION.md) | Existing ranker measurements and what they do not prove |
+| [CHANGELOG.md](CHANGELOG.md) | Released desktop-version history |
 
-## Assets
+## UI and historical design records
 
-- `images/` — screenshots referenced by the root README and the changelog.
-- `landing/index.html` — Scoring Bench, the published landing page.
-- `landing/workstation.html` — the direction the application itself follows.
+The files under `design/` preserve earlier UI decisions, measurements, and
+handoffs. Most were written during the desktop-to-web transition. They are
+optional evidence, not current task instructions.
 
-These two disagree, deliberately and unreconciled. Read
-[design/MIGRATION_HANDOFF.md](design/MIGRATION_HANDOFF.md) before changing either.
+- Use `REACT_PRESERVATION_AUDIT.md` and the workspace specifications when a
+  current UI decision needs historical evidence.
+- Use `ICON_HANDOFF.md` only when changing the icon system.
+- `LATEST_AGENT_HANDOFF.md`, `MIGRATION_HANDOFF.md`, `FRONTEND_HANDOFF.md`, and
+  `BACKEND_HANDOFF.md` contain useful history but have superseded status or
+  desktop-first assumptions. Never treat “latest” in a filename as authority.
+- Git history is the archive. Do not create another session handoff when
+  `CURRENT_TASK.md`, `TASK_HISTORY.md`, or a subject reference can hold the fact.
 
-## Conventions
+## Maintenance rule
 
-- **One document per subject, not per version.** Version-specific facts go in
-  `CHANGELOG.md` or `release/HISTORY.md`; everything else is present tense and
-  edited in place.
-- **A document describing unbuilt work says so in its first three lines.**
-- **Retired documents are deleted, not archived in place.** They stay
-  recoverable in git history; the pointer lives in `release/HISTORY.md`.
-- **Write for one reader opening one file.** A document that restates another
-  is a document that will disagree with it later. Link instead.
+Each fact has one owner. Link to that owner instead of restating it. Current
+scope belongs in `CURRENT_TASK.md`; completed evidence belongs in
+`TASK_HISTORY.md`; durable rationale belongs in `DECISIONS.md`; file locations
+belong in `CODEMAP.md`.

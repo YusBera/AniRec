@@ -146,7 +146,11 @@ class RecommendationViewModel:
             secondary_title=anime.secondary_title,
             alternative_titles=alternatives,
             personal_match=personal_match,
-            personal_match_text=f"Personal match: {personal_match:.1f}%",
+            personal_match_text=(
+                f"Personal match: {personal_match:.1f}%"
+                if recommendation.match_score_available
+                else "Personal match unavailable"
+            ),
             mal_score=mal_score,
             mal_score_text=(
                 f"MAL score: {mal_score:.2f} / 10" if mal_score is not None else f"MAL score: {NOT_RATED}"
@@ -172,7 +176,9 @@ class RecommendationViewModel:
             cover_url=_safe_https_url(anime.cover_url),
             large_cover_url=_safe_https_url(anime.large_cover_url),
             mal_url=_safe_mal_url(anime.mal_url, anime.mal_id),
-            personal_match_available=raw_personal_match is not None,
+            personal_match_available=(
+                recommendation.match_score_available and raw_personal_match is not None
+            ),
             genre_contributions=contributions,
             media_type=_clean_text(anime.media_type),
         )

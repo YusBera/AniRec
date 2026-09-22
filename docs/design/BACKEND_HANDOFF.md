@@ -1,5 +1,15 @@
 # Backend handoff — open items from the 1.3.0 frontend work
 
+> **Historical design record.** Start at `docs/START_HERE.md`. Current scope is
+> `docs/CURRENT_TASK.md`; this file does not override it.
+
+> **Superseded in part, 2026-09-20.** AniRec is now web-first: the browser client
+> is the product, the PySide application is deprecated to a development tool, and
+> AniRec owns its accounts and catalogue. Read `AGENTS.md` and `docs/DECISIONS.md`
+> before this file. What follows is retained for its evidence and its record of how
+> the work was done; where it assumes a desktop-first product, the decisions
+> supersede it.
+
 Written 2026-08-26 during the frontend score-inspector redesign. No backend,
 service, scoring, API, persistence, or release code was changed as part of this
 work.
@@ -26,6 +36,34 @@ Questions for the scoring owner:
 
 The landing demonstration currently uses scores around 90%. Do not change the
 frontend to fabricate those values for real data.
+
+### Answered 2026-09-20 by measurement
+
+The questions above now have numbers. Full detail in
+`docs/design/RECOMMENDER_EVALUATION.md`.
+
+- **Observed distribution.** On the live candidate pool the displayed match runs
+  roughly 13% to 56%, with a floor near 20% for a zero content match, because the
+  quality prior alone clears it. Nothing scores near 100%.
+- **Is 100 reachable?** No. `calibrate` is a logistic; 100 is its asymptote, and
+  reaching even 98.7% would need a perfect cosine and a perfect community score
+  at once.
+- **Should it be percentile-normalised?** Open, and now a product decision rather
+  than a scoring one: `docs/DECISIONS.md` D-008 records split, calibrate, or drop
+  the percentage as the three candidates. Calibration against held-out ratings is
+  the only option that makes the number mean something checkable.
+- **What minimum should trigger "we need more taste data"?** Unresolved, but the
+  mechanism already exists and is never used: `match_score_available` is carried
+  through the view model and the frontend, and no heuristic path sets it False.
+  With a single rating every affinity is exactly zero and every title scores
+  around 20-25%, ordered purely by community score, presented as confident.
+- **Can confidence be returned separately from affinity?** Yes, and it should be.
+  Nothing blocks it.
+
+One finding that was not anticipated here: the personal term is worth about +4%
+relative over deleting the reader entirely, and is negative over a full
+catalogue. Calibrating the current blend would make an uninformative number
+honest rather than making it useful. D-006 and D-008 should be settled together.
 
 ## P0 — contribution taxonomy is mixed
 

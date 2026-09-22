@@ -35,7 +35,7 @@ from .services import (
     OnboardingService,
     ProfileService,
     ResultService,
-    RecommendationService,
+    build_recommendation_service,
     RecommendationStateService,
     SettingsService,
     TokenStore,
@@ -117,7 +117,7 @@ def main(
             orchestrator = PipelineOrchestrator(
                 anime_data=AnimeDataService(),
                 profiles=profiles,
-                recommendations=RecommendationService(),
+                recommendations=build_recommendation_service(),
                 storage=CsvStorage(),
                 access_token_provider=access_token_provider,
                 client_id_provider=lambda: settings.load().client_id or "",

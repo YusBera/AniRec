@@ -103,7 +103,12 @@ def workspace_router(services: ApiContainer) -> APIRouter:
         result = services.results.load(profile_id)
         if result:
             found.update((m.mal_id, m) for m in recommendation_view_models(result.recommendations) if m.mal_id in wanted)
-        for filename in ("completed_anime.csv", "top_anime.csv", "recommendation_candidates.csv"):
+        for filename in (
+            "completed_anime.csv",
+            "candidate_catalogue.csv",
+            "top_anime.csv",
+            "recommendation_candidates.csv",
+        ):
             path = directory / filename
             if not path.exists():
                 continue

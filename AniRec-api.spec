@@ -50,6 +50,7 @@ a = Analysis(
         "uvicorn.protocols.http.auto",
         "uvicorn.protocols.websockets.auto",
         "uvicorn.lifespan.on",
+        "onnxruntime",
     ],
     hookspath=[],
     hooksconfig={},

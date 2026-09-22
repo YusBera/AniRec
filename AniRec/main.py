@@ -22,7 +22,7 @@ try:
     from .infrastructure.logging_config import configure_logging
     from .infrastructure.paths import profile_dir
     from .models import PipelineSettings
-    from .services import AnimeDataService, ProfileService, RecommendationService
+    from .services import AnimeDataService, ProfileService, build_recommendation_service
 except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
     from application.pipeline import PipelineOrchestrator
     from application.operations import (
@@ -39,7 +39,7 @@ except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
     from infrastructure.logging_config import configure_logging
     from infrastructure.paths import profile_dir
     from models import PipelineSettings
-    from services import AnimeDataService, ProfileService, RecommendationService
+    from services import AnimeDataService, ProfileService, build_recommendation_service
 
 try:
     from .oauth_handler import get_access_token, initiate_oauth_flow
@@ -80,7 +80,7 @@ def build_cli_runtime():
     orchestrator = PipelineOrchestrator(
         anime_data=AnimeDataService(),
         profiles=ProfileService(),
-        recommendations=RecommendationService(),
+        recommendations=build_recommendation_service(),
         storage=CsvStorage(),
         access_token_provider=get_access_token,
     )

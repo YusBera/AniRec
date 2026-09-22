@@ -92,7 +92,7 @@ UI_TEXT = UiTextCatalog(
 
 PROGRESS_STEP_TEXT = {
     "oauth": "Connect MyAnimeList account",
-    "fetch_top": "Fetch top anime",
+    "fetch_top": "Load candidate catalogue",
     "fetch_completed": "Fetch completed anime",
     "impute_scores": "Handle missing scores",
     "genre_importance": "Calculate genre importance",
