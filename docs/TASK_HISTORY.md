@@ -7,6 +7,82 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-22 - Deterministic, diverse feed selection (Goal 1)
+
+Replaced both uniform random samplers with one deterministic selector,
+`AniRec/scoring/selection.py::select_feed`. The heuristic sampler was in
+`rank_recommendations`; the ONNX sampler was in `OnnxSequenceRankingEngine.rank`.
+`rank_candidate_pool` now returns the heuristic's ordered pool, and the ONNX
+engine returns its ordered eligible pool. `RecommendationService.recommend`
+applies the selector exactly once, after final eligibility and ranking, whichever
+engine answered. Full generation, "more" and single-step generation all route
+through it. The legacy CSV entry point `rank_recommendations` uses the same
+selector. `random_int`, `random_seed` and `seed` are still accepted for
+compatibility but no longer affect output. The CLI prompt and the deprecated
+PySide label now read "Adventurousness". Recorded as D-011.
+
+Rule: the top title is always served. Adventurousness `a` (stored
+`randomness_factor`, 1-10) allows a leap of `2 * (a - 1)` positions within the
+top `count + 2 * (a - 1)`. Rows are chosen greedily by
+`-position - leap * redundancy`, with ties kept in rank order. Redundancy is the
+highest similarity to an already chosen title: a weighted Jaccard over genres
+(0.5), studios (0.2), source (0.15) and media type (0.15). It is computed only
+over facets both rows carry and renormalised over those facets. A pair with no
+comparable facet counts as fully redundant, so it earns no novelty. Labels use
+the production `parse_genres` path plus case and whitespace normalisation;
+`unknown`/NaN/`pd.NA` count as missing. Selected rows keep their original
+order and values.
+
+*Verification:*
+- `tests/test_feed_selection.py` (new, 41 cases, through `RecommendationService`
+  with the real heuristic and ONNX engines) covers:
+  - determinism across seeds, repeated calls, reversed input order and three
+    `PYTHONHASHSEED` subprocesses;
+  - top-title retention at every level, exact rank order at `a = 1`, and bounded
+    variety at `a = 10`;
+  - the window bound, and same-genre titles not treated as duplicates;
+  - per-facet lifts for studios, source and media type;
+  - bare and mixed-metadata pools, CSV-encoded and malformed labels, and
+    case/whitespace variants;
+  - pools smaller than the request, and exact-score ties;
+  - one selector call for the heuristic, ONNX and fallback paths;
+  - eligibility exclusions held at `a = 10`;
+  - unchanged heuristic contributions, and ONNX scores, availability and
+    original candidate ranks.
+- `tests/test_pipeline.py::test_full_more_and_single_step_share_one_deterministic_selection`
+  runs full generation, single-step (after the CSV round trip) and repeated
+  "more" through production service construction, with one selector call each.
+- Updated `test_seed_has_no_effect_on_the_deterministic_feed` and the ONNX engine
+  pool assertion.
+- On the pre-change code, eight identical-input runs gave eight different feeds
+  and five dropped the top title. The pipeline test and the mixed-pool test fail
+  on the old behavior.
+- Focused suite (10 files): 120 passed.
+- Full `tests/`: 807 passed, 3 failed, none in the selection path. Two
+  `test_security_audit` cases scan `frontend/node_modules`. The PySide
+  `test_native_visible_impressions_and_saved_actions` passes when run alone and
+  with its file.
+- The specialized adversarial reviewer gave NO-GO on its first pass: a missing
+  facet counted as zero similarity, so undescribed rows were promoted as novel.
+  After the fix, a narrow re-review gave GO. It checked real-bundle determinism
+  across processes and a 12-user promotion audit.
+
+*Left open:*
+- No franchise diversity: serving rows carry no verified franchise identifier.
+- A partly described title is compared only over the facets it shares, so one
+  verified differing fact can count as full novelty.
+- Selection works on rank position, not score size.
+- "More" does not consider titles already on screen.
+- On real data, `a = 10` changes about 1-2 of 10 slots; no evaluation shows the
+  feed is better.
+- `SELECTION_POLICY_VERSION` and the adventurousness value are not persisted,
+  and activity `model_rank` records feed position. Both are recorded under
+  Goal 3.
+- Some sibling-import test files fail collection when run alone
+  (pre-existing).
+
+---
+
 ## 2026-09-22 - Agent documentation entry point
 
 Reduced the required startup context to `START_HERE.md`, `CURRENT_TASK.md`, and

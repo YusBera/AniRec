@@ -605,3 +605,78 @@ def test_csv_batch_rolls_back_every_destination_when_second_commit_fails(system_
     assert second.read_text(encoding="utf-8") == "old-second"
     assert list(system_temp_dir.glob("*.tmp")) == []
     assert list(system_temp_dir.glob("*.bak")) == []
+
+
+def test_full_more_and_single_step_share_one_deterministic_selection(
+    system_temp_dir,
+    completed_anime_df,
+    monkeypatch,
+):
+    import AniRec.services.recommendation_service as service_module
+
+    studios = ["Madhouse", "Bones", "MAPPA"]
+    catalogue = pd.DataFrame(
+        [
+            {
+                "Anime ID": 500 + index,
+                "Title": f"Catalogue {index:02d}",
+                "Genres": ["Action", ["Drama", "Comedy", "Mystery", "Romance"][index % 4]],
+                "Studios": [studios[index % 3]],
+                "Source": ["Manga", "Original"][index % 2],
+                "Media Type": "tv",
+                "Mean Score": 9.0 - index * 0.05,
+            }
+            for index in range(20)
+        ]
+    )
+    calls = []
+    real = service_module.select_feed
+
+    def counting(rows, count, adventurousness):
+        calls.append((count, adventurousness))
+        return real(rows, count, adventurousness)
+
+    monkeypatch.setattr(service_module, "select_feed", counting)
+    settings = PipelineSettings(
+        top_anime_limit=20,
+        recommendation_count=5,
+        candidate_pool_size=20,
+        randomness_factor=10,
+    )
+
+    def orchestrator():
+        # Production construction: no injected seed source.
+        return _orchestrator(
+            system_temp_dir,
+            catalogue,
+            completed_anime_df,
+            recommendations=RecommendationService(),
+        )
+
+    initial = orchestrator().run_full("fixture-user", settings)
+    initial_ids = [item.anime.mal_id for item in initial.recommendations]
+    assert calls == [(5, 10)]
+
+    # Single-step reads the persisted CSV candidates and must serve the same feed.
+    step = orchestrator().run_step("generate_recommendations", "fixture-user", settings)
+    assert [item.anime.mal_id for item in step.recommendations] == initial_ids
+    assert calls == [(5, 10), (5, 10)]
+
+    # "More" no longer draws a fresh random seed: repeated requests agree.
+    more = [
+        orchestrator().run_more(
+            "fixture-user",
+            settings,
+            existing_recommendations=initial.recommendations,
+            count=3,
+        )
+        for _ in range(2)
+    ]
+    added = [
+        [item.anime.mal_id for item in result.recommendations[len(initial_ids):]]
+        for result in more
+    ]
+    assert added[0] == added[1]
+    assert len(added[0]) == 3
+    assert not set(added[0]) & set(initial_ids)
+    assert calls[2:] == [(3, 10), (3, 10)]

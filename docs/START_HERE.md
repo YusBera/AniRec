@@ -37,7 +37,8 @@ explicitly asks.
 4. Read only those files. Do not begin with historical handoffs.
 5. Update `TASK_HISTORY.md` when a task is completed.
 
-The current recommender task is paused while the React interface is refined in
+Goal 1 (deterministic, diverse feed selection) is complete; no next
+implementation task has been started. React interface refinement continues in
 another session. Backend work must avoid `frontend/src/` unless a contract
 change makes coordination necessary.
 

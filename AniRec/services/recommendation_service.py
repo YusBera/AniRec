@@ -1,9 +1,8 @@
-"""In-memory recommendation calculations with injectable randomness."""
+"""In-memory recommendation calculations: eligibility, ranking and selection."""
 
 from __future__ import annotations
 
 import os
-import random
 from collections.abc import Callable
 from datetime import date
 
@@ -33,6 +32,7 @@ try:
         EligibilityContext,
         FinalEligibilityPolicy,
     )
+    from ..scoring.selection import select_feed
     from ..scoring.serialization import profile_to_frame
     from ..scoring.taste import build_taste_profile
 except ImportError:  # Compatibility with the S01 top-level test import path.
@@ -59,6 +59,7 @@ except ImportError:  # Compatibility with the S01 top-level test import path.
         EligibilityContext,
         FinalEligibilityPolicy,
     )
+    from scoring.selection import select_feed
     from scoring.serialization import profile_to_frame
     from scoring.taste import build_taste_profile
 
@@ -67,11 +68,13 @@ class RecommendationService:
     def __init__(
         self,
         *,
-        random_int: Callable[[int, int], int] = random.randint,
+        random_int: Callable[[int, int], int] | None = None,
         ranker: RankingEngine | None = None,
         eligibility_policy: FinalEligibilityPolicy | None = None,
     ) -> None:
-        self._random_int = random_int
+        # ``random_int`` is accepted for older callers only. Feed selection is
+        # deterministic and never draws from a random source.
+        del random_int
         self._ranker = ranker if ranker is not None else HeuristicRankingEngine()
         self._eligibility_policy = eligibility_policy or FinalEligibilityPolicy()
         self._last_ranking_metadata: RankingEngineMetadata | None = None
@@ -145,11 +148,6 @@ class RecommendationService:
         include_nsfw: bool = False,
         as_of: date | None = None,
     ) -> pd.DataFrame:
-        random_state = (
-            settings.seed
-            if settings.seed is not None
-            else self._random_int(1, 1_000_000)
-        )
         history_records = (
             tuple(user_history.to_dict("records"))
             if user_history is not None
@@ -209,7 +207,9 @@ class RecommendationService:
                 recommendation_count=settings.recommendation_count,
                 candidate_pool_size=settings.candidate_pool_size,
                 randomness_factor=settings.randomness_factor,
-                random_seed=random_state,
+                # Retained in the contract for compatibility; no engine or
+                # selection step reads it.
+                random_seed=settings.seed if settings.seed is not None else 0,
                 minimum_mean_score=settings.minimum_mean_score,
             ),
             taste_adjustments=genre_adjustments or {},
@@ -218,6 +218,14 @@ class RecommendationService:
             collaborative_scores=collaborative_scores or {},
         )
         result = self._ranker.rank(request)
+        # Engines return their ordered, final-eligible pool. The feed is chosen
+        # here, once, by the one shared policy, whichever engine answered.
+        positions = select_feed(
+            result.ranked_candidates,
+            settings.recommendation_count,
+            settings.randomness_factor,
+        )
+        selected_rows = [result.ranked_candidates[position] for position in positions]
         self._last_ranking_metadata = result.metadata
         eligibility_audit = (
             fallback_audit
@@ -226,7 +234,7 @@ class RecommendationService:
         )
         self._last_eligibility_audit = eligibility_audit
         ranked = pd.DataFrame.from_records(
-            result.ranked_candidates,
+            selected_rows,
             columns=list(result.columns) or None,
         )
         ranked.attrs["ranking_engine"] = result.metadata
@@ -241,7 +249,7 @@ MODEL_BUNDLE_ENV = "ANIREC_MODEL_BUNDLE"
 def build_recommendation_service(
     *,
     model_bundle: str | None = None,
-    random_int: Callable[[int, int], int] = random.randint,
+    random_int: Callable[[int, int], int] | None = None,
 ) -> RecommendationService:
     """Use the verified ONNX model when configured, with honest fallback."""
     bundle = model_bundle or os.environ.get(MODEL_BUNDLE_ENV)

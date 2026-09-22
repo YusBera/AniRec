@@ -1,4 +1,3 @@
-import random
 from pathlib import Path
 
 import pandas as pd
@@ -7,12 +6,14 @@ try:
     from .genre_utils import parse_genres
     from .scoring.features import GENRE, feature_label, token
     from .scoring.ranking import score_candidates
+    from .scoring.selection import select_feed
     from .scoring.serialization import profile_from_frame
     from .title_utils import normalize_title_key
 except ImportError:  # Backward compatibility for direct script-style imports.
     from genre_utils import parse_genres
     from scoring.features import GENRE, feature_label, token
     from scoring.ranking import score_candidates
+    from scoring.selection import select_feed
     from scoring.serialization import profile_from_frame
     from title_utils import normalize_title_key
 
@@ -72,7 +73,47 @@ def rank_recommendations(
     minimum_mean_score=None,
     collaborative_scores=None,
 ):
-    """Rank in-memory candidate data without reading or writing CSV files."""
+    """Rank in-memory candidates, then select the feed with the shared policy.
+
+    ``randomness_factor`` is the stored adventurousness setting; see
+    ``scoring.selection``. ``random_state`` is accepted for compatibility with
+    older callers and has no effect: selection is deterministic.
+    """
+    ranked_df = rank_candidate_pool(
+        candidates_df,
+        genre_importance_df,
+        num_recommendations=num_recommendations,
+        top_anime_count=top_anime_count,
+        genre_adjustments=genre_adjustments,
+        excluded_mal_ids=excluded_mal_ids,
+        excluded_titles=excluded_titles,
+        minimum_mean_score=minimum_mean_score,
+        collaborative_scores=collaborative_scores,
+    )
+    positions = select_feed(
+        ranked_df.to_dict("records"), num_recommendations, randomness_factor
+    )
+    return ranked_df.iloc[list(positions)].copy()
+
+
+def rank_candidate_pool(
+    candidates_df,
+    genre_importance_df,
+    *,
+    num_recommendations,
+    top_anime_count,
+    genre_adjustments=None,
+    excluded_mal_ids=None,
+    excluded_titles=None,
+    minimum_mean_score=None,
+    collaborative_scores=None,
+):
+    """Score and order candidates, best first, without selecting a feed.
+
+    Returns at most ``max(top_anime_count, num_recommendations)`` rows sorted
+    by score, community mean, MAL ID and title. Every row carries its exact
+    heuristic score and explanation.
+    """
     required_candidate_columns = {"Title", "Genres"}
     missing_candidate_columns = required_candidate_columns - set(candidates_df.columns)
     if missing_candidate_columns:
@@ -153,23 +194,7 @@ def rank_recommendations(
         kind="mergesort",
         na_position="last",
     )
-    ranked_df = ranked_df.head(max(top_anime_count, num_recommendations))
-
-    randomness_factor = min(max(randomness_factor, 1), 10)
-    pool_size = max(num_recommendations, round(len(ranked_df) * randomness_factor / 10))
-    recommendation_pool = ranked_df.head(pool_size)
-
-    if len(recommendation_pool) > num_recommendations:
-        final_recommendations = recommendation_pool.sample(
-            n=num_recommendations,
-            random_state=(
-                random.randint(1, 1_000_000) if random_state is None else random_state
-            ),
-        ).sort_values(sort_columns, ascending=ascending)
-    else:
-        final_recommendations = recommendation_pool
-
-    return final_recommendations.copy()
+    return ranked_df.head(max(top_anime_count, num_recommendations)).copy()
 
 
 def _collaborative_by_position(rows, collaborative_scores):

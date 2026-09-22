@@ -121,7 +121,7 @@ def run_full_pipeline(orchestrator=None, logger=None):
         minimum=num_recommendations,
     )
     randomness_factor = prompt_int(
-        "Randomness factor, 1-10",
+        "Adventurousness (variety over rank order), 1-10",
         DEFAULT_RANDOMNESS_FACTOR,
         minimum=1,
         maximum=10,
@@ -224,7 +224,7 @@ def _prompt_step_settings(choice):
             minimum=recommendation_count,
         )
         randomness = prompt_int(
-            "Randomness factor, 1-10",
+            "Adventurousness (variety over rank order), 1-10",
             randomness,
             minimum=1,
             maximum=10,
@@ -324,7 +324,7 @@ def generate_recommendations(
         )
     if randomness_factor is None:
         randomness_factor = prompt_int(
-            "Randomness factor, 1-10",
+            "Adventurousness (variety over rank order), 1-10",
             DEFAULT_RANDOMNESS_FACTOR,
             minimum=1,
             maximum=10,

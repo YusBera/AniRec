@@ -2,7 +2,7 @@
 
 This is the working order after the completed eligibility, scoring-correction,
 and installed-catalogue slices. `CURRENT_TASK.md` remains the authority for what
-may be implemented now. The current task is paused until the user resumes it.
+may be implemented now. Goal 1 is complete; Goal 2 has not been started.
 
 React UI refinement is happening separately. Backend work should avoid
 `frontend/src/` unless an API contract must change; in that case, document the
@@ -16,10 +16,11 @@ contract and give the UI agent a focused handoff.
   full generation, “more”, and single-step generation.
 - Missing MAL score, rank, and episode count remain unavailable rather than zero.
 - Local recommendation activity collection already exists and is opt-in.
+- Deterministic, diverse feed selection (Goal 1) is shared by every engine path.
 
 ## Goal 1 - Deterministic, diverse feed selection
 
-**Status:** paused; this is the next implementation task.
+**Status:** complete (2026-09-22). See `TASK_HISTORY.md`.
 
 Replace random sampling from the ranked pool with one shared selection policy
 for the heuristic and ONNX engines.
@@ -65,7 +66,9 @@ not rebuild logging that already exists.
 
 Confirm that a presentation records the engine and catalogue versions, ordered
 feed fingerprint, original rank, selected position, and the setting that shaped
-selection. Verify impression, detail-open, external-open, save, dismiss, and
+selection. Known gap from the Goal 1 review: activity `model_rank` currently
+records the feed position after selection, not the original model rank, and
+neither the adventurousness value nor `SELECTION_POLICY_VERSION` is recorded. Verify impression, detail-open, external-open, save, dismiss, and
 restore meanings remain distinct and privacy-bounded.
 
 **After this goal:** AniRec can connect what it showed with what the reader did,

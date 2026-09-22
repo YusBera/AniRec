@@ -8,13 +8,12 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import random
 from time import perf_counter
 
 import pandas as pd
 
 try:
-    from ..recommendation_system import rank_recommendations
+    from ..recommendation_system import rank_candidate_pool
     from ..title_utils import normalize_title_key
     from .contracts import (
         RANKING_INPUT_SCHEMA_VERSION,
@@ -25,7 +24,7 @@ try:
     )
     from .eligibility import EligibilityContext
 except ImportError:  # Compatibility with the sibling import path used by tests.
-    from recommendation_system import rank_recommendations
+    from recommendation_system import rank_candidate_pool
     from title_utils import normalize_title_key
     from scoring.contracts import (
         RANKING_INPUT_SCHEMA_VERSION,
@@ -46,7 +45,11 @@ class IncompatibleRankingEngine(RankingEngineUnavailable):
 
 
 class HeuristicRankingEngine:
-    """Adapter that preserves AniRec's current explainable ranking behavior."""
+    """Adapter that preserves AniRec's current explainable ranking behavior.
+
+    Returns the ordered candidate pool; the feed is selected afterwards by the
+    shared policy in ``scoring.selection``.
+    """
 
     engine_id = "heuristic"
     engine_version = "1"
@@ -68,13 +71,11 @@ class HeuristicRankingEngine:
             columns=list(request.profile_columns) or None,
         )
         started = perf_counter()
-        ranked = rank_recommendations(
+        ranked = rank_candidate_pool(
             candidates,
             profile,
             num_recommendations=request.parameters.recommendation_count,
             top_anime_count=request.parameters.candidate_pool_size,
-            randomness_factor=request.parameters.randomness_factor,
-            random_state=request.parameters.random_seed,
             genre_adjustments=dict(request.taste_adjustments),
             excluded_mal_ids=set(request.excluded_mal_ids),
             excluded_titles=set(request.excluded_titles),
@@ -266,23 +267,11 @@ class OnnxSequenceRankingEngine:
             request.parameters.recommendation_count,
             request.parameters.candidate_pool_size,
         )
+        # The ordered pool is returned; the shared selection policy in
+        # ``scoring.selection`` picks the feed from it after ranking.
         pool = eligible[:pool_limit]
-        sampling_limit = max(
-            request.parameters.recommendation_count,
-            round(len(pool) * request.parameters.randomness_factor / 10),
-        )
-        sampling_pool = pool[:sampling_limit]
-        if len(sampling_pool) > request.parameters.recommendation_count:
-            selected = random.Random(request.parameters.random_seed).sample(
-                sampling_pool, request.parameters.recommendation_count
-            )
-            selected.sort(key=lambda value: (-value[0], -value[1], value[2], value[3]))
-        else:
-            selected = sampling_pool
-        rank_by_mal_id = {value[2]: rank for rank, value in enumerate(eligible)}
         ranked_rows = []
-        for raw_score, _mean, mal_id, _title, row in selected:
-            global_rank = rank_by_mal_id[mal_id]
+        for global_rank, (raw_score, _mean, _mal_id, _title, row) in enumerate(pool):
             row.update(
                 {
                     "Recommendation Score": raw_score,

@@ -69,7 +69,7 @@ def test_raw_display_score_contributions_and_reason_templates():
     ]
 
 
-def test_same_seed_repeats_ids_and_different_seed_changes_selection():
+def test_seed_has_no_effect_on_the_deterministic_feed():
     candidates = pd.DataFrame(
         [
             {
@@ -119,8 +119,11 @@ def test_same_seed_repeats_ids_and_different_seed_changes_selection():
         ),
     )
 
+    # Selection is deterministic: a stored seed no longer changes the feed, and
+    # with identical metadata the strongest five are served in rank order.
     assert first["Anime ID"].tolist() == repeated["Anime ID"].tolist()
-    assert first["Anime ID"].tolist() != different["Anime ID"].tolist()
+    assert first["Anime ID"].tolist() == different["Anime ID"].tolist()
+    assert first["Anime ID"].tolist() == [1, 2, 3, 4, 5]
 
 
 def test_stable_tie_break_is_score_mean_id_then_title():

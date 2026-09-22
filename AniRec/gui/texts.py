@@ -237,7 +237,7 @@ class WizardTextCatalog:
     top_anime_limit: str = "Top anime to analyze"
     recommendation_count: str = "Recommendation count"
     candidate_pool_size: str = "Candidate pool size"
-    randomness_factor: str = "Randomness (1–10)"
+    randomness_factor: str = "Adventurousness (1–10)"
     start_analysis: str = "Start Initial Analysis"
     cancel_analysis: str = "Cancel Analysis"
     analysis_ready: str = "Review the defaults, then create your first recommendations."

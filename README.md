@@ -22,7 +22,7 @@ The English desktop interface provides:
 - a sample-backed **Compare** workspace for reviewing compatibility without presenting unavailable live data as real;
 - profile-local Liked, Not for me, and Watch Later collections keyed by MyAnimeList anime ID;
 - **Recommend 5 more** plus an automatic refill prompt when the feed is exhausted;
-- a single **Adventurousness** control in place of the sampler's internals;
+- a single **Adventurousness** control that sets how far the deterministic feed may trade rank order for verified metadata variety;
 - optional developer tools exposing the individual data steps;
 - four themes generated from one set of design tokens: light, dark, OLED black, and a gradient built from two colours you pick, with a live preview;
 - grid and list layouts for the feed, plus a table, each remembered between sessions;

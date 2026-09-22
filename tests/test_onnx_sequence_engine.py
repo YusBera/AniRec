@@ -158,7 +158,8 @@ def test_onnx_engine_uses_typed_chronology_and_excludes_known_items(tmp_path):
 
     result = engine.rank(_request(history))
 
-    assert [row["Anime ID"] for row in result.ranked_candidates] == [2, 3]
+    # The engine returns its whole ordered pool; the service selects the feed.
+    assert [row["Anime ID"] for row in result.ranked_candidates] == [2, 3, 4]
     assert result.metadata.engine_id == "sasrec-onnx"
     assert result.metadata.explanation_type == "sequence-score"
     feed = session.feeds[0]

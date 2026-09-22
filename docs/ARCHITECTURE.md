@@ -63,7 +63,11 @@ installing a new bundle does not hot-swap an existing feed's population.
 Immediately before scoring, `FinalEligibilityPolicy` now applies one versioned
 boundary to the primary and fallback pools. It enforces known-item exclusions,
 model coverage, release/status/rating/media rules and bundle prerequisites, then
-records aggregate exclusion reasons. Selection remains roadmap work.
+records aggregate exclusion reasons. Engines then return their ordered,
+eligible pool, and `RecommendationService.recommend` applies the shared
+deterministic selector in `AniRec/scoring/selection.py` exactly once, for the
+heuristic, ONNX and fallback paths alike. The legacy CSV entry point
+`rank_recommendations` uses the same selector.
 
 Measured behaviour of both engines is recorded in
 `docs/design/RECOMMENDER_EVALUATION.md`. Read it before changing ranking.

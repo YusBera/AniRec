@@ -44,7 +44,8 @@ OpenAPI export for type generation: `AniRec/api/openapi_export.py`.
 | Relation graph, franchise exclusion, collaborative scores | `AniRec/scoring/collaborative.py` |
 | Engine contract and metadata | `AniRec/scoring/contracts.py` |
 | Shared final eligibility policy and aggregate audit | `AniRec/scoring/eligibility.py` |
-| Legacy ranking entry point and selection policy | `AniRec/recommendation_system.py` |
+| Shared deterministic feed selection (adventurousness, diversity) | `AniRec/scoring/selection.py`; called once in `AniRec/services/recommendation_service.py` |
+| Heuristic ranked pool (`rank_candidate_pool`) and legacy CSV entry point | `AniRec/recommendation_system.py` |
 | Pipeline tuning defaults | `AniRec/models/domain.py` |
 
 Measured behaviour of both engines: `docs/design/RECOMMENDER_EVALUATION.md`.

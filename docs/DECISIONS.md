@@ -5,6 +5,25 @@ accepted decision without a new reason from the user.
 
 ---
 
+## D-011 - Adventurousness is a bounded, deterministic rank leap
+**2026-09-22 - Accepted**
+
+Feed selection is deterministic and happens once, after ranking and final
+eligibility, in one shared policy (`AniRec/scoring/selection.py`). The top
+title is always served. Adventurousness `a` (stored as `randomness_factor`)
+lets a title move at most `2 * (a - 1)` rank positions ahead when it is less
+redundant with titles already chosen; `a = 1` is rank order. Redundancy uses
+only verified catalogue facets present on both titles. A pair with no
+comparable facet earns no novelty, partial metadata is compared over shared
+facets only, and no franchise identity is inferred.
+
+*Why:* D-007 requires the random sampler to be replaced with an explicit
+diversity mechanism. A bounded, rank-position leap keeps the control's meaning
+checkable and independent of engine score scales. It never changes
+eligibility or any score.
+
+---
+
 ## D-010 - Final eligibility is shared across ranking engines
 **2026-09-21 - Accepted**
 
