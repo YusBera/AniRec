@@ -2,7 +2,8 @@
 
 This is the working order after the completed eligibility, scoring-correction,
 and installed-catalogue slices. `CURRENT_TASK.md` remains the authority for what
-may be implemented now. Goal 1 is complete; Goal 2 has not been started.
+may be implemented now. Goals 1-3 are complete. Goal 4 waits for the user to
+pull the latest verified collector snapshot.
 
 React UI refinement is happening separately. Backend work should avoid
 `frontend/src/` unless an API contract must change; in that case, document the
@@ -41,6 +42,9 @@ backend run; one final adversarial reviewer after tests.
 
 ## Goal 2 - Honest personal-match presentation
 
+**Status:** complete (2026-09-22). Personal fit is now a rank and each pick
+carries an engine-specific explanation (D-008, D-012). See `TASK_HISTORY.md`.
+
 Resolve `DECISIONS.md` D-008. The current model output is not a probability and
 must not be presented as a trustworthy percentage.
 
@@ -61,6 +65,8 @@ files change.
 
 ## Goal 3 - Close activity-attribution gaps
 
+**Status:** complete (2026-09-22). See `TASK_HISTORY.md`.
+
 Audit the existing impression and action logging against the new selector. Do
 not rebuild logging that already exists.
 
@@ -68,7 +74,9 @@ Confirm that a presentation records the engine and catalogue versions, ordered
 feed fingerprint, original rank, selected position, and the setting that shaped
 selection. Known gap from the Goal 1 review: activity `model_rank` currently
 records the feed position after selection, not the original model rank, and
-neither the adventurousness value nor `SELECTION_POLICY_VERSION` is recorded. Verify impression, detail-open, external-open, save, dismiss, and
+neither the adventurousness value nor `SELECTION_POLICY_VERSION` is recorded.
+Also check that single-step generation (`run_step`) honours hidden titles and
+feedback; today it passes neither to ranking. Verify impression, detail-open, external-open, save, dismiss, and
 restore meanings remain distinct and privacy-bounded.
 
 **After this goal:** AniRec can connect what it showed with what the reader did,

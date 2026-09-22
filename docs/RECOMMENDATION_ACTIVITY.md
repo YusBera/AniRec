@@ -37,12 +37,41 @@ and does not detect every form of partial window occlusion.
 
 ## Attribution and failures
 
-Events store schema version, event UUID, local timestamp, presentation/request
-UUID, ordered-feed fingerprint, engine version, MAL ID, display position,
-original model rank and surface. Identical cached rankings from the same engine
-share a fingerprint; request UUID distinguishes presentations. New pipeline
-results carry the ranking engine ID and version, including the ONNX checkpoint
-hash prefix. Older saved feeds retain the legacy-app-<version> label.
+Events store:
+- schema version, event UUID, local timestamp and surface;
+- the presentation/request UUID and the ordered-feed fingerprint;
+- engine version and MAL ID;
+- the display position the client saw;
+- attribution (schema 2), all derived server-side from the served row and
+  never taken from the client:
+  - `model_rank`, the engine's rank before diversity selection;
+  - `feed_rank`, the row's position in the served feed;
+  - `ranking_id`, the ranking snapshot, which fixes the engine, bundle
+    catalogue, input files, feedback, eligibility filters and date the ranking
+    was built from. Each snapshot is archived immutably in the profile's
+    `ranking_snapshots/<ranking_id>.csv` (kept for the same 90 days as
+    events), so an event stays resolvable after later generations.
+    `PipelineOrchestrator.ranking_snapshot` reads it back;
+  - `catalog_version`, the catalogue version the ranking's eligibility used,
+    recorded directly on the event. It is `live-unversioned` for a
+    configuration without an installed catalogue, whose population is then
+    identified only by the archived snapshot's input digest;
+  - `selection_policy` and `adventurousness`, as in force when that row was
+    selected.
+
+A feed's "more" batches share its `ranking_id`, but may be selected under a
+different adventurousness, which each row records. The feed fingerprint covers
+each row's MAL ID, feed rank, model rank, ranking ID and selection settings.
+Identical cached feeds share it, and the request UUID distinguishes
+presentations.
+
+Stores from before schema 2 are migrated in place: the new columns are added,
+and existing rows keep `schema_version` 1 with NULL attribution. In version 1
+rows, `model_rank` held the feed position, not the engine rank.
+
+New pipeline results carry the ranking engine ID and version, including the
+ONNX checkpoint hash prefix. Older saved feeds retain the
+legacy-app-<version> label.
 
 HTTP requests name the originating profile to reject stale events after profile
 changes; this field is not stored in the event table. No usernames, titles,

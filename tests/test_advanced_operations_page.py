@@ -24,8 +24,11 @@ class FakeOrchestrator:
     def __init__(self):
         self.calls = []
 
-    def run_step(self, step_id, username, settings, *, progress_callback, cancellation_token):
+    def run_step(self, step_id, username, settings, *, progress_callback, cancellation_token,
+                 excluded_mal_ids=frozenset(), genre_adjustments=None):
         self.calls.append((step_id, username, settings, cancellation_token))
+        self.exclusions = getattr(self, "exclusions", {})
+        self.exclusions[step_id] = frozenset(excluded_mal_ids)
         progress_callback(PipelineProgress(step_id, f"Running {step_id}", 1, 1, True))
         return PipelineResult(completed_at="2026-08-03T12:00:00+00:00")
 
@@ -213,3 +216,35 @@ def test_installed_catalogue_step_does_not_require_a_mal_client_id(system_temp_d
     assert not page.widgets["fetch_completed"].run_button.isEnabled()
 
     page.close()
+
+
+def test_single_step_generation_excludes_the_profiles_hidden_titles(system_temp_dir):
+    from types import SimpleNamespace
+
+    application = create_application([])
+    profiles, profile, settings = state(system_temp_dir)
+    directory = profiles.directory(profile.profile_id)
+    for name in (
+        "completed_anime.csv",
+        CANDIDATE_CATALOGUE_FILENAME,
+        "recommendation_candidates.csv",
+        "genre_importance.csv",
+    ):
+        (directory / name).write_text("fixture\n", encoding="utf-8")
+    orchestrator = FakeOrchestrator()
+    controller = WorkerController()
+    page = AdvancedOperationsPage(
+        worker_controller=controller,
+        orchestrator=orchestrator,
+        profile_service=profiles,
+        settings_service=settings,
+        auth_service=FakeAuthService(),
+        recommendation_state_service=SimpleNamespace(
+            load=lambda _profile_id: SimpleNamespace(hidden_mal_ids=frozenset({7, 9}))
+        ),
+    )
+    page.set_profile(profile)
+
+    assert page.run_step("generate_recommendations")
+    wait_until(application, lambda: not controller.active_keys)
+    assert orchestrator.exclusions["generate_recommendations"] == frozenset({7, 9})

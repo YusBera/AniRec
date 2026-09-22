@@ -1,50 +1,77 @@
 # Current Task
 
-## Status: COMPLETE - no active implementation task
+## Status: Goals 1-3 complete; Goal 4 needs the user first
 
-Goal 1, deterministic and diverse feed selection, was completed on
-2026-09-22. The next task (Goal 2 in `NEXT_GOALS.md`) has **not** been
-started and needs the user to open it. React UI refinement continues in
-another session; avoid `frontend/src/` unless an API contract change requires
-explicit coordination.
+Goal 4 (chronological evaluation and model decision) must not start until
+the user pulls the latest verified collector snapshot. Goals 2 and 3 are
+complete but not yet committed.
 
-## Completed task: deterministic, diverse feed selection
+Goal 1 (deterministic, diverse feed selection) is complete and committed.
+Goal 2 (honest personal fit and "why this pick") is complete: the adversarial
+reviewer gave GO on its fifth pass. It is not yet committed. React UI
+refinement continues in another session and works from the UI contract in
+`UI_ENGINE_INTEGRATION.md`.
 
-Replaced uniform random sampling from a ranked pool with one shared,
-deterministic selection policy for the heuristic, ONNX, and fallback paths.
+## Task: honest personal fit and "why was this recommended to me?"
 
-**Owner:** `AniRec/scoring/selection.py`, called once in
-`RecommendationService.recommend`.
+**Decisions:** `DECISIONS.md` D-008 (resolved), D-012.
 
-**Decisions:** `DECISIONS.md` D-007, D-011.
+**Owner:** `AniRec/scoring/explanation.py`; ranks in `recommendation_system.py`
+and `scoring/engines.py`; the service call site in
+`services/recommendation_service.py`.
 
-### Final state
+### Implemented
 
-- No random source remains in feed selection. The same candidates, scores,
-  settings and account state produce the same ordered feed across runs, seeds
-  and Python processes.
-- Engines return their ordered, final-eligible pool. The service selects once,
-  whichever engine answered. Fallback is therefore never selected twice.
-- The top-ranked title is always served. Adventurousness `a` allows a title to
-  move at most `2 * (a - 1)` positions for variety, within the top
-  `count + 2 * (a - 1)`. `a = 1` is exactly rank order.
-- Redundancy uses genres, studios, source and media type, compared only over
-  facets both rows carry. A pair with no comparable facet earns no novelty;
-  partial metadata is compared over shared facets only.
-- No franchise diversity is claimed. Serving rows carry no verified franchise
-  identifier.
-- Scores, match availability, contributions, reasons, engine and catalogue
-  provenance, and the ONNX original candidate rank are unchanged by selection.
-- No API, persisted format, or frontend contract changed.
+- The uncalibrated "personal match" percentage is retired for every engine.
+  The API sends `personal_match: 0.0`, `personal_match_available: false` and no
+  percentage-point breakdown.
+- Personal fit is the engine's rank before diversity selection:
+  `fit_rank`, `fit_pool_size` and `fit_top_percent`. Each generated feed
+  records a ranking snapshot in `ranking_signals.csv`: similar-viewer scores,
+  franchise and hidden exclusions, eligibility date, input digest and engine.
+  "More" continues exactly that ranking, so ranks are unique across a feed and
+  its batches, and refuses with "Generate a new feed" when the inputs changed.
+- `why` explains each served row with the answering engine's own method:
+  - heuristic: `exact-additive` score parts, with evidence from genuine
+    ratings only;
+  - sequence model: deterministic `counterfactual-removal` over the model's
+    input window;
+  - otherwise `unavailable`.
+- Genre feedback touches only `genre:` features, including for never-rated
+  genres.
+- The API's sync, generate and "more" operations now save their results, so
+  the web feed shows them. Before, a web "more" batch was computed but never
+  shown. These three feed-writing operations never overlap for one profile.
+- The UI contract is in `UI_ENGINE_INTEGRATION.md`. Generated API types are
+  regenerated.
 
-See `TASK_HISTORY.md` for tests, the reviewer's result, and limits.
+### Boundaries kept
 
-## Next tasks (not started)
+No retraining, no new snapshot, no change to eligibility or selection. The
+deprecated PySide client still renders its own legacy percentage from the
+presentation model.
 
-1. Make the displayed personal-match claim honest (`DECISIONS.md` D-008).
-2. Audit existing activity logging against the selection result and close
-   attribution gaps.
-3. Before any retraining, ask the user to pull the latest verified snapshot.
+## Goal 3: activity attribution (complete)
 
-See `NEXT_GOALS.md` for outcomes, evidence requirements, estimates, and the
-later training gate. That roadmap does not authorize starting a task.
+- Activity events (schema 2) record, server-side from the served row:
+  - the engine's rank before selection (`model_rank`, previously the feed
+    position);
+  - the feed position (`feed_rank`);
+  - the ranking snapshot (`ranking_id`);
+  - the selection policy and adventurousness that chose the row.
+- Existing stores migrate in place.
+- Each recommendation records the selection it was chosen under, so a "more"
+  batch selected with a different adventurousness stays attributable.
+- The feed fingerprint no longer hashes the retired percentage.
+- Full, "more" and single-step generation read the profile's saved hidden
+  titles themselves when a caller passes none, so the CLI, the desktop app and
+  the API all exclude them. Single-step also accepts feedback adjustments,
+  though no current client sends any.
+- Each event also records the catalogue version, and every ranking snapshot
+  is archived by `ranking_id`, so an event stays resolvable after later
+  generations.
+
+## Next task
+
+Goal 4 requires the latest verified collector snapshot. Stop and ask the user
+before starting it.

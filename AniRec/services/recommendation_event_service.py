@@ -20,6 +20,26 @@ SURFACES = frozenset({"native_cards", "native_list", "native_table", "web_cards"
 MAX_EVENTS = 50_000
 RETENTION_SECONDS = 90 * 86400
 MODEL_VERSION = f"legacy-app-{__version__}"
+# Version 2 adds what a presentation needs to be attributed to its ranking:
+# the ranking snapshot identity (resolvable later from the profile's archived
+# ``ranking_snapshots/<ranking_id>.csv``), the catalogue version the ranking's
+# eligibility used, the feed position the server served, and the selection
+# policy and adventurousness that chose the row. ``model_rank`` is the
+# engine's rank before selection. Version 1 rows keep NULL in the new columns,
+# and their ``model_rank`` held the feed position instead.
+EVENT_SCHEMA_VERSION = 2
+# Profile-relative directory holding immutable ranking snapshots by ranking id
+# (written by the pipeline). Recording an event refreshes its snapshot's
+# modification time, so a snapshot is kept at least as long as any retained
+# event that references it.
+RANKING_SNAPSHOT_ARCHIVE = "ranking_snapshots"
+_V2_COLUMNS = (
+    ("ranking_id", "TEXT"),
+    ("catalog_version", "TEXT"),
+    ("feed_rank", "INTEGER"),
+    ("selection_policy", "TEXT"),
+    ("adventurousness", "INTEGER"),
+)
 
 
 def activity_model_version(user_stats=None) -> str:
@@ -31,12 +51,28 @@ def activity_model_version(user_stats=None) -> str:
     return f"{engine_id}:{engine_version}"[:200]
 
 
+def activity_catalog_version(user_stats=None) -> str | None:
+    """The catalogue version the served feed's eligibility policy used."""
+    value = str((user_stats or {}).get("eligibility_catalog_version") or "").strip()
+    return value[:200] or None
+
+
 def feed_fingerprint(models, model_version=MODEL_VERSION) -> str:
     # Identifies the presented ranking, not an invented training artifact or
     # generation timestamp. Cached identical feeds deliberately share this ID.
     payload = {
         "model_version": str(model_version),
-        "rows": [(m.mal_id, m.rank, str(m.personal_match)) for m in models],
+        "rows": [
+            (
+                m.mal_id,
+                m.rank,
+                getattr(m, "fit_rank", None),
+                getattr(m, "ranking_id", None),
+                getattr(m, "selection_policy", None),
+                getattr(m, "adventurousness", None),
+            )
+            for m in models
+        ],
     }
     return hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
 
@@ -96,6 +132,10 @@ class RecommendationEventService:
         conn.execute("""CREATE UNIQUE INDEX IF NOT EXISTS one_impression
             ON events(request_id, mal_id, surface) WHERE action='impression'""")
         conn.execute("CREATE INDEX IF NOT EXISTS activity_time ON events(recorded_at)")
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(events)")}
+        for name, kind in _V2_COLUMNS:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE events ADD COLUMN {name} {kind}")
         return conn
 
     def clear(self, profile):
@@ -109,7 +149,9 @@ class RecommendationEventService:
                 conn.execute("VACUUM")
 
     def record(self, profile, *, request_id, feed_id, action, mal_id, position,
-               model_rank=None, surface, event_id=None, model_version=MODEL_VERSION):
+               model_rank=None, surface, event_id=None, model_version=MODEL_VERSION,
+               ranking_id=None, feed_rank=None, selection_policy=None,
+               adventurousness=None, catalog_version=None):
         if not profile or not self.status(profile)["enabled"]:
             return False
         if action not in EVENTS or surface not in SURFACES:
@@ -125,13 +167,42 @@ class RecommendationEventService:
         model_version = str(model_version).strip()
         if not model_version or len(model_version) > 200:
             raise ValueError("invalid model version")
+        if ranking_id is not None and (
+            not isinstance(ranking_id, str)
+            or not 1 <= len(ranking_id) <= 64
+            or any(c not in "0123456789abcdef" for c in ranking_id)
+        ):
+            raise ValueError("invalid ranking id")
+        if feed_rank is not None and (type(feed_rank) is not int or feed_rank < 1):
+            raise ValueError("invalid feed rank")
+        if catalog_version is not None and (
+            not isinstance(catalog_version, str) or not 0 < len(catalog_version) <= 200
+        ):
+            raise ValueError("invalid catalog version")
+        if selection_policy is not None and (
+            not isinstance(selection_policy, str) or not 0 < len(selection_policy) <= 64
+        ):
+            raise ValueError("invalid selection policy")
+        if adventurousness is not None and (
+            type(adventurousness) is not int or not 1 <= adventurousness <= 10
+        ):
+            raise ValueError("invalid adventurousness")
         now = int(datetime.now(timezone.utc).timestamp())
         try:
             with closing(self._connect(profile)) as conn, conn:
-                cursor = conn.execute("INSERT OR IGNORE INTO events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
-                                      (event_id, now, request_id, feed_id, model_version, action,
-                                       mal_id, position, model_rank, surface))
+                cursor = conn.execute(
+                    """INSERT OR IGNORE INTO events (event_id, recorded_at, request_id,
+                        feed_id, model_version, action, mal_id, position, model_rank,
+                        surface, schema_version, ranking_id, feed_rank,
+                        selection_policy, adventurousness, catalog_version)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (event_id, now, request_id, feed_id, model_version, action,
+                     mal_id, position, model_rank, surface, EVENT_SCHEMA_VERSION,
+                     ranking_id, feed_rank, selection_policy, adventurousness,
+                     catalog_version))
                 inserted = cursor.rowcount == 1
+                if inserted and ranking_id is not None:
+                    self._keep_snapshot(profile, ranking_id)
                 conn.execute("DELETE FROM events WHERE recorded_at < ?", (now - RETENTION_SECONDS,))
                 conn.execute("""DELETE FROM events WHERE rowid IN
                     (SELECT rowid FROM events ORDER BY recorded_at DESC, rowid DESC LIMIT -1 OFFSET ?)""",
@@ -140,6 +211,15 @@ class RecommendationEventService:
         except (OSError, sqlite3.Error):
             # Logging must never prevent opening or saving a recommendation.
             return False
+
+
+    def _keep_snapshot(self, profile, ranking_id):
+        path = self._root(profile) / RANKING_SNAPSHOT_ARCHIVE / f"{ranking_id}.csv"
+        try:
+            if path.exists():
+                os.utime(path)
+        except OSError:
+            pass  # housekeeping only; never blocks recording
 
 
 class ExposureTracker:

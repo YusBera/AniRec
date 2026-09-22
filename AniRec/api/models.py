@@ -53,6 +53,113 @@ class Contribution(ApiModel):
     value: float
 
 
+class ExplanationEvidence(ApiModel):
+    """A title from the reader's own list that backs one part of a "why".
+
+    For counterfactual removal, ``value`` is how much the pick's model score
+    drops without this one title (positive: the title raised the pick) and
+    ``rank_without`` the pick's rank without it, among the same candidates;
+    ``list_status`` is the reader's MAL list status. All three are null for a
+    heuristic taste part, whose evidence is the reader's rated titles.
+    """
+
+    mal_id: int | None
+    title: str
+    user_score: float | None
+    list_status: str | None
+    value: float | None
+    rank_without: int | None
+
+
+class TasteDetail(ApiModel):
+    """How the reader's ratings shaped one taste part.
+
+    ``affinity`` is the value the ranking used: the shrunk mean of the reader's
+    centred ratings of titles carrying the feature, then moved by any explicit
+    feedback (see the segment's ``feedback_adjustment``). ``rarity`` is its
+    catalogue IDF. ``rated_count`` and ``mean_user_score`` describe the
+    reader's rated titles with the feature; both are null when the rated list
+    was unavailable.
+    """
+
+    affinity: float
+    rarity: float
+    rated_count: int | None
+    mean_user_score: float | None
+    overall_mean_user_score: float | None
+
+
+class CommunityDetail(ApiModel):
+    mean_score: float | None
+    scoring_users: float | None
+
+
+class ExplanationSegment(ApiModel):
+    """One part of a recommendation's score, in the explanation's ``unit``.
+
+    ``taste`` parts come from the reader's own ratings. ``community`` and
+    ``similar-viewers`` parts are not about the reader's taste.
+    ``history-group`` parts are the reader's history titles in one genre (the
+    genre of *their* titles; the sequence model never sees genres), and
+    ``history-other`` their titles without genres. For these, ``value`` is the
+    model-score drop when all ``member_count`` titles are removed and
+    ``rank_without`` the pick's rank then; removal effects overlap, so they do
+    not sum to the score.
+    ``signal_available`` false means a neutral stand-in filled a missing signal.
+    """
+
+    kind: Literal[
+        "taste", "community", "similar-viewers", "history-group", "history-other"
+    ]
+    facet: Literal["genre", "studio", "source", "media-type", "era"] | None
+    label: str
+    value: float
+    rank_without: int | None
+    member_count: int | None
+    taste: TasteDetail | None
+    feedback_adjustment: float | None
+    signal_available: bool
+    community: CommunityDetail | None
+    evidence: tuple[ExplanationEvidence, ...]
+
+
+class Explanation(ApiModel):
+    """Why the ranking engine placed a title where it did.
+
+    * ``exact-additive`` (heuristic): segment values sum exactly to ``total``,
+      the ranking score (``baseline`` 0, ``full_score`` = ``total``). Render
+      as an additive bar.
+    * ``counterfactual-removal`` (sequence model): ``full_score`` and
+      ``full_rank`` are the pick's model score and rank with the reader's full
+      history among ``ranked_candidate_count`` candidates. Each segment and
+      ``influences`` entry says how far the pick falls without those history
+      titles. Effects overlap, so ``total`` and ``baseline`` are null: render
+      relative impacts, never shares of a whole.
+    * ``unavailable``: the engine cannot explain itself;
+      ``unavailable_reason`` says why, and nothing is borrowed.
+    """
+
+    schema_version: int
+    method: Literal["exact-additive", "counterfactual-removal", "unavailable"]
+    unit: Literal["ranking-score", "model-score"] | None
+    total: float | None
+    baseline: float | None
+    full_score: float | None
+    full_rank: int | None
+    ranked_candidate_count: int | None
+    history_window: int | None = Field(
+        default=None,
+        description=(
+            "counterfactual-removal only: how many of the reader's most recent "
+            "list entries the model reads. Segments and influences cover only "
+            "these titles, never the whole list."
+        ),
+    )
+    segments: tuple[ExplanationSegment, ...]
+    influences: tuple[ExplanationEvidence, ...]
+    unavailable_reason: str | None
+
+
 class RecommendationViewModelResponse(ApiModel):
     """``AniRec.presentation.RecommendationViewModel``, as JSON.
 
@@ -67,7 +174,12 @@ class RecommendationViewModelResponse(ApiModel):
     display_title: str
     secondary_title: str | None
     alternative_titles: tuple[str, ...]
-    personal_match: float
+    personal_match: float = Field(
+        description=(
+            "Retired (D-008). Always 0.0 and personal_match_available is always "
+            "false; use fit_rank. Kept only so existing clients still parse."
+        )
+    )
     personal_match_text: str
     personal_match_available: bool
     mal_score: float | None
@@ -87,11 +199,48 @@ class RecommendationViewModelResponse(ApiModel):
     synopsis: str
     reason: str
     contributing_genres: tuple[str, ...]
-    genre_contributions: tuple[Contribution, ...]
+    genre_contributions: tuple[Contribution, ...] = Field(
+        description=(
+            "Retired with personal_match (it was in its percentage points). "
+            "Always empty; the breakdown is why.segments."
+        )
+    )
     cover_url: str | None
     large_cover_url: str | None
     mal_url: str | None
     media_type: str | None
+    fit_rank: int | None = Field(
+        default=None,
+        description=(
+            "Position in the ranking engine's ordering of every eligible "
+            "candidate, before feed selection. Replaces personal_match."
+        ),
+    )
+    fit_pool_size: int | None = Field(
+        default=None, description="How many eligible candidates that ordering held."
+    )
+    fit_top_percent: float | None = Field(
+        default=None, description="100 * fit_rank / fit_pool_size."
+    )
+    why: Explanation | None = Field(
+        default=None,
+        description="Why the ranking engine placed this title where it did.",
+    )
+    ranking_id: str | None = Field(
+        default=None,
+        description=(
+            "Identity of the ranking fit_rank comes from. Compare fit_rank only "
+            "between rows with the same ranking_id."
+        ),
+    )
+    selection_policy: str | None = Field(
+        default=None,
+        description="Version of the shared selection policy that chose this row.",
+    )
+    adventurousness: int | None = Field(
+        default=None,
+        description="Adventurousness (1-10) in force when this row was selected.",
+    )
 
 
 class Catalogue(ApiModel):

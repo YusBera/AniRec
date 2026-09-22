@@ -103,6 +103,7 @@ class AdvancedOperationsPage(QWidget):
         settings_service: SettingsService | None = None,
         auth_service: AuthService | None = None,
         path_opener: Callable[[Path], bool] | None = None,
+        recommendation_state_service=None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("page-advanced-operations")
@@ -112,6 +113,9 @@ class AdvancedOperationsPage(QWidget):
         self.profile_service = profile_service
         self.settings_service = settings_service or SettingsService()
         self.auth_service = auth_service
+        # Hidden titles must stay out of a single-step feed, as they do in a
+        # full run; the page reads them from the same state the feed writes.
+        self.recommendation_state_service = recommendation_state_service
         self.path_opener = path_opener or self._default_path_opener
         self.profile: UserProfile | None = None
         self.widgets: dict[str, AdvancedOperationWidgets] = {}
@@ -293,11 +297,20 @@ class AdvancedOperationsPage(QWidget):
                 interactive_if_missing=True,
             )
         else:
+            hidden = frozenset()
+            if (
+                step_id == "generate_recommendations"
+                and self.recommendation_state_service is not None
+            ):
+                hidden = self.recommendation_state_service.load(
+                    self.profile.profile_id
+                ).hidden_mal_ids
             worker = RecommendationWorker(
                 self.orchestrator,
                 self.profile.username,
                 settings.pipeline,
                 step_id=step_id,
+                excluded_mal_ids=hidden,
             )
         self._operation_steps[key] = step_id
         widgets.status.setText("Starting…")

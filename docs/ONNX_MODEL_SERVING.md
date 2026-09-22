@@ -44,7 +44,13 @@ data. An installed catalogue that is valid but contains zero eligible rows fails
 closed and never switches sources silently.
 
 Raw model logits are retained for diagnostics and are never displayed as match
-percentages. Recommendation activity remains opt-in and local-only; new results
+percentages. Personal fit is the pick's rank among the eligible candidates.
+Each served row is explained by counterfactual removal: the model is rerun,
+batch size one, without each genre group of the reader's input history and
+without each single input title, and the pick's score drop and rank are
+measured among the same candidates. This covers only the most recent titles
+the model reads (`history_window`). A failure yields an "unavailable"
+explanation, never a lost feed. Recommendation activity remains opt-in and local-only; new results
 store the actual ranking engine ID and version with each event.
 
 The verified 20 September 2026 bundle contains 30,540 model items. Its normal

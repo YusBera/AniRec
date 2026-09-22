@@ -56,8 +56,42 @@ web-first.
 
 ---
 
+## D-012 - Explanations come from the engine that ranked
+**2026-09-22 - Accepted**
+
+"Why was this recommended to me?" is answered from the ranking that produced
+the pick, after selection, for the rows served:
+
+- The heuristic returns its exact additive score parts. Taste parts are backed
+  by the reader's genuine ratings; community rating and similar viewers are
+  labelled as not about their taste.
+- The sequence model is explained by counterfactual removal. It is rerun
+  without each of the reader's history genres and each history title, and the
+  pick's score drop and rank are measured among the same eligible candidates.
+  The results are deterministic, overlapping, and never presented as shares.
+- An engine that cannot explain says so.
+
+Sampled Shapley attribution was measured and rejected. In a session
+experiment against the installed bundle, at 16 orders the top genre agreed
+between independent samples for only 35% of synthetic-history picks, and it
+added about 27 s per feed. The experiment script was not retained in this
+repository, so these figures are a recorded observation, not reproducible
+evidence.
+
+*Why:* D-006 and the domain rules forbid borrowing one engine's reasons for
+another's ranking. Removal effects are checkable ("without this title, #4
+becomes #337") and cheap enough (about 4 s) to compute at generation.
+
+---
+
 ## D-008 - The match percentage is split or calibrated before launch
-**2026-09-20 - Open, decision required**
+**2026-09-20 - Resolved 2026-09-22: replaced by a rank**
+
+Resolution: the percentage is retired for every engine, and the API no longer
+sends it. Personal fit is shown as the engine's rank among its eligible
+candidates ("#4 of 13,458"; the pool size differs by engine). The MAL
+community score stays separate. Calibration remains possible later, after the
+Goal 4 evaluation. See D-012 for the explanation behind the rank.
 
 The current "Personal match" figure cannot ship to the open web as is. Three
 options: split it into separate taste and community figures; calibrate it against

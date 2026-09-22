@@ -80,7 +80,9 @@ def test_full_pipeline_runs_six_steps_in_order_and_returns_typed_result(
     assert result.user_stats["eligibility_input_count"] == 2
     assert result.user_stats["eligibility_eligible_count"] == 2
     assert result.user_stats["candidate_catalogue_source"] == LEGACY_MAL_CATALOGUE_SOURCE
-    assert len(result.generated_files) == 6
+    # Six pipeline outputs plus the ranking signals "more" reuses.
+    assert len(result.generated_files) == 7
+    assert any(path.endswith("ranking_signals.csv") for path in result.generated_files)
     assert all(pd.io.common.file_exists(path) for path in result.generated_files)
     catalogue_path = next(
         Path(path)
@@ -208,7 +210,11 @@ def test_run_more_appends_unseen_feedback_aware_recommendations_from_saved_candi
         candidate_pool_size=2,
         randomness_factor=1,
     )
-    initial = orchestrator.run_full("fixture-user", settings)
+    # "More" continues the feed's ranking, so it must see the same feedback
+    # the feed was ranked with.
+    initial = orchestrator.run_full(
+        "fixture-user", settings, genre_adjustments={"Action": 6.0}
+    )
     expanded = orchestrator.run_more(
         "fixture-user",
         settings,
@@ -247,7 +253,7 @@ def test_run_more_appends_unseen_feedback_aware_recommendations_from_saved_candi
     )
 
 
-def test_run_more_rechecks_persisted_candidates_with_current_eligibility(
+def test_run_more_refuses_when_persisted_candidates_changed_since_the_feed(
     system_temp_dir,
     top_anime_df,
     completed_anime_df,
@@ -277,15 +283,15 @@ def test_run_more_rechecks_persisted_candidates_with_current_eligibility(
         candidate_path, index=False
     )
 
-    expanded = orchestrator.run_more(
-        "fixture-user",
-        settings,
-        existing_recommendations=initial.recommendations,
-        count=1,
-    )
-
-    assert all(item.anime.mal_id != 999999 for item in expanded.recommendations)
-    assert expanded.user_stats["eligibility_excluded_not_released"] == 1
+    # Continuing a ranking over a changed population would mix two rankings
+    # in one feed; the tampered snapshot is refused instead of trusted.
+    with pytest.raises(DataError, match="Generate a new feed"):
+        orchestrator.run_more(
+            "fixture-user",
+            settings,
+            existing_recommendations=initial.recommendations,
+            count=1,
+        )
 
 
 def test_pipeline_uses_result_owned_provenance_instead_of_shared_last_state(

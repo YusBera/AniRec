@@ -32,9 +32,17 @@ try:
         EligibilityContext,
         FinalEligibilityPolicy,
     )
+    from ..scoring.explanation import (
+        EXPLANATION_COLUMN,
+        METHOD_EXACT_ADDITIVE,
+        SCORE_PARTS_COLUMN,
+        explain_additive,
+        unavailable_explanation,
+    )
     from ..scoring.selection import select_feed
     from ..scoring.serialization import profile_to_frame
     from ..scoring.taste import build_taste_profile
+    from ..title_utils import normalize_title_key
 except ImportError:  # Compatibility with the S01 top-level test import path.
     from candidate_generation import filter_recommendation_candidates
     from genre_importance import calculate_genre_importance
@@ -59,9 +67,17 @@ except ImportError:  # Compatibility with the S01 top-level test import path.
         EligibilityContext,
         FinalEligibilityPolicy,
     )
+    from scoring.explanation import (
+        EXPLANATION_COLUMN,
+        METHOD_EXACT_ADDITIVE,
+        SCORE_PARTS_COLUMN,
+        explain_additive,
+        unavailable_explanation,
+    )
     from scoring.selection import select_feed
     from scoring.serialization import profile_to_frame
     from scoring.taste import build_taste_profile
+    from title_utils import normalize_title_key
 
 
 class RecommendationService:
@@ -147,7 +163,20 @@ class RecommendationService:
         consumed_mal_ids: set[int] | frozenset[int] = frozenset(),
         include_nsfw: bool = False,
         as_of: date | None = None,
+        rated_history: pd.DataFrame | None = None,
+        already_shown_mal_ids: set[int] | frozenset[int] = frozenset(),
+        already_shown_titles: set[str] | frozenset[str] = frozenset(),
     ) -> pd.DataFrame:
+        """Rank, select and explain a feed.
+
+        ``rated_history`` is the reader's real rated list (never the imputed
+        frame); it supplies the "you rated this" evidence in explanations.
+
+        ``already_shown_*`` are titles that must not be selected but must stay
+        in the ranking (already in the feed being extended, or hidden since it
+        was generated), so fit ranks keep one population across a feed and its
+        "more" batches.
+        """
         history_records = (
             tuple(user_history.to_dict("records"))
             if user_history is not None
@@ -218,14 +247,34 @@ class RecommendationService:
             collaborative_scores=collaborative_scores or {},
         )
         result = self._ranker.rank(request)
+        shown_titles = {
+            key for value in already_shown_titles if (key := normalize_title_key(value))
+        }
+        selectable = [
+            row
+            for row in result.ranked_candidates
+            if not self._already_shown(row, already_shown_mal_ids, shown_titles)
+        ]
         # Engines return their ordered, final-eligible pool. The feed is chosen
         # here, once, by the one shared policy, whichever engine answered.
         positions = select_feed(
-            result.ranked_candidates,
+            selectable,
             settings.recommendation_count,
             settings.randomness_factor,
         )
-        selected_rows = [result.ranked_candidates[position] for position in positions]
+        selected_rows = [dict(selectable[position]) for position in positions]
+        self._explain(
+            selected_rows,
+            result.metadata,
+            request,
+            rated_history=rated_history,
+            taste_adjustments=genre_adjustments,
+        )
+        columns = [
+            column for column in result.columns if column != SCORE_PARTS_COLUMN
+        ]
+        if columns:
+            columns.append(EXPLANATION_COLUMN)
         self._last_ranking_metadata = result.metadata
         eligibility_audit = (
             fallback_audit
@@ -235,13 +284,58 @@ class RecommendationService:
         self._last_eligibility_audit = eligibility_audit
         ranked = pd.DataFrame.from_records(
             selected_rows,
-            columns=list(result.columns) or None,
+            columns=columns or None,
         )
         ranked.attrs["ranking_engine"] = result.metadata
         ranked.attrs["ranking_warnings"] = result.warnings
         ranked.attrs["eligibility_audit"] = eligibility_audit
         return ranked
 
+    @staticmethod
+    def _already_shown(row, shown_ids, shown_titles) -> bool:
+        try:
+            mal_id = int(row.get("Anime ID"))
+        except (TypeError, ValueError):
+            mal_id = None
+        if mal_id is not None and mal_id in shown_ids:
+            return True
+        return bool(shown_titles) and normalize_title_key(row.get("Title")) in shown_titles
+
+    def _explain(self, rows, metadata, request, *, rated_history, taste_adjustments):
+        """Attach the answering engine's own explanation to each served row.
+
+        Heuristic rows (including a fallback) are explained from their recorded
+        score parts. Sequence-model rows are explained by the model engine
+        itself; nothing is borrowed from another engine.
+        """
+        explain = getattr(self._ranker, "explain", None)
+        if metadata.explanation_type == METHOD_EXACT_ADDITIVE:
+            explanations = explain_additive(
+                rows,
+                rated_history=(
+                    rated_history.to_dict("records")
+                    if rated_history is not None
+                    else None
+                ),
+                taste_adjustments=taste_adjustments,
+            )
+        elif (
+            metadata.explanation_type == SEQUENCE_EXPLANATION_TYPE
+            and not metadata.fallback_used
+            and callable(explain)
+        ):
+            explanations = explain(request, rows)
+        else:
+            explanations = [
+                unavailable_explanation("engine-cannot-explain") for _row in rows
+            ]
+        for row, explanation in zip(rows, explanations):
+            row.pop(SCORE_PARTS_COLUMN, None)
+            row[EXPLANATION_COLUMN] = explanation
+
+
+# ``explanation_type`` the sequence engine reports in its ranking metadata.
+SEQUENCE_EXPLANATION_TYPE = "sequence-score"
 
 MODEL_BUNDLE_ENV = "ANIREC_MODEL_BUNDLE"
 

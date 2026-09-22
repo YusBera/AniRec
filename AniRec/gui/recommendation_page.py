@@ -383,6 +383,7 @@ class RecommendationExplorerPage(QWidget):
         self.activity = RecommendationEventService(getattr(self.state_service, "_root_override", None))
         self._activity_request = str(uuid4())
         self._activity_model_version = MODEL_VERSION
+        self._activity_catalog_version = None
         self._activity_feed = feed_fingerprint((), self._activity_model_version)
         self._exposures = ExposureTracker()
         self.profile_id: str | None = None
@@ -501,9 +502,14 @@ class RecommendationExplorerPage(QWidget):
             return False
         return self.activity.record(self.profile_id, request_id=self._activity_request,
             feed_id=self._activity_feed, action=action, mal_id=model.mal_id,
-            position=position, model_rank=model.rank,
+            position=position, model_rank=getattr(model, "fit_rank", None),
             surface="native_" + self._view_mode.value,
-            model_version=self._activity_model_version)
+            model_version=self._activity_model_version,
+            ranking_id=getattr(model, "ranking_id", None),
+            feed_rank=model.rank,
+            selection_policy=getattr(model, "selection_policy", None),
+            adventurousness=getattr(model, "adventurousness", None),
+            catalog_version=self._activity_catalog_version)
 
     def _poll_activity(self):
         visible = {}
@@ -600,6 +606,10 @@ class RecommendationExplorerPage(QWidget):
         self._selected_key = previous_key if previous_key in self._model_by_key else None
         self._populate_filter_options()
         self._apply_query()
+
+    def set_activity_catalog_version(self, value: str | None) -> None:
+        """The catalogue version of the feed now shown (activity attribution)."""
+        self._activity_catalog_version = (str(value).strip()[:200] or None) if value else None
 
     def set_activity_model_version(self, value: str) -> None:
         version = str(value or MODEL_VERSION).strip()[:200] or MODEL_VERSION

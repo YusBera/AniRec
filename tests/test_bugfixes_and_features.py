@@ -306,22 +306,16 @@ def test_the_fill_length_is_the_score(percentage, expect_wider):
     assert (filled > 150) is expect_wider
 
 
-def test_the_match_bar_spans_the_bottom_of_the_portrait(window):
+def test_no_card_wears_the_retired_percentage_bar(window):
+    # D-008 retired the uncalibrated personal-match percentage, so
+    # personal_match_available is always false and should_show_badge draws no
+    # percentage plate on any card. (The plate's own geometry and theming are
+    # still covered by the MatchBadge tests below.)
     window.recommendations_page.set_view_mode("cards")
-    card = next(iter(window.recommendations_page._cards_by_key.values()))
-    badge, cover = card.match_badge, card.cover_label
+    cards = list(window.recommendations_page._cards_by_key.values())
 
-    assert badge is not None
-    assert badge.parent() is cover
-    # CHANGE [SCRIM]: the plate used to be inset six pixels from the bottom
-    # and each side, so a margin of artwork showed around it and the readout
-    # floated on a rectangle instead of sitting on the picture. It is flush
-    # to the portrait's lower edge now, which is a stricter claim than the
-    # ">80% of the width, somewhere in the lower half" this used to make.
-    assert badge.x() == 0
-    assert badge.width() == cover.width()
-    assert badge.y() + badge.height() == cover.height()
-    assert badge.y() > cover.height() // 2
+    assert cards
+    assert all(card.match_badge is None for card in cards)
 
 
 def test_the_match_bar_follows_the_theme():

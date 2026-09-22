@@ -170,3 +170,44 @@ def test_feedback_adjustments_change_selection_and_excluded_ids_never_return():
     )
     assert result["Anime ID"].tolist() == [3, 1]
     assert result.iloc[0]["Recommendation Reason"].startswith("Adapted to your likes")
+
+
+def test_liking_a_never_rated_genre_raises_titles_that_carry_it():
+    """Feedback on a genre absent from the profile must reach its titles.
+
+    The new feature used to be created under the casefolded label
+    (``genre:horror``) while catalogue rows carry ``genre:Horror``, so the like
+    matched nothing and only lowered every other title's cosine.
+    """
+    candidates = pd.DataFrame(
+        [
+            {"Anime ID": 1, "Title": "H", "Genres": ["Horror"], "Mean Score": 8.0},
+            {"Anime ID": 2, "Title": "A", "Genres": ["Action"], "Mean Score": 8.0},
+        ]
+    )
+    weights = pd.DataFrame([{"Genre": "Action", "Importance_Score": 50.0}])
+    settings = PipelineSettings(
+        recommendation_count=2, candidate_pool_size=2, top_anime_limit=2
+    )
+    service = RecommendationService()
+
+    def scores(adjustments):
+        feed = service.recommend(
+            candidates, weights, settings, genre_adjustments=adjustments
+        )
+        return dict(zip(feed["Title"], feed["Recommendation Score"])), feed
+
+    before, _feed = scores(None)
+    liked, feed = scores({"Horror": 24.0})
+    # Matching stays case-insensitive: the vote's spelling does not matter.
+    lowercase, _feed = scores({"horror": 24.0})
+
+    assert liked["H"] > before["H"]
+    assert lowercase == liked
+    horror_parts = [
+        segment
+        for segment in feed.set_index("Title").loc["H", "Explanation"]["segments"]
+        if segment["kind"] == "taste" and segment["label"] == "Horror"
+    ]
+    assert horror_parts and horror_parts[0]["value"] > 0
+    assert horror_parts[0]["feedback_adjustment"] == 24.0

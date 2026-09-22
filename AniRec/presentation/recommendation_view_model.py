@@ -91,6 +91,19 @@ class RecommendationViewModel:
     mal_url: str | None
     personal_match_available: bool = True
     genre_contributions: tuple[tuple[str, float], ...] = ()
+    # Personal fit as a checkable rank: this title's position in the ranking
+    # engine's ordering of every eligible candidate, before feed selection.
+    # It replaces the uncalibrated "personal match" percentage (D-008).
+    fit_rank: int | None = None
+    fit_pool_size: int | None = None
+    fit_top_percent: float | None = None
+    # ``scoring.explanation`` output: why the engine ranked this title here.
+    why: dict | None = None
+    # Fit ranks are comparable only between rows sharing this ranking.
+    ranking_id: str | None = None
+    # How the row was selected from that ranking (activity attribution).
+    selection_policy: str | None = None
+    adventurousness: int | None = None
     # CHANGE [BUNDLE]: carried so a franchise can be put in running order.
     # relation_type says "sequel", never "season 2", so ordering inside a
     # bundle comes from the broadcast year with the media type breaking ties -
@@ -118,6 +131,10 @@ class RecommendationViewModel:
     @classmethod
     def from_recommendation(cls, recommendation: Recommendation) -> "RecommendationViewModel":
         anime = recommendation.anime
+        fit_rank = recommendation.model_rank
+        fit_pool_size = recommendation.ranked_candidate_count
+        if fit_rank is None or fit_pool_size is None:
+            fit_rank = fit_pool_size = None
         raw_personal_match = _finite_number(recommendation.match_score)
         personal_match = raw_personal_match or 0.0
         mal_score = _finite_number(anime.mean_score)
@@ -145,10 +162,12 @@ class RecommendationViewModel:
             display_title=anime.display_title,
             secondary_title=anime.secondary_title,
             alternative_titles=alternatives,
+            # The percentage is retired: it was uncalibrated and partly repeated
+            # the community score (D-008). The number stays for ordering only.
             personal_match=personal_match,
             personal_match_text=(
-                f"Personal match: {personal_match:.1f}%"
-                if recommendation.match_score_available
+                f"Ranked #{fit_rank:,} of {fit_pool_size:,} for you"
+                if fit_rank is not None
                 else "Personal match unavailable"
             ),
             mal_score=mal_score,
@@ -176,10 +195,21 @@ class RecommendationViewModel:
             cover_url=_safe_https_url(anime.cover_url),
             large_cover_url=_safe_https_url(anime.large_cover_url),
             mal_url=_safe_mal_url(anime.mal_url, anime.mal_id),
-            personal_match_available=(
-                recommendation.match_score_available and raw_personal_match is not None
-            ),
+            personal_match_available=False,
             genre_contributions=contributions,
+            fit_rank=fit_rank,
+            fit_pool_size=fit_pool_size,
+            fit_top_percent=(
+                100.0 * fit_rank / fit_pool_size if fit_rank is not None else None
+            ),
+            why=(
+                dict(recommendation.explanation)
+                if recommendation.explanation is not None
+                else None
+            ),
+            ranking_id=recommendation.ranking_id if fit_rank is not None else None,
+            selection_policy=recommendation.selection_policy,
+            adventurousness=recommendation.adventurousness,
             media_type=_clean_text(anime.media_type),
         )
 

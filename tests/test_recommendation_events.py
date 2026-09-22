@@ -214,3 +214,125 @@ def test_malformed_setting_fails_closed_and_disabled_history_expires(tmp_path):
     assert not RecommendationEventService(tmp_path).status("profile")["enabled"]
     with sqlite3.connect(root / "recommendation_events.sqlite") as conn:
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0
+
+
+# --- Goal 3: attribution to the exact ranking, rank and selection -------------
+
+
+def _attributed_result(sample):
+    """The sample feed, stamped the way a generated feed is: rows 1-3 were
+    selected from engine ranks 1, 4 and 2 of ranking ``ab12…`` at
+    adventurousness 7."""
+    from AniRec.models import Recommendation
+
+    stamped = []
+    for index, item in enumerate(sample.recommendations[:3]):
+        stamped.append(
+            replace(
+                item,
+                rank=index + 1,
+                model_rank=(1, 4, 2)[index],
+                ranked_candidate_count=500,
+                ranking_id="ab12" * 6,
+                selection_policy="rank-diversity-v1",
+                adventurousness=7,
+            )
+        )
+    assert all(isinstance(item, Recommendation) for item in stamped)
+    return replace(
+        sample,
+        recommendations=tuple(stamped),
+        user_stats={
+            **sample.user_stats,
+            "ranking_engine_id": "heuristic",
+            "ranking_engine_version": "1",
+            "eligibility_catalog_version": "onnx-v3:aaa:bbb:ccc",
+        },
+    )
+
+
+def test_api_event_is_attributed_to_engine_rank_feed_position_and_selection(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from AniRec.api import create_app
+    from AniRec.api.container import build_container
+
+    services = build_container(tmp_path)
+    monkeypatch.setattr(
+        services.profiles, "active_profile",
+        lambda: SimpleNamespace(profile_id="profile", username="someone"),
+    )
+    services.results.save("profile", _attributed_result(services.samples.load()))
+    with TestClient(create_app(container=services)) as client:
+        client.post("/api/discover/activity/settings", json={"enabled": True})
+        feed = client.get("/api/discover/feed").json()
+        second = feed["recommendations"][1]
+        payload = event()
+        payload.update(
+            profile_id="profile", event_id=str(uuid4()), feed_id=feed["activity_feed_id"],
+            mal_id=second["mal_id"], action="detail_open", position=2,
+            # A client cannot choose the rank recorded against its event.
+            model_rank=99,
+        )
+        assert client.post("/api/discover/activity", json=payload).json()["recorded"]
+
+    database = tmp_path / "profiles/profile/recommendation_events.sqlite"
+    with sqlite3.connect(database) as conn:
+        row = conn.execute(
+            """SELECT model_rank, feed_rank, position, ranking_id, selection_policy,
+                      adventurousness, schema_version, model_version, catalog_version
+               FROM events"""
+        ).fetchone()
+    assert row == (
+        4, 2, 2, "ab12" * 6, "rank-diversity-v1", 7, 2, "heuristic:1", "onnx-v3:aaa:bbb:ccc"
+    )
+
+
+def test_version_one_activity_store_is_migrated_in_place(tmp_path):
+    root = tmp_path / "profiles" / "profile"
+    root.mkdir(parents=True)
+    with sqlite3.connect(root / "recommendation_events.sqlite") as conn:
+        conn.execute("""CREATE TABLE events (
+            event_id TEXT PRIMARY KEY, recorded_at INTEGER NOT NULL,
+            request_id TEXT NOT NULL, feed_id TEXT NOT NULL, model_version TEXT NOT NULL,
+            action TEXT NOT NULL, mal_id INTEGER NOT NULL, position INTEGER NOT NULL,
+            model_rank INTEGER, surface TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1
+        )""")
+        conn.execute(
+            "INSERT INTO events VALUES (?, strftime('%s','now'), ?, ?, 'legacy', 'impression', 5, 1, 1, 'web_cards', 1)",
+            (str(uuid4()), str(uuid4()), "c" * 64),
+        )
+    service = RecommendationEventService(tmp_path)
+    service.set_enabled("profile", True)
+    assert service.record(
+        "profile", ranking_id="ab12" * 6, feed_rank=1, selection_policy="rank-diversity-v1",
+        adventurousness=5, **event(),
+    )
+    with sqlite3.connect(root / "recommendation_events.sqlite") as conn:
+        rows = conn.execute(
+            "SELECT model_version, schema_version, ranking_id, feed_rank FROM events ORDER BY schema_version"
+        ).fetchall()
+    # The version 1 row keeps its data with NULL attribution; the new row is v2.
+    assert rows[0] == ("legacy", 1, None, None)
+    assert rows[1][1:] == (2, "ab12" * 6, 1)
+
+
+def test_invalid_attribution_values_are_rejected(tmp_path):
+    service = RecommendationEventService(tmp_path)
+    service.set_enabled("profile", True)
+    for bad in (
+        {"ranking_id": "NOT-HEX"},
+        {"feed_rank": 0},
+        {"adventurousness": 11},
+        {"selection_policy": ""},
+    ):
+        with pytest.raises(ValueError):
+            service.record("profile", **event(), **bad)
+
+
+def test_feed_fingerprint_tracks_ranking_and_selection_not_the_retired_percentage():
+    base = dict(mal_id=1, rank=1, fit_rank=4, ranking_id="ab" * 12,
+                selection_policy="rank-diversity-v1", adventurousness=5)
+    reference = feed_fingerprint([SimpleNamespace(**base, personal_match=10.0)])
+    assert feed_fingerprint([SimpleNamespace(**base, personal_match=90.0)]) == reference
+    for change in ({"ranking_id": "cd" * 12}, {"fit_rank": 5}, {"adventurousness": 6}):
+        assert feed_fingerprint([SimpleNamespace(**{**base, **change})]) != reference

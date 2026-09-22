@@ -135,8 +135,14 @@ def test_heuristic_adapter_preserves_the_existing_ranked_rows():
     )
     actual = RecommendationService().recommend(candidates, profile, settings)
 
-    assert actual.columns.tolist() == expected.columns.tolist()
-    assert actual.to_dict("records") == expected.to_dict("records")
+    # The service adds only the explanation built after selection.
+    assert actual.columns.tolist() == [*expected.columns.tolist(), "Explanation"]
+    assert actual.drop(columns=["Explanation"]).to_dict("records") == (
+        expected.to_dict("records")
+    )
+    assert all(
+        row["method"] == "exact-additive" for row in actual["Explanation"]
+    )
     assert actual.attrs["ranking_engine"].engine_id == "heuristic"
     assert actual.attrs["ranking_engine"].explanation_type == "exact-additive"
 

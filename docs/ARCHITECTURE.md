@@ -67,7 +67,11 @@ records aggregate exclusion reasons. Engines then return their ordered,
 eligible pool, and `RecommendationService.recommend` applies the shared
 deterministic selector in `AniRec/scoring/selection.py` exactly once, for the
 heuristic, ONNX and fallback paths alike. The legacy CSV entry point
-`rank_recommendations` uses the same selector.
+`rank_recommendations` uses the same selector. After selection the service
+explains the served rows with the answering engine's own method
+(`AniRec/scoring/explanation.py`, D-012): exact score parts for the heuristic,
+counterfactual history removal for the sequence model. The engine's rank
+before selection is persisted as personal fit.
 
 Measured behaviour of both engines is recorded in
 `docs/design/RECOMMENDER_EVALUATION.md`. Read it before changing ranking.

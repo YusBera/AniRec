@@ -56,7 +56,7 @@ def test_card_preserves_two_by_three_cover_and_reference_text_hierarchy():
     assert COVER_WIDTH * 3 == COVER_HEIGHT * 2
     assert card.title_label.text() == "Frieren: Beyond Journey's End"
     assert card.secondary_title_label.text() == "Sousou no Frieren"
-    assert card.match_label.text() == "Personal match: 94.2%"
+    assert card.match_label.text() == "Personal match unavailable"  # D-008: no percentage
     assert card.mal_score_label.text() == "MAL score: 9.10 / 10"
     assert "2023 · Finished Airing · 28 episodes" == card.meta_label.text()
     assert card.focusPolicy().name == "StrongFocus"

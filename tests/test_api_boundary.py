@@ -73,19 +73,24 @@ def test_the_feed_serializes_the_presentation_model_unchanged(client):
     assert len(payload["recommendations"]) == len(expected)
     first, model = payload["recommendations"][0], expected[0]
     assert first["display_title"] == model.display_title
-    assert first["personal_match"] == pytest.approx(model.personal_match)
+    # The retired percentage stops at the web boundary (D-008).
+    assert first["personal_match"] == 0.0
+    assert first["personal_match_available"] is False
+    assert first["genre_contributions"] == []
     assert tuple(first["genres"]) == model.genres
     assert first["aired_text"] == model.aired_text
 
 
-def test_the_breakdown_still_sums_to_the_score_over_the_wire(client):
-    """The product's one invariant, asserted at the boundary that serializes it."""
-    for card in client.get("/api/discover/feed").json()["recommendations"]:
-        contributions = card["genre_contributions"]
-        if not contributions:
-            continue
-        total = sum(item["value"] for item in contributions)
-        assert total == pytest.approx(card["personal_match"], abs=0.05), card["display_title"]
+def test_no_retired_percentage_or_its_breakdown_crosses_the_wire(client):
+    """D-008: the uncalibrated percentage and its percentage-point breakdown stop
+    at the boundary; the sample feed has no ranking to explain, so it says so."""
+    cards = client.get("/api/discover/feed").json()["recommendations"]
+    assert cards
+    for card in cards:
+        assert card["personal_match"] == 0.0
+        assert card["personal_match_available"] is False
+        assert card["genre_contributions"] == []
+        assert card["fit_rank"] is None and card["why"] is None
 
 
 def test_the_catalogue_offers_the_terms_present_in_the_feed(client):
@@ -119,6 +124,49 @@ def test_one_operation_per_key(tmp_path):
     registry.start("sync:someone", "sync", "someone", blocking)
     with pytest.raises(OperationAlreadyRunningError):
         registry.start("sync:someone", "sync", "someone", blocking)
+    release.set()
+    assert registry.shutdown()
+
+
+def test_exclusive_keys_are_refused_atomically_while_one_runs():
+    registry = OperationRegistry()
+    release = threading.Event()
+
+    def blocking(_token, _report):
+        release.wait(5)
+        return {"done": True}
+
+    registry.start("more-recommendations:someone", "more-recommendations", "someone", blocking)
+    with pytest.raises(OperationAlreadyRunningError):
+        registry.start(
+            "recommendation:someone", "recommendation", "someone", blocking,
+            exclusive_with=("more-recommendations:someone", "sync:someone"),
+        )
+    # Unrelated keys and other profiles are unaffected.
+    registry.start("list-sync:someone", "list-sync", "someone", blocking)
+    registry.start("recommendation:other", "recommendation", "other", blocking)
+    release.set()
+    assert registry.shutdown()
+
+
+def test_feed_writing_operations_never_overlap_for_one_profile(tmp_path):
+    """A generate and a "more" for one profile would race to save the feed."""
+    registry = OperationRegistry()
+    app = create_app(root_override=str(tmp_path), registry=registry)
+    release = threading.Event()
+
+    def blocking(_token, _report):
+        release.wait(5)
+        return {"done": True}
+
+    registry.start("more-recommendations:someone", "more-recommendations", "someone", blocking)
+    with TestClient(app) as client:
+        for kind in ("recommendation", "sync"):
+            response = client.post(
+                f"/api/operations/{kind}",
+                json={"profile_id": "someone", "username": "someone"},
+            )
+            assert response.status_code == 409, kind
     release.set()
     assert registry.shutdown()
 

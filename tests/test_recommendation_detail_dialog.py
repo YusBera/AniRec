@@ -58,7 +58,7 @@ def test_detail_dialog_renders_all_metadata_reason_and_scored_contributions():
     assert dialog.title_label.text() == "Frieren: Beyond Journey's End"
     assert dialog.secondary_title_label.text() == "Sousou no Frieren"
     assert "Frieren at the Funeral" in dialog.alternative_titles_label.text()
-    assert dialog.personal_match_label.text() == "Personal match: 94.2%"
+    assert dialog.personal_match_label.text() == "Personal match unavailable"  # D-008: no percentage
     assert dialog.mal_score_label.text() == "MAL score: 9.10 / 10"
     assert dialog.episodes_label.text() == "Episodes: 28 episodes"
     assert dialog.status_label.text() == "Status: Finished Airing"

@@ -6,6 +6,42 @@
  * Verify in CI with: npm run verify:api-types
  */
 export interface paths {
+    "/api/discover/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Activity Status */
+        get: operations["activity_status_api_discover_activity_get"];
+        put?: never;
+        /** Activity Event */
+        post: operations["activity_event_api_discover_activity_post"];
+        /** Activity Clear */
+        delete: operations["activity_clear_api_discover_activity_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discover/activity/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activity Settings */
+        post: operations["activity_settings_api_discover_activity_settings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/discover/feed": {
         parameters: {
             query?: never;
@@ -287,6 +323,64 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActivityEvent */
+        ActivityEvent: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "impression" | "detail_open" | "external_open" | "watch_later_add" | "watch_later_remove" | "dismiss" | "restore";
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id: string;
+            /** Feed Id */
+            feed_id: string;
+            /** Mal Id */
+            mal_id: number;
+            /** Model Rank */
+            model_rank?: number | null;
+            /** Position */
+            position: number;
+            /** Profile Id */
+            profile_id: string;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Surface
+             * @constant
+             */
+            surface: "web_cards";
+        };
+        /** ActivityReceipt */
+        ActivityReceipt: {
+            /** Recorded */
+            recorded: boolean;
+        };
+        /** ActivitySetting */
+        ActivitySetting: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** ActivityStatus */
+        ActivityStatus: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Local Only
+             * @default true
+             */
+            local_only: boolean;
+            /**
+             * Retention Days
+             * @default 90
+             */
+            retention_days: number;
+        };
         /**
          * ApiError
          * @description ``presentable_error``, restated. The desktop error dialog reads the same model.
@@ -338,6 +432,13 @@ export interface components {
             studios: string[];
             /** Years */
             years: number[];
+        };
+        /** CommunityDetail */
+        CommunityDetail: {
+            /** Mean Score */
+            mean_score: number | null;
+            /** Scoring Users */
+            scoring_users: number | null;
         };
         /** CompareReadResponse */
         CompareReadResponse: {
@@ -462,8 +563,124 @@ export interface components {
         ErrorEnvelope: {
             error: components["schemas"]["ApiError"];
         };
+        /**
+         * Explanation
+         * @description Why the ranking engine placed a title where it did.
+         *
+         *     * ``exact-additive`` (heuristic): segment values sum exactly to ``total``,
+         *       the ranking score (``baseline`` 0, ``full_score`` = ``total``). Render
+         *       as an additive bar.
+         *     * ``counterfactual-removal`` (sequence model): ``full_score`` and
+         *       ``full_rank`` are the pick's model score and rank with the reader's full
+         *       history among ``ranked_candidate_count`` candidates. Each segment and
+         *       ``influences`` entry says how far the pick falls without those history
+         *       titles. Effects overlap, so ``total`` and ``baseline`` are null: render
+         *       relative impacts, never shares of a whole.
+         *     * ``unavailable``: the engine cannot explain itself;
+         *       ``unavailable_reason`` says why, and nothing is borrowed.
+         */
+        Explanation: {
+            /** Baseline */
+            baseline: number | null;
+            /** Full Rank */
+            full_rank: number | null;
+            /** Full Score */
+            full_score: number | null;
+            /**
+             * History Window
+             * @description counterfactual-removal only: how many of the reader's most recent list entries the model reads. Segments and influences cover only these titles, never the whole list.
+             */
+            history_window?: number | null;
+            /** Influences */
+            influences: components["schemas"]["ExplanationEvidence"][];
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "exact-additive" | "counterfactual-removal" | "unavailable";
+            /** Ranked Candidate Count */
+            ranked_candidate_count: number | null;
+            /** Schema Version */
+            schema_version: number;
+            /** Segments */
+            segments: components["schemas"]["ExplanationSegment"][];
+            /** Total */
+            total: number | null;
+            /** Unavailable Reason */
+            unavailable_reason: string | null;
+            /** Unit */
+            unit: ("ranking-score" | "model-score") | null;
+        };
+        /**
+         * ExplanationEvidence
+         * @description A title from the reader's own list that backs one part of a "why".
+         *
+         *     For counterfactual removal, ``value`` is how much the pick's model score
+         *     drops without this one title (positive: the title raised the pick) and
+         *     ``rank_without`` the pick's rank without it, among the same candidates;
+         *     ``list_status`` is the reader's MAL list status. All three are null for a
+         *     heuristic taste part, whose evidence is the reader's rated titles.
+         */
+        ExplanationEvidence: {
+            /** List Status */
+            list_status: string | null;
+            /** Mal Id */
+            mal_id: number | null;
+            /** Rank Without */
+            rank_without: number | null;
+            /** Title */
+            title: string;
+            /** User Score */
+            user_score: number | null;
+            /** Value */
+            value: number | null;
+        };
+        /**
+         * ExplanationSegment
+         * @description One part of a recommendation's score, in the explanation's ``unit``.
+         *
+         *     ``taste`` parts come from the reader's own ratings. ``community`` and
+         *     ``similar-viewers`` parts are not about the reader's taste.
+         *     ``history-group`` parts are the reader's history titles in one genre (the
+         *     genre of *their* titles; the sequence model never sees genres), and
+         *     ``history-other`` their titles without genres. For these, ``value`` is the
+         *     model-score drop when all ``member_count`` titles are removed and
+         *     ``rank_without`` the pick's rank then; removal effects overlap, so they do
+         *     not sum to the score.
+         *     ``signal_available`` false means a neutral stand-in filled a missing signal.
+         */
+        ExplanationSegment: {
+            community: components["schemas"]["CommunityDetail"] | null;
+            /** Evidence */
+            evidence: components["schemas"]["ExplanationEvidence"][];
+            /** Facet */
+            facet: ("genre" | "studio" | "source" | "media-type" | "era") | null;
+            /** Feedback Adjustment */
+            feedback_adjustment: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "taste" | "community" | "similar-viewers" | "history-group" | "history-other";
+            /** Label */
+            label: string;
+            /** Member Count */
+            member_count: number | null;
+            /** Rank Without */
+            rank_without: number | null;
+            /** Signal Available */
+            signal_available: boolean;
+            taste: components["schemas"]["TasteDetail"] | null;
+            /** Value */
+            value: number;
+        };
         /** FeedResponse */
         FeedResponse: {
+            /**
+             * Activity Feed Id
+             * @default
+             */
+            activity_feed_id: string;
             catalogue: components["schemas"]["Catalogue"];
             /** Ephemeral */
             ephemeral: boolean;
@@ -922,6 +1139,8 @@ export interface components {
         };
         /** RecommendationViewModel */
         RecommendationViewModel: {
+            /** Adventurousness */
+            adventurousness?: number | null;
             /** Alternative Titles */
             alternative_titles: string[];
             /** Contributing Genres */
@@ -936,6 +1155,12 @@ export interface components {
             episodes: number | null;
             /** Episodes Text */
             episodes_text: string;
+            /** Fit Pool Size */
+            fit_pool_size?: number | null;
+            /** Fit Rank */
+            fit_rank?: number | null;
+            /** Fit Top Percent */
+            fit_top_percent?: number | null;
             /**
              * Genre Contributions
              * @default []
@@ -971,10 +1196,14 @@ export interface components {
             personal_match_text: string;
             /** Rank */
             rank: number | null;
+            /** Ranking Id */
+            ranking_id?: string | null;
             /** Reason */
             reason: string;
             /** Secondary Title */
             secondary_title: string | null;
+            /** Selection Policy */
+            selection_policy?: string | null;
             /** Start Date */
             start_date: string;
             /** Status */
@@ -985,6 +1214,10 @@ export interface components {
             studios_text: string;
             /** Synopsis */
             synopsis: string;
+            /** Why */
+            why?: {
+                [key: string]: unknown;
+            } | null;
             /** Year */
             year: number | null;
             /** Year Text */
@@ -1000,6 +1233,11 @@ export interface components {
          *     generally prefer the numeric field beside each one.
          */
         RecommendationViewModelResponse: {
+            /**
+             * Adventurousness
+             * @description Adventurousness (1-10) in force when this row was selected.
+             */
+            adventurousness?: number | null;
             /** Aired Text */
             aired_text: string | null;
             /** Alternative Titles */
@@ -1016,7 +1254,25 @@ export interface components {
             episodes: number | null;
             /** Episodes Text */
             episodes_text: string;
-            /** Genre Contributions */
+            /**
+             * Fit Pool Size
+             * @description How many eligible candidates that ordering held.
+             */
+            fit_pool_size?: number | null;
+            /**
+             * Fit Rank
+             * @description Position in the ranking engine's ordering of every eligible candidate, before feed selection. Replaces personal_match.
+             */
+            fit_rank?: number | null;
+            /**
+             * Fit Top Percent
+             * @description 100 * fit_rank / fit_pool_size.
+             */
+            fit_top_percent?: number | null;
+            /**
+             * Genre Contributions
+             * @description Retired with personal_match (it was in its percentage points). Always empty; the breakdown is why.segments.
+             */
             genre_contributions: components["schemas"]["Contribution"][];
             /** Genres */
             genres: string[];
@@ -1034,7 +1290,10 @@ export interface components {
             mal_url: string | null;
             /** Media Type */
             media_type: string | null;
-            /** Personal Match */
+            /**
+             * Personal Match
+             * @description Retired (D-008). Always 0.0 and personal_match_available is always false; use fit_rank. Kept only so existing clients still parse.
+             */
             personal_match: number;
             /** Personal Match Available */
             personal_match_available: boolean;
@@ -1042,10 +1301,20 @@ export interface components {
             personal_match_text: string;
             /** Rank */
             rank: number | null;
+            /**
+             * Ranking Id
+             * @description Identity of the ranking fit_rank comes from. Compare fit_rank only between rows with the same ranking_id.
+             */
+            ranking_id?: string | null;
             /** Reason */
             reason: string;
             /** Secondary Title */
             secondary_title: string | null;
+            /**
+             * Selection Policy
+             * @description Version of the shared selection policy that chose this row.
+             */
+            selection_policy?: string | null;
             /** Start Date */
             start_date: string;
             /** Status */
@@ -1056,6 +1325,8 @@ export interface components {
             studios_text: string;
             /** Synopsis */
             synopsis: string;
+            /** @description Why the ranking engine placed this title where it did. */
+            why?: components["schemas"]["Explanation"] | null;
             /** Year */
             year: number | null;
             /** Year Text */
@@ -1195,6 +1466,29 @@ export interface components {
             profile: components["schemas"]["ProfileSummary"] | null;
         };
         /**
+         * TasteDetail
+         * @description How the reader's ratings shaped one taste part.
+         *
+         *     ``affinity`` is the value the ranking used: the shrunk mean of the reader's
+         *     centred ratings of titles carrying the feature, then moved by any explicit
+         *     feedback (see the segment's ``feedback_adjustment``). ``rarity`` is its
+         *     catalogue IDF. ``rated_count`` and ``mean_user_score`` describe the
+         *     reader's rated titles with the feature; both are null when the rated list
+         *     was unavailable.
+         */
+        TasteDetail: {
+            /** Affinity */
+            affinity: number;
+            /** Mean User Score */
+            mean_user_score: number | null;
+            /** Overall Mean User Score */
+            overall_mean_user_score: number | null;
+            /** Rarity */
+            rarity: number;
+            /** Rated Count */
+            rated_count: number | null;
+        };
+        /**
          * TasteProfile
          * @description Everything the Profile surface puts on screen, in one answer.
          */
@@ -1299,6 +1593,112 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    activity_status_api_discover_activity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityStatus"];
+                };
+            };
+        };
+    };
+    activity_event_api_discover_activity_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivityEvent"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_clear_api_discover_activity_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityStatus"];
+                };
+            };
+        };
+    };
+    activity_settings_api_discover_activity_settings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActivitySetting"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     discover_feed_api_discover_feed_get: {
         parameters: {
             query?: {

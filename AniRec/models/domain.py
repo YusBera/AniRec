@@ -50,6 +50,13 @@ def _optional_float(value: object) -> float | None:
     return None if math.isnan(number) else number
 
 
+def _positive_int(value: object) -> int | None:
+    number = _optional_float(value)
+    if number is None or math.isinf(number) or number != int(number) or number <= 0:
+        return None
+    return int(number)
+
+
 def _bounded_scale(value: object, minimum: float = 0.75, maximum: float = 1.5) -> float:
     """CHANGE [BUG2]: keep a stored GUI scale inside the supported range."""
     try:
@@ -199,8 +206,39 @@ class Recommendation:
     genre_contributions: tuple[tuple[str, float], ...] = ()
     reason: str | None = None
     rank: int | None = None
+    # Position in the ranking engine's full ordering of eligible candidates,
+    # before feed selection, and how many candidates that ordering held.
+    model_rank: int | None = None
+    ranked_candidate_count: int | None = None
+    # ``scoring.explanation`` output: why the engine ranked this title here.
+    explanation: Mapping[str, Any] | None = None
+    # Identity of the ranking snapshot this title was ranked in. Fit ranks are
+    # comparable only between recommendations sharing it.
+    ranking_id: str | None = None
+    # How this row was chosen from the ranking: the shared selection policy's
+    # version and the adventurousness in force when it was selected. A feed
+    # and its "more" batches can be selected under different settings.
+    selection_policy: str | None = None
+    adventurousness: int | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "ranking_id", _optional_text(self.ranking_id))
+        object.__setattr__(self, "selection_policy", _optional_text(self.selection_policy))
+        adventurousness = _positive_int(self.adventurousness)
+        if adventurousness is not None and adventurousness > 10:
+            adventurousness = None
+        object.__setattr__(self, "adventurousness", adventurousness)
+        model_rank = _positive_int(self.model_rank)
+        count = _positive_int(self.ranked_candidate_count)
+        if model_rank is not None and count is not None and model_rank > count:
+            model_rank = count = None
+        object.__setattr__(self, "model_rank", model_rank)
+        object.__setattr__(self, "ranked_candidate_count", count)
+        object.__setattr__(
+            self,
+            "explanation",
+            dict(self.explanation) if isinstance(self.explanation, Mapping) else None,
+        )
         score = _optional_float(self.match_score)
         object.__setattr__(self, "match_score", score if score is not None else 0.0)
         object.__setattr__(self, "match_score_available", bool(self.match_score_available))
@@ -239,6 +277,12 @@ class Recommendation:
             ],
             "reason": self.reason,
             "rank": self.rank,
+            "model_rank": self.model_rank,
+            "ranked_candidate_count": self.ranked_candidate_count,
+            "explanation": self.explanation,
+            "ranking_id": self.ranking_id,
+            "selection_policy": self.selection_policy,
+            "adventurousness": self.adventurousness,
         }
 
     @classmethod
@@ -259,6 +303,12 @@ class Recommendation:
             genre_contributions=tuple(contribution_values),
             reason=data.get("reason"),
             rank=data.get("rank"),
+            model_rank=data.get("model_rank"),
+            ranked_candidate_count=data.get("ranked_candidate_count"),
+            explanation=data.get("explanation"),
+            ranking_id=data.get("ranking_id"),
+            selection_policy=data.get("selection_policy"),
+            adventurousness=data.get("adventurousness"),
         )
 
 

@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import date
 import hashlib
 import json
+import logging
 import math
 from pathlib import Path
 from time import perf_counter
@@ -23,6 +24,12 @@ try:
         RankingResult,
     )
     from .eligibility import EligibilityContext
+    from .explanation import (
+        MODEL_RANK_COLUMN,
+        RANKED_COUNT_COLUMN,
+        explain_counterfactual_removal,
+        unavailable_explanation,
+    )
 except ImportError:  # Compatibility with the sibling import path used by tests.
     from recommendation_system import rank_candidate_pool
     from title_utils import normalize_title_key
@@ -34,6 +41,15 @@ except ImportError:  # Compatibility with the sibling import path used by tests.
         RankingResult,
     )
     from scoring.eligibility import EligibilityContext
+    from scoring.explanation import (
+        MODEL_RANK_COLUMN,
+        RANKED_COUNT_COLUMN,
+        explain_counterfactual_removal,
+        unavailable_explanation,
+    )
+
+
+_LOG = logging.getLogger(__name__)
 
 
 class RankingEngineUnavailable(RuntimeError):
@@ -110,6 +126,10 @@ class OnnxSequenceRankingEngine:
     _TYPE_DROPPED = 5
     _TYPE_ON_HOLD = 6
     _TYPE_UNKNOWN = 7
+    _STATUS_BY_TYPE = {
+        1: "completed", 2: "watching", 3: "watching", 4: "plan_to_watch",
+        5: "dropped", 6: "on_hold", 7: None,
+    }
 
     def __init__(self, bundle: str | Path, *, session_factory=None) -> None:
         self._bundle = Path(bundle).expanduser().resolve()
@@ -220,6 +240,203 @@ class OnnxSequenceRankingEngine:
         if scores.shape != (1, len(self._items)) or not np.isfinite(scores).all():
             raise RankingEngineUnavailable("The sequence model returned invalid scores.")
 
+        eligible = [
+            (float(scores[0, position]), mean, mal_id, title, dict(row))
+            for position, mean, mal_id, title, row in self._eligible_candidates(
+                request, history_ids, consumed_history_ids
+            )
+        ]
+        if not eligible:
+            raise RankingEngineUnavailable(
+                "No current candidates are covered by the installed sequence model."
+            )
+
+        eligible.sort(key=lambda value: (-value[0], -value[1], value[2], value[3]))
+        pool_limit = max(
+            request.parameters.recommendation_count,
+            request.parameters.candidate_pool_size,
+        )
+        # The ordered pool is returned; the shared selection policy in
+        # ``scoring.selection`` picks the feed from it after ranking.
+        pool = eligible[:pool_limit]
+        ranked_rows = []
+        for global_rank, (raw_score, _mean, _mal_id, _title, row) in enumerate(pool):
+            row.update(
+                {
+                    "Recommendation Score": raw_score,
+                    "Match Score": 0.0,
+                    "Match Score Available": False,
+                    "Genre Contributions": [],
+                    "Contributing Genres": [],
+                    "Recommendation Reason": (
+                        "Sequential-model pick based on your MAL activity "
+                        f"(candidate rank {global_rank + 1})."
+                    ),
+                    MODEL_RANK_COLUMN: global_rank + 1,
+                    RANKED_COUNT_COLUMN: len(eligible),
+                }
+            )
+            ranked_rows.append(row)
+        columns = tuple(dict.fromkeys(
+            (*request.candidate_columns, "Recommendation Score", "Match Score",
+             "Match Score Available",
+             "Genre Contributions", "Contributing Genres", "Recommendation Reason",
+             MODEL_RANK_COLUMN, RANKED_COUNT_COLUMN)
+        ))
+        return RankingResult(
+            ranked_candidates=tuple(ranked_rows),
+            columns=columns,
+            metadata=RankingEngineMetadata(
+                engine_id=self.engine_id,
+                engine_version=self.engine_version,
+                feature_schema_version=self.feature_schema_version,
+                explanation_type="sequence-score",
+                inference_ms=elapsed_ms,
+            ),
+            warnings=(
+                "MAL list update times approximate viewing order; the model score is not a calibrated match percentage.",
+                "Later-released entries with reciprocal MAL prequel/sequel relations require a consumed direct prequel.",
+            ),
+        )
+
+    def explain(self, request: RankingRequest, rows) -> list[dict]:
+        """Explain each served row by removing parts of the reader's history.
+
+        For every genre among the reader's history titles, and for every
+        single history title, the model is rerun without those titles and the
+        pick's score and rank are measured again among the same eligible
+        candidates. Deterministic: no sampling. A failure must not cost the
+        reader their feed, so it yields an honest "unavailable".
+        """
+        try:
+            return self._explain(request, rows)
+        except Exception:  # noqa: BLE001 - an explanation never breaks a feed
+            _LOG.warning("Sequence-model explanation failed.", exc_info=True)
+            return [unavailable_explanation("explanation-failed") for _row in rows]
+
+    def _explain(self, request, rows) -> list[dict]:
+        import numpy as np
+
+        self._ensure_loaded()
+        history_ids = self._known_history_ids(request.user_history)
+        consumed_history_ids = self._consumed_history_ids(request.user_history)
+        eligible = self._eligible_candidates(request, history_ids, consumed_history_ids)
+        events = self._history_events(request.user_history)
+        column_by_position = {
+            position: column for column, (position, *_rest) in enumerate(eligible)
+        }
+        targets = [
+            column_by_position.get(
+                self._position_by_mal_id.get(self._positive_int(row.get("Anime ID")))
+            )
+            for row in rows
+        ]
+        if not events or not any(target is not None for target in targets):
+            return [unavailable_explanation("explanation-unavailable") for _row in rows]
+
+        history = []
+        for item, event_type, rating in events:
+            source = self._catalog[item - 1]
+            history.append(
+                {
+                    "mal_id": int(self._items[item - 1]),
+                    "title": str(source.get("title") or "").strip(),
+                    "genres": list(
+                        dict.fromkeys(
+                            text
+                            for genre in source.get("genres") or ()
+                            if (text := str(genre).strip())
+                        )
+                    ),
+                    "user_score": float(rating) if rating > 0 else None,
+                    "list_status": self._STATUS_BY_TYPE.get(event_type),
+                }
+            )
+        members: dict[tuple[str, str], list[int]] = {}
+        for index, title in enumerate(history):
+            for key in [("history-group", genre) for genre in title["genres"]] or [
+                ("history-other", "Titles without genres")
+            ]:
+                members.setdefault(key, []).append(index)
+        groups = sorted(members.items(), key=lambda item: (item[0][0], item[0][1].casefold()))
+
+        # One run each, batch size one, exactly as ``rank`` runs the model, so
+        # the full-history run reproduces the ranking score bit for bit.
+        sequences = [events]
+        sequences += [
+            [event for index, event in enumerate(events) if index not in set(group)]
+            for _key, group in groups
+        ]
+        sequences += [events[:index] + events[index + 1 :] for index in range(len(events))]
+        positions = np.asarray([position for position, *_rest in eligible], dtype=np.int64)
+        scores = np.empty((len(sequences), len(eligible)), dtype=np.float32)
+        for row_index, sequence in enumerate(sequences):
+            items, types, ratings = self._pack([sequence])
+            logits = np.asarray(
+                self._session.run(
+                    ["logits"], {"items": items, "types": types, "scores": ratings}
+                )[0],
+                dtype=np.float32,
+            )
+            if logits.shape != (1, len(self._items)) or not np.isfinite(logits).all():
+                raise RankingEngineUnavailable("The sequence model returned invalid scores.")
+            scores[row_index] = logits[0, positions]
+
+        # Ranks use the engine's own order: score, then community mean, MAL ID
+        # and title, the same key ``rank`` sorts by.
+        tiebreak = np.empty(len(eligible), dtype=np.int64)
+        tiebreak[
+            sorted(
+                range(len(eligible)),
+                key=lambda column: (-eligible[column][1], eligible[column][2], eligible[column][3]),
+            )
+        ] = np.arange(len(eligible))
+
+        def rank_of(run, column):
+            score = scores[run, column]
+            ahead = scores[run] > score
+            tied = (scores[run] == score) & (tiebreak < tiebreak[column])
+            return int(ahead.sum() + tied.sum()) + 1
+
+        group_offset, title_offset = 1, 1 + len(groups)
+        effects = []
+        for column in targets:
+            if column is None:
+                effects.append(None)
+                continue
+            full = float(scores[0, column])
+            effects.append(
+                {
+                    "full_score": full,
+                    "full_rank": rank_of(0, column),
+                    "groups": [
+                        (
+                            kind,
+                            label,
+                            group,
+                            full - float(scores[group_offset + index, column]),
+                            rank_of(group_offset + index, column),
+                        )
+                        for index, ((kind, label), group) in enumerate(groups)
+                    ],
+                    "titles": [
+                        (
+                            full - float(scores[title_offset + index, column]),
+                            rank_of(title_offset + index, column),
+                        )
+                        for index in range(len(history))
+                    ],
+                }
+            )
+        return [
+            explain_counterfactual_removal(history, effect, pool_size=len(eligible))
+            if effect is not None
+            else unavailable_explanation("outside-ranked-candidates")
+            for effect in effects
+        ]
+
+    def _eligible_candidates(self, request, history_ids, consumed_history_ids):
+        """The candidates ``rank`` may order, in input order, first copy only."""
         excluded_titles = {
             key
             for value in request.excluded_titles
@@ -250,62 +467,14 @@ class OnnxSequenceRankingEngine:
                 continue
             eligible.append(
                 (
-                    float(scores[0, position]),
+                    position,
                     mean_score if mean_score is not None else -math.inf,
                     mal_id,
                     str(row.get("Title") or ""),
-                    dict(row),
+                    row,
                 )
             )
-        if not eligible:
-            raise RankingEngineUnavailable(
-                "No current candidates are covered by the installed sequence model."
-            )
-
-        eligible.sort(key=lambda value: (-value[0], -value[1], value[2], value[3]))
-        pool_limit = max(
-            request.parameters.recommendation_count,
-            request.parameters.candidate_pool_size,
-        )
-        # The ordered pool is returned; the shared selection policy in
-        # ``scoring.selection`` picks the feed from it after ranking.
-        pool = eligible[:pool_limit]
-        ranked_rows = []
-        for global_rank, (raw_score, _mean, _mal_id, _title, row) in enumerate(pool):
-            row.update(
-                {
-                    "Recommendation Score": raw_score,
-                    "Match Score": 0.0,
-                    "Match Score Available": False,
-                    "Genre Contributions": [],
-                    "Contributing Genres": [],
-                    "Recommendation Reason": (
-                        "Sequential-model pick based on your MAL activity "
-                        f"(candidate rank {global_rank + 1})."
-                    ),
-                }
-            )
-            ranked_rows.append(row)
-        columns = tuple(dict.fromkeys(
-            (*request.candidate_columns, "Recommendation Score", "Match Score",
-             "Match Score Available",
-             "Genre Contributions", "Contributing Genres", "Recommendation Reason")
-        ))
-        return RankingResult(
-            ranked_candidates=tuple(ranked_rows),
-            columns=columns,
-            metadata=RankingEngineMetadata(
-                engine_id=self.engine_id,
-                engine_version=self.engine_version,
-                feature_schema_version=self.feature_schema_version,
-                explanation_type="sequence-score",
-                inference_ms=elapsed_ms,
-            ),
-            warnings=(
-                "MAL list update times approximate viewing order; the model score is not a calibrated match percentage.",
-                "Later-released entries with reciprocal MAL prequel/sequel relations require a consumed direct prequel.",
-            ),
-        )
+        return eligible
 
     def _ensure_loaded(self) -> None:
         if self._loaded:
@@ -492,13 +661,33 @@ class OnnxSequenceRankingEngine:
                 "No history entries are covered by the installed sequence model."
             )
         events.sort(key=lambda value: (value[0], value[1]))
-        events = events[-self._sequence_length :]
-        inputs = [np.zeros((1, self._sequence_length), dtype=np.int64) for _ in range(3)]
-        start = self._sequence_length - len(events)
-        for offset, event in enumerate(events, start=start):
-            inputs[0][0, offset] = event[2]
-            inputs[1][0, offset] = event[3]
-            inputs[2][0, offset] = event[4]
+        return self._pack([events[-self._sequence_length :]])
+
+    def _history_events(self, history):
+        """The model-input events, oldest first, exactly as ``rank`` feeds them."""
+        import numpy as np
+
+        items, types, scores = self._history_inputs(history)
+        return [
+            (int(items[0, offset]), int(types[0, offset]), int(scores[0, offset]))
+            for offset in range(items.shape[1])
+            if items[0, offset]
+        ]
+
+    def _pack(self, sequences):
+        """Left-pad event lists into one model batch, as training did."""
+        import numpy as np
+
+        batch = len(sequences)
+        inputs = [
+            np.zeros((batch, self._sequence_length), dtype=np.int64) for _ in range(3)
+        ]
+        for row, events in enumerate(sequences):
+            start = self._sequence_length - len(events)
+            for offset, event in enumerate(events, start=start):
+                inputs[0][row, offset] = event[-3]
+                inputs[1][row, offset] = event[-2]
+                inputs[2][row, offset] = event[-1]
         return tuple(inputs)
 
     def _interaction_type(self, status, episodes: int, rewatch) -> int:
@@ -611,6 +800,13 @@ class FallbackRankingEngine:
             return provider()
         except RankingEngineUnavailable:
             return EligibilityContext()
+
+    def explain(self, request: RankingRequest, rows) -> list[dict]:
+        """Explain rows the preferred engine ranked (fallback rows are additive)."""
+        explain = getattr(self._preferred, "explain", None)
+        if not callable(explain):
+            return [unavailable_explanation("engine-cannot-explain") for _row in rows]
+        return explain(request, rows)
 
     def rank(self, request: RankingRequest) -> RankingResult:
         try:

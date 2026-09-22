@@ -41,11 +41,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..application.pipeline import CancellationToken
-from ..models import PipelineProgress
+from ..models import PipelineProgress, PipelineResult
 from ..presentation import recommendation_view_models
 from ..services import ApiConnectionService
 from ..services.recommendation_event_service import (
     RecommendationEventService,
+    activity_catalog_version,
     activity_model_version,
     feed_fingerprint,
 )
@@ -105,6 +106,12 @@ EMPTY_LOCAL_STATE = LocalState(
 )
 
 EMPTY_CATALOGUE = Catalogue(genres=(), studios=(), years=(), statuses=())
+
+
+# Operations that write a profile's saved feed. Two of them overlapping for one
+# profile would let the later save overwrite the earlier (a "more" batch
+# computed from an older feed replacing a newer one), so they run one at a time.
+FEED_WRITING_KINDS = ("sync", "recommendation", "more-recommendations")
 
 
 def operation_key(kind: str, profile_id: str) -> str:
@@ -395,8 +402,15 @@ def create_app(
         return ActivityReceipt(recorded=activity.record(profile,
             request_id=str(payload.request_id), event_id=str(payload.event_id),
             feed_id=payload.feed_id, action=payload.action, mal_id=payload.mal_id,
-            position=payload.position, model_rank=model.rank, surface=payload.surface,
-            model_version=activity_model_version(feed.user_stats)))
+            # Attribution comes from the served row, never the client: the
+            # engine's rank before selection, the feed position served, the
+            # ranking identity and how the row was selected.
+            position=payload.position, model_rank=model.fit_rank, surface=payload.surface,
+            model_version=activity_model_version(feed.user_stats),
+            ranking_id=model.ranking_id, feed_rank=model.rank,
+            catalog_version=activity_catalog_version(feed.user_stats),
+            selection_policy=model.selection_policy,
+            adventurousness=model.adventurousness))
 
     @app.post("/api/discover/feedback", response_model=FeedbackResponse)
     def discover_feedback(payload: FeedbackRequest) -> FeedbackResponse:
@@ -463,9 +477,23 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(error)) from error
 
         handler = _build_handler(services, kind, payload, username, profile_id)
+        exclusive_with = (
+            tuple(
+                operation_key(other, profile_id)
+                for other in FEED_WRITING_KINDS
+                if other != kind
+            )
+            if kind in FEED_WRITING_KINDS
+            else ()
+        )
         try:
             record = operations.start(
-                key, kind, profile_id, handler, serialize_result=any_to_dict
+                key,
+                kind,
+                profile_id,
+                handler,
+                serialize_result=any_to_dict,
+                exclusive_with=exclusive_with,
             )
         except OperationAlreadyRunningError as error:
             # 409, not 500: the desktop refuses the same start for the same
@@ -530,27 +558,36 @@ def _build_handler(
     """
     settings = services.settings.load()
 
+    def persisted(result: Any) -> Any:
+        # The desktop saves every pipeline result on completion
+        # (``MainWindow`` -> ``ResultService.save_merged``). The web client
+        # reloads the saved feed when an operation finishes, so without this a
+        # generated feed or "more" batch was computed and then never shown.
+        if isinstance(result, PipelineResult):
+            return services.results.save_merged(profile_id, result)
+        return result
+
     if kind == "sync":
         def run_sync(token: CancellationToken, report) -> Any:
-            return services.orchestrator.run_sync(
+            return persisted(services.orchestrator.run_sync(
                 username,
                 settings.pipeline,
                 progress_callback=report,
                 cancellation_token=token,
-            )
+            ))
 
         return run_sync
 
     if kind == "recommendation":
         def run_full(token: CancellationToken, report) -> Any:
             state = services.recommendation_state.load(profile_id)
-            return services.orchestrator.run_full(
+            return persisted(services.orchestrator.run_full(
                 username,
                 settings.pipeline,
                 progress_callback=report,
                 cancellation_token=token,
                 excluded_mal_ids=state.hidden_mal_ids,
-            )
+            ))
 
         return run_full
 
@@ -562,7 +599,7 @@ def _build_handler(
             if existing is None or not existing.recommendations:
                 raise ValueError("There is no generated feed to extend.")
             state = services.recommendation_state.load(profile_id)
-            return services.orchestrator.run_more(
+            return persisted(services.orchestrator.run_more(
                 username,
                 settings.pipeline,
                 existing_recommendations=existing.recommendations,
@@ -570,7 +607,7 @@ def _build_handler(
                 count=count,
                 progress_callback=report,
                 cancellation_token=token,
-            )
+            ))
 
         return run_more
 

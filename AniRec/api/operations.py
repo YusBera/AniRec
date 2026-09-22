@@ -158,17 +158,24 @@ class OperationRegistry:
         handler: Callable[[CancellationToken, Callable[[PipelineProgress], None]], Any],
         *,
         serialize_result: Callable[[Any], dict[str, Any]] | None = None,
+        exclusive_with: tuple[str, ...] = (),
     ) -> OperationRecord:
+        """Start ``key``; refuse while it, or any ``exclusive_with`` key, runs.
+
+        The check and the start happen under one lock, so two operations that
+        must not overlap cannot both be admitted by concurrent requests.
+        """
         key = key.strip()
         if not key:
             raise ValueError("operation_key is required.")
         with self._lock:
             self._evict_expired_locked()
-            existing = self._records.get(key)
-            if existing is not None and existing.is_running:
-                raise OperationAlreadyRunningError(
-                    f"Operation is already running: {key}"
-                )
+            for candidate in (key, *exclusive_with):
+                existing = self._records.get(candidate)
+                if existing is not None and existing.is_running:
+                    raise OperationAlreadyRunningError(
+                        f"Operation is already running: {candidate}"
+                    )
             # A finished handle is retired rather than refusing the next start.
             # Same reasoning as the BUG1 fix in controller.py.
             record = OperationRecord(key=key, kind=kind, profile_id=profile_id)

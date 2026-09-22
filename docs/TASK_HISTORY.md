@@ -7,6 +7,210 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-22 - Activity attribution (Goal 3)
+
+Made every activity event attributable to exactly what was shown and why.
+
+- **Schema 2 columns:** `ranking_id`, `feed_rank`, `selection_policy` and
+  `adventurousness` are added to `recommendation_events.sqlite`. Existing
+  stores are migrated in place with `ALTER TABLE`; old rows keep
+  `schema_version` 1 and NULL attribution.
+- **Correct rank:** `model_rank` now records the engine's rank before
+  selection. It used to record the feed position.
+- **Server-side attribution:** the API derives every attribution field from
+  the served row. A client-supplied `model_rank` is ignored.
+- **Per-row selection provenance:** each `Recommendation` records the
+  selection policy version and adventurousness in force when it was selected.
+  The pipeline stamps them for full, "more" and single-step generation.
+- **Feed fingerprint:** covers MAL ID, feed rank, model rank, ranking ID and
+  selection settings. It no longer hashes the retired percentage.
+- **Native path:** the PySide recording call passes the same fields.
+- **Hidden titles:** full, "more" and single-step generation read the
+  profile's saved hidden titles (`RecommendationStateService`) whenever a
+  caller passes none. Before, the CLI single-step served hidden titles.
+  `run_step` also accepts feedback adjustments, and the PySide worker passes
+  hidden titles explicitly.
+- **Catalogue attribution:** each event records `catalog_version`. Every
+  ranking snapshot is archived immutably as
+  `ranking_snapshots/<ranking_id>.csv`, pruned after 90 days with events, and
+  resolved by `PipelineOrchestrator.ranking_snapshot`, so an event's ranking
+  stays recoverable after later generations.
+
+*Verification:*
+- `tests/test_recommendation_events.py`:
+  - API events attributed to engine rank, feed position, ranking and
+    selection, ignoring a client-supplied rank;
+  - in-place migration of a version 1 store;
+  - invalid attribution values rejected;
+  - fingerprint tracking ranking and selection, not the percentage.
+- `tests/test_recommendation_explanation.py`: per-row selection provenance
+  across "more" with a different adventurousness, and single-step honouring
+  hidden titles with "more" continuing from it.
+- `tests/test_advanced_operations_page.py`: the PySide single-step passes the
+  profile's hidden titles.
+- Saved hidden titles are honoured by CLI-shaped calls that pass none, and an
+  older feed's ranking resolves after regeneration.
+- An archive referenced by an event outlives the 90-day pruning window.
+- Adversarial review, first pass: NO-GO. The catalogue was not recoverable
+  per event, and the CLI single-step served hidden titles. Both fixed with
+  regression tests, plus a self-found archive-retention gap. Second pass:
+  **GO**. The desktop worker now passes "no hidden set" as None, so the
+  pipeline reads saved state rather than ranking with an empty set.
+
+*Left open:*
+- The heuristic's `live-unversioned` catalogue is identified by the archived
+  input digest but cannot be rebuilt, because the live MAL list is not
+  retained. This matters for Goal 4.
+- A pruning pass and a concurrent event can race within about a millisecond.
+- Archives hold hidden-title IDs and outlive "clear activity" for up to 90
+  days (local, non-textual).
+- Version 1 event rows hold the feed position in `model_rank`; filter on
+  `schema_version`.
+- Existing activity tests (opt-in, deduplication, retention, privacy
+  allowlist, stale feed and profile rejection, failure path, native
+  visibility) still pass.
+- Backend set: 271 passed. Frontend CI passed.
+
+---
+
+## 2026-09-22 - Honest personal fit and "why this pick" (Goal 2)
+
+Retired the uncalibrated "personal match" percentage (D-008). Added personal
+fit as the ranking engine's own rank, and an explanation built from the engine
+that ranked each served row (D-012).
+
+- **Rank:** engines record each title's rank before selection and the number
+  of candidates ranked (`Model Rank`, `Ranked Candidate Count`). They are
+  persisted on `Recommendation` and exposed as `fit_rank`, `fit_pool_size` and
+  `fit_top_percent`.
+- **Heuristic "why":** the raw score parts. They sum to the ranking score to
+  within one float rounding step. Taste parts carry the reader's genuine rated
+  titles (never the imputed file), their average, the affinity used, and any
+  feedback adjustment. Community rating and similar viewers are separate
+  parts, flagged when a neutral stand-in was used.
+- **Sequence-model "why":** counterfactual removal. The model is rerun at
+  batch size 1 without each genre group of the input-window history and
+  without each single title. The pick's score drop and rank are measured among
+  the exact candidates `rank()` ordered. It is deterministic and never
+  presented as shares. A failure yields `unavailable`, never a lost feed.
+  Sampled Shapley was measured first and rejected (see D-012).
+- **One ranking across "more":** each generated feed writes a ranking snapshot
+  (`ranking_signals.csv`): similar-viewer scores, franchise and hidden
+  exclusions, eligibility date, a digest of the ranking input files and
+  feedback, and the answering engine. "More" continues exactly that ranking.
+  Shown titles and titles hidden since stay ranked and are skipped only at
+  selection. Before this, "more" and single-step dropped the similar-viewer
+  signal and franchise exclusion. If a sync, feedback change, eligibility
+  filter change (NSFW, minimum MAL score), rebuilt input, or different engine
+  or bundle catalogue changed the ranking inputs, "more" refuses with
+  "Generate a new feed" rather than mixing rankings. Each recommendation
+  carries the `ranking_id` of its snapshot, so an older feed next to a newer
+  snapshot is refused too. Behaviour change for the deprecated PySide client:
+  its feedback-aware "more" passes current votes, so voting and then asking
+  for more now asks for a new feed.
+- **Feedback scope:** genre feedback moves only `genre:` features. MAL reuses
+  names across genre, source and media type.
+- **Web results are saved:** the API's sync, generate and "more" operations
+  now save their result as the desktop does (`ResultService.save_merged`).
+  Before this, the web client reloaded an unchanged saved feed after
+  "Recommend 5 more", so new titles were computed and never shown
+  (pre-existing). The three feed-writing operations are mutually exclusive
+  per profile (`OperationRegistry.start(exclusive_with=...)`, checked under
+  one lock), so a concurrent generate and "more" cannot overwrite each other.
+- **Web boundary:** the API sends no percentage or percentage-point breakdown.
+  The UI contract is in `UI_ENGINE_INTEGRATION.md`, and the generated API
+  types are regenerated.
+
+*Verification:*
+- `tests/test_recommendation_explanation.py`, through the pipeline, the
+  service, persistence, the view model and the strict API model, covers:
+  - heuristic exactness and evidence honesty across full, "more" and
+    single-step;
+  - community stand-in flags and feedback attribution;
+  - fit rank before selection;
+  - ONNX removal effects checked exactly against an additive fake model and a
+    brute-force re-sort, including exact score ties;
+  - determinism and the failure path;
+  - fallback explanations;
+  - persistence and the strict contract, including legacy results;
+  - a "more" batch ranking one population with the same signals;
+  - restore-then-more and hide-then-more keeping one ranking;
+  - "more" refusing after a sync, a feedback change, an eligibility-filter
+    change, an engine change, or on a feed that is not the snapshot's;
+  - single-step starting a ranking that "more" can continue;
+  - genre votes never moving same-named source or type features;
+  - web generate and "more" operations saved and shown, through the real
+    API handlers;
+  - feed-writing operations refused while another runs for the same profile,
+    at the registry and through the HTTP route.
+- Real bundle, the user's 200-title window: ranking plus explanations took
+  about 3.9 s. Output was byte-identical across two processes with different
+  hash seeds. `full_score` and `full_rank` equal the ranking exactly.
+- Backend set: 240 passed. Frontend CI (type verification, typecheck, 61
+  tests): passed.
+- Adversarial review, first pass: NO-GO with three blockers: "more" ranked a
+  smaller population and produced duplicate ranks; genre votes leaked into
+  same-named source and type features; rejected-method wording remained. All
+  are fixed with regression tests. Second pass: NO-GO. "More" still split
+  the ranking after restoring a hidden title or after a MAL sync. This is now
+  fixed by the ranking snapshot. A self-found divergence gap was closed with
+  `ranking_id`. Third pass: NO-GO. Changed NSFW or minimum-score filters
+  still split the ranking. They are now part of the snapshot and refused.
+  Fourth pass: NO-GO on the same two filters, now in the snapshot. Fifth
+  pass: **GO**. Its lost-update race between concurrent generate and "more"
+  was then closed with per-profile exclusivity.
+
+*Left open:*
+- The deprecated PySide client still renders its legacy percentage in the
+  detail dialog. Its feedback-aware "more" now asks for a new feed after any
+  vote.
+- An operation request naming `profile_id` without `username` takes the
+  active profile's username (pre-existing identity handling). The React
+  client sends neither field.
+- Heuristic and sequence-model pool sizes differ, so `fit_top_percent` is not
+  comparable across engines.
+- Removal effects cover only the model's input window.
+- A removal that empties the window measures the new-reader rank.
+- `Recommendation` is no longer hashable because it holds a dict.
+- The Shapley rejection figures come from an unretained session experiment.
+
+---
+
+## 2026-09-22 - Feedback on never-rated genres reaches their titles
+
+Fixed a pre-existing heuristic scoring defect in
+`AniRec/recommendation_system.py::_apply_adjustments`. Explicit feedback on a
+genre the reader had never rated created a profile feature under the
+casefolded label (`genre:horror`), but candidate tokens keep the catalogue's
+spelling (`genre:Horror`). The like therefore matched no title. It only
+enlarged the profile norm, lowering every other title's cosine. New features now
+take the catalogue's spelling (falling back to the vote's own spelling), chosen
+deterministically; matching stays case-insensitive.
+
+This changes ranking output for readers who voted on a never-rated genre. With
+an Action-only profile, liking Horror now moves a Horror title from 0.139286 to
+0.813030 (from second place to first). The Action title's move to 0.543532 is
+unchanged by the fix; it is the documented cosine normalisation from the
+profile gaining a feature.
+
+*Verification:*
+- Regression test
+  `tests/test_explainable_recommendations.py::test_liking_a_never_rated_genre_raises_titles_that_carry_it`
+  runs through `RecommendationService.recommend`. It failed before the fix
+  (`0.139286 > 0.139286`) and passes after. It also checks that the vote's
+  spelling does not matter, and that the explanation shows a positive Horror
+  taste part carrying the feedback adjustment.
+- Focused suite (services, feed selection, recommendation explanation,
+  explainable recommendations, scoring invariants, collaborative graph):
+  91 passed. Taste-feedback, pipeline, engine-contract and legacy
+  recommendation-system tests: 33 passed.
+
+*Left open:* no retained evaluation of the ranking change. The deprecated
+PySide `TasteFeedbackService.personalize` still adjusts the display percentage
+after scoring; it is not on the web path.
+
+---
+
 ## 2026-09-22 - Deterministic, diverse feed selection (Goal 1)
 
 Replaced both uniform random samplers with one deterministic selector,
@@ -66,6 +270,13 @@ order and values.
   facet counted as zero similarity, so undescribed rows were promoted as novel.
   After the fix, a narrow re-review gave GO. It checked real-bundle determinism
   across processes and a 12-user promotion audit.
+- After the commits (`b1b3007` earlier work, `4671326` Goal 1), a fresh,
+  independent reviewer gave GO with no blockers. It checked:
+  - clean exports of both commits: 84 and 120 focused tests passed;
+  - that restoring the old random sampler makes 20 tests fail;
+  - a 20,000-pool fuzz of the selection invariants;
+  - real-catalogue determinism across hash seeds;
+  - a 15-user real ONNX check.
 
 *Left open:*
 - No franchise diversity: serving rows carry no verified franchise identifier.
@@ -78,6 +289,13 @@ order and values.
 - `SELECTION_POLICY_VERSION` and the adventurousness value are not persisted,
   and activity `model_rank` records feed position. Both are recorded under
   Goal 3.
+- Determinism assumes unique MAL IDs. For duplicate IDs with different data,
+  final eligibility keeps the first row, so input order decides the copy
+  served. This is pre-existing and happens before selection.
+- A fractional stored `randomness_factor` (hand-edited settings only) is
+  truncated to an integer.
+- Single-step generation (`run_step`) does not pass hidden titles or feedback
+  adjustments to ranking. This is pre-existing and not caused by selection.
 - Some sibling-import test files fail collection when run alone
   (pre-existing).
 

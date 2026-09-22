@@ -44,6 +44,7 @@ OpenAPI export for type generation: `AniRec/api/openapi_export.py`.
 | Relation graph, franchise exclusion, collaborative scores | `AniRec/scoring/collaborative.py` |
 | Engine contract and metadata | `AniRec/scoring/contracts.py` |
 | Shared final eligibility policy and aggregate audit | `AniRec/scoring/eligibility.py` |
+| "Why this pick": explanation builders and shared row columns | `AniRec/scoring/explanation.py`; heuristic parts from `recommendation_system.py`, sequence-model removal in `engines.py::OnnxSequenceRankingEngine.explain` |
 | Shared deterministic feed selection (adventurousness, diversity) | `AniRec/scoring/selection.py`; called once in `AniRec/services/recommendation_service.py` |
 | Heuristic ranked pool (`rank_candidate_pool`) and legacy CSV entry point | `AniRec/recommendation_system.py` |
 | Pipeline tuning defaults | `AniRec/models/domain.py` |
@@ -130,6 +131,8 @@ Per-account directory under the data root:
 | `profile.json` | `profile_service.py` | Account record, last sync |
 | `completed_anime.csv` | `pipeline.py` | Synced list with user scores |
 | `candidate_catalogue.csv` | `pipeline.py` | Exact candidate population plus owned/legacy source label |
+| `ranking_snapshots/<ranking_id>.csv` | `pipeline.py` | Immutable archive of each ranking snapshot, pruned after 90 days; resolves an activity event's ranking |
+| `ranking_signals.csv` | `pipeline.py` | Ranking snapshot of the last generated feed: similar-viewer scores, franchise and hidden exclusions, eligibility date, input digest, engine and the `ranking_id` stamped on each recommendation; "more" continues it or refuses when inputs or the feed changed |
 | `top_anime.csv` | legacy pipeline/CLI compatibility | Historical MAL ranking candidate metadata |
 | `recommendation_candidates.csv` | `pipeline.py` | Filtered candidate pool |
 | `genre_importance.csv` | `pipeline.py` | Serialised taste profile |

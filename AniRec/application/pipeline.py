@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import threading
 from dataclasses import replace
 from collections.abc import Callable
@@ -28,12 +30,20 @@ try:
         franchise_exclusions,
         select_seeds,
     )
+    from ..scoring.selection import SELECTION_POLICY_VERSION, clamp_adventurousness
+    from ..services.recommendation_event_service import RANKING_SNAPSHOT_ARCHIVE
+    from ..scoring.explanation import (
+        EXPLANATION_COLUMN,
+        MODEL_RANK_COLUMN,
+        RANKED_COUNT_COLUMN,
+    )
     from ..scoring.taste import build_taste_profile
     from ..services import (
         AnimeDataService,
         AnimeGraphService,
         ProfileService,
         RecommendationService,
+        RecommendationStateService,
     )
     from ..title_utils import normalize_title_key
 except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
@@ -54,12 +64,20 @@ except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
         franchise_exclusions,
         select_seeds,
     )
+    from scoring.selection import SELECTION_POLICY_VERSION, clamp_adventurousness
+    from services.recommendation_event_service import RANKING_SNAPSHOT_ARCHIVE
+    from scoring.explanation import (
+        EXPLANATION_COLUMN,
+        MODEL_RANK_COLUMN,
+        RANKED_COUNT_COLUMN,
+    )
     from scoring.taste import build_taste_profile
     from services import (
         AnimeDataService,
         AnimeGraphService,
         ProfileService,
         RecommendationService,
+        RecommendationStateService,
     )
     from title_utils import normalize_title_key
 
@@ -89,6 +107,38 @@ STEP_LABELS = {
 }
 
 CANDIDATE_CATALOGUE_FILENAME = "candidate_catalogue.csv"
+# The ranking snapshot a generated feed was ranked from: the collaborative
+# scores, franchise and hidden exclusions, eligibility date, a digest of the
+# ranking inputs and the engine that answered. "More" continues exactly that
+# ranking, so fit ranks stay unique and comparable, and refuses when the inputs
+# have changed since instead of silently mixing two rankings in one feed.
+RANKING_SIGNALS_FILENAME = "ranking_signals.csv"
+# Every snapshot is also archived under its ranking id so activity recorded
+# against an older feed can still be resolved to what that feed was ranked
+# from. An archive expires 90 days after it was last written or referenced by
+# a recorded event (the event service refreshes it), so it always outlives the
+# events that point at it.
+SNAPSHOT_ARCHIVE_RETENTION_SECONDS = 90 * 86400
+SIGNAL_COLLABORATIVE = "collaborative"
+SIGNAL_FRANCHISE_EXCLUDED = "franchise-excluded"
+SIGNAL_HIDDEN_EXCLUDED = "hidden-excluded"
+SIGNAL_AS_OF = "as-of"
+SIGNAL_INPUT_DIGEST = "input-digest"
+SIGNAL_RANKING_ENGINE = "ranking-engine"
+SIGNAL_RANKING_ID = "ranking-id"
+SIGNAL_FILTERS = "eligibility-filters"
+# Files whose content decides a ranking; a sync or a regenerated step changes it.
+RANKING_INPUT_FILES = (
+    "genre_importance.csv",
+    "recommendation_candidates.csv",
+    "completed_anime.csv",
+    "user_history.csv",
+)
+STALE_FEED_MESSAGE = (
+    "Your MyAnimeList data, feedback, filters or saved candidates changed "
+    "since this feed was generated. Generate a new feed to see more "
+    "recommendations."
+)
 CATALOGUE_SOURCE_COLUMN = "Candidate Catalogue Source"
 OWNED_CATALOGUE_SOURCE = "installed-model-catalogue"
 LEGACY_MAL_CATALOGUE_SOURCE = "mal-ranking-legacy"
@@ -126,6 +176,7 @@ class PipelineOrchestrator:
         client_id_provider: Callable[[], str] | None = None,
         clock: Callable[[], datetime] = _default_clock,
         anime_graph: AnimeGraphService | None = None,
+        recommendation_state=None,
     ) -> None:
         self._anime_data = anime_data
         self._profiles = profiles
@@ -134,6 +185,12 @@ class PipelineOrchestrator:
         # Optional throughout. Without it, scoring runs on content and
         # community rating alone.
         self._anime_graph = anime_graph
+        # Hidden titles are read from the profile's own saved state whenever a
+        # caller does not pass them, so no caller (CLI, desktop or API) can
+        # forget them and serve a title the reader hid.
+        self._recommendation_state = recommendation_state or RecommendationStateService(
+            root_override=getattr(profiles, "root_override", None)
+        )
         self._access_token_provider = access_token_provider
         self._client_id_provider = client_id_provider
         self._clock = clock
@@ -207,7 +264,7 @@ class PipelineOrchestrator:
         progress_callback: Callable[[PipelineProgress], None] | None = None,
         cancellation_token: CancellationToken | None = None,
         genre_adjustments: dict[str, float] | None = None,
-        excluded_mal_ids: set[int] | frozenset[int] = frozenset(),
+        excluded_mal_ids: set[int] | frozenset[int] | None = None,
     ) -> PipelineResult:
         token = cancellation_token or CancellationToken()
         profile = self._profiles.resolve_profile(username)
@@ -268,18 +325,20 @@ class PipelineOrchestrator:
         collaborative, franchise_ids = self._collaborative_signal(
             completed, directory, credentials, token
         )
+        hidden_ids = self._hidden_titles(profile.profile_id, excluded_mal_ids)
         ranked = self._recommendations.recommend(
             candidates,
             genre_importance,
             settings,
             genre_adjustments=genre_adjustments,
-            excluded_mal_ids=set(excluded_mal_ids) | franchise_ids,
+            excluded_mal_ids=hidden_ids | franchise_ids,
             collaborative_scores=collaborative,
             user_history=history,
             fallback_candidates=fallback_candidates,
             consumed_mal_ids=self._mal_ids(completed),
             include_nsfw=settings.include_nsfw,
             as_of=self._clock().date(),
+            rated_history=completed,
         )
         self._require_nonempty(ranked, "No recommendations were generated.")
         ranking_metadata = ranked.attrs.get("ranking_engine")
@@ -300,10 +359,27 @@ class PipelineOrchestrator:
             tuple(outputs),
             cancellation_check=token.raise_if_cancelled,
         )
+        snapshot = self._snapshot(
+            directory,
+            collaborative=collaborative,
+            franchise_ids=franchise_ids,
+            hidden_ids=hidden_ids,
+            as_of=self._clock().date(),
+            genre_adjustments=genre_adjustments,
+            ranking_metadata=ranking_metadata,
+            eligibility_audit=eligibility_audit,
+            settings=settings,
+        )
+        generated_paths = (
+            *generated_paths,
+            self._write_ranking_snapshot(directory, snapshot),
+        )
         self._profiles.mark_synced(profile)
 
         return PipelineResult(
-            recommendations=self._recommendation_models(ranked),
+            recommendations=self._recommendation_models(
+                ranked, snapshot["ranking_id"], settings
+            ),
             genre_stats=self._genre_models(genre_importance, completed),
             user_stats={
                 "completed_count": len(completed),
@@ -331,7 +407,7 @@ class PipelineOrchestrator:
         *,
         existing_recommendations: tuple[Recommendation, ...] = (),
         genre_adjustments: dict[str, float] | None = None,
-        excluded_mal_ids: set[int] | frozenset[int] = frozenset(),
+        excluded_mal_ids: set[int] | frozenset[int] | None = None,
         count: int = 5,
         progress_callback: Callable[[PipelineProgress], None] | None = None,
         cancellation_token: CancellationToken | None = None,
@@ -356,22 +432,48 @@ class PipelineOrchestrator:
         completed = self._read_completed(directory)
         candidate_catalogue = self._read_candidate_catalogue(directory)
         fallback_candidates = candidates
-        excluded_ids = {
+        snapshot = self._read_ranking_snapshot(directory)
+        if (
+            snapshot is None
+            or snapshot["digest"] != self._ranking_inputs_digest(directory, genre_adjustments)
+            or snapshot["filters"] != self._filters_label(settings)
+            or any(
+                item.ranking_id != snapshot["ranking_id"]
+                for item in existing_recommendations
+            )
+        ):
+            # Either the inputs changed, or the feed on screen is not the one
+            # this snapshot ranked (an older feed, or a snapshot written for a
+            # feed that was never saved).
+            raise DataError(STALE_FEED_MESSAGE)
+        collaborative = snapshot["collaborative"]
+        franchise_ids = snapshot["franchise"]
+        shown_ids = {
             item.anime.mal_id
             for item in existing_recommendations
             if item.anime.mal_id is not None
         }
-        # Titles the user has already rejected or hidden must not reappear here
-        # either; run_more previously only skipped what was already on screen.
-        excluded_ids |= {int(value) for value in (excluded_mal_ids or ()) if value}
-        excluded_titles = {
+        shown_titles = {
             normalize_title_key(item.anime.title) for item in existing_recommendations
         }
-        excluded_titles.discard("")
+        shown_titles.discard("")
+        # Rank exactly the population the feed was ranked from, so every fit
+        # rank in the combined list comes from one ordering. Titles already on
+        # screen, and titles hidden since, stay ranked and are only skipped at
+        # selection. Titles hidden at generation stay excluded even if
+        # restored since; the next full run considers them again.
+        hidden_now = self._hidden_titles(profile.profile_id, excluded_mal_ids)
+        skipped_ids = shown_ids | (hidden_now - snapshot["hidden"])
+        # The pool grows by the titles already shown, which stay ranked but
+        # cannot be selected again.
+        more_pool = max(settings.candidate_pool_size, int(count)) + len(
+            existing_recommendations
+        )
         more_settings = replace(
             settings,
             recommendation_count=max(1, int(count)),
-            candidate_pool_size=max(settings.candidate_pool_size, int(count)),
+            candidate_pool_size=more_pool,
+            top_anime_limit=max(settings.top_anime_limit, more_pool),
             seed=None,
         )
         ranked = self._recommendations.recommend(
@@ -379,19 +481,32 @@ class PipelineOrchestrator:
             importance,
             more_settings,
             genre_adjustments=genre_adjustments,
-            excluded_mal_ids=excluded_ids,
-            excluded_titles=excluded_titles,
+            excluded_mal_ids=snapshot["hidden"] | franchise_ids,
+            collaborative_scores=collaborative,
+            already_shown_mal_ids=skipped_ids,
+            already_shown_titles=shown_titles,
             user_history=history,
             fallback_candidates=fallback_candidates,
             consumed_mal_ids=self._mal_ids(completed),
             include_nsfw=settings.include_nsfw,
-            as_of=self._clock().date(),
+            as_of=snapshot["as_of"],
+            rated_history=self._read_rated_history(directory),
         )
         self._require_nonempty(ranked, "No unseen recommendations remain in the candidate pool.")
         ranking_metadata = ranked.attrs.get("ranking_engine")
+        if (
+            self._engine_label(ranking_metadata, ranked.attrs.get("eligibility_audit"))
+            != snapshot["engine"]
+        ):
+            raise DataError(
+                "The ranking engine changed since this feed was generated. "
+                "Generate a new feed to see more recommendations."
+            )
         eligibility_audit = ranked.attrs.get("eligibility_audit")
         token.raise_if_cancelled()
-        new_recommendations = self._recommendation_models(ranked)
+        new_recommendations = self._recommendation_models(
+            ranked, snapshot["ranking_id"], more_settings
+        )
         combined = tuple(existing_recommendations) + new_recommendations
         combined = tuple(
             replace(item, rank=index) for index, item in enumerate(combined, start=1)
@@ -423,7 +538,12 @@ class PipelineOrchestrator:
         *,
         progress_callback: Callable[[PipelineProgress], None] | None = None,
         cancellation_token: CancellationToken | None = None,
+        excluded_mal_ids: set[int] | frozenset[int] | None = None,
+        genre_adjustments: dict[str, float] | None = None,
     ) -> PipelineResult:
+        """Run one step. ``excluded_mal_ids`` (hidden titles) and
+        ``genre_adjustments`` apply to "generate_recommendations" exactly as
+        they do in a full run; before, single-step generation ignored both."""
         if step_id not in SINGLE_STEP_IDS:
             raise ValueError(f"Unknown pipeline step: {step_id}")
 
@@ -531,15 +651,24 @@ class PipelineOrchestrator:
             directory / "genre_importance.csv",
             required_columns=["Genre", "Importance_Score"],
         )
+        previous = self._read_ranking_snapshot(directory)
+        collaborative = previous["collaborative"] if previous else {}
+        franchise_ids = previous["franchise"] if previous else set()
+        as_of = self._clock().date()
+        hidden_ids = self._hidden_titles(profile.profile_id, excluded_mal_ids)
         ranked = self._recommendations.recommend(
             candidates,
             importance,
             settings,
+            genre_adjustments=genre_adjustments,
+            excluded_mal_ids=hidden_ids | franchise_ids,
+            collaborative_scores=collaborative,
             user_history=self._read_user_history(directory),
             fallback_candidates=candidates,
             consumed_mal_ids=self._mal_ids(completed),
             include_nsfw=settings.include_nsfw,
-            as_of=self._clock().date(),
+            as_of=as_of,
+            rated_history=self._read_rated_history(directory),
         )
         self._require_nonempty(ranked, "No recommendations were generated.")
         ranking_metadata = ranked.attrs.get("ranking_engine")
@@ -550,8 +679,25 @@ class PipelineOrchestrator:
             started_at,
             token,
         )
+        snapshot = self._snapshot(
+            directory,
+            collaborative=collaborative,
+            franchise_ids=franchise_ids,
+            hidden_ids=hidden_ids,
+            as_of=as_of,
+            genre_adjustments=genre_adjustments,
+            ranking_metadata=ranking_metadata,
+            eligibility_audit=eligibility_audit,
+            settings=settings,
+        )
+        snapshot_path = self._write_ranking_snapshot(directory, snapshot)
+        result = replace(
+            result, generated_files=(*result.generated_files, str(snapshot_path))
+        )
         return PipelineResult(
-            recommendations=self._recommendation_models(ranked),
+            recommendations=self._recommendation_models(
+                ranked, snapshot["ranking_id"], settings
+            ),
             user_stats={
                 "candidate_catalogue_count": len(candidate_catalogue),
                 "candidate_catalogue_source": self._catalogue_source(
@@ -593,6 +739,213 @@ class PipelineOrchestrator:
         imputed = directory / "completed_anime_imputed.csv"
         path = imputed if imputed.exists() else directory / "completed_anime.csv"
         return self._storage.read(path, required_columns=["Title", "Genres", "User Score"])
+
+    def _snapshot(
+        self,
+        directory: Path,
+        *,
+        collaborative,
+        franchise_ids,
+        hidden_ids,
+        as_of,
+        genre_adjustments,
+        ranking_metadata,
+        eligibility_audit,
+        settings: PipelineSettings,
+    ) -> dict:
+        """What a feed was ranked from, and the identity derived from all of it."""
+        snapshot = {
+            "collaborative": {int(k): float(v) for k, v in (collaborative or {}).items()},
+            "franchise": {int(value) for value in (franchise_ids or ())},
+            "hidden": {int(value) for value in (hidden_ids or ()) if value},
+            "as_of": as_of,
+            "digest": self._ranking_inputs_digest(directory, genre_adjustments),
+            "engine": self._engine_label(ranking_metadata, eligibility_audit),
+            "filters": self._filters_label(settings),
+        }
+        identity = json.dumps(
+            [
+                snapshot["filters"],
+                sorted(snapshot["collaborative"].items()),
+                sorted(snapshot["franchise"]),
+                sorted(snapshot["hidden"]),
+                as_of.isoformat(),
+                snapshot["digest"],
+                snapshot["engine"],
+            ]
+        )
+        snapshot["ranking_id"] = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+        return snapshot
+
+    def _write_ranking_snapshot(self, directory: Path, snapshot: dict) -> str:
+        """Record what the feed just ranked was ranked from (see the constants)."""
+        rows = [
+            {"Signal": SIGNAL_COLLABORATIVE, "Anime ID": mal_id, "Value": value, "Text": None}
+            for mal_id, value in sorted(snapshot["collaborative"].items())
+        ]
+        rows += [
+            {"Signal": SIGNAL_FRANCHISE_EXCLUDED, "Anime ID": mal_id, "Value": None, "Text": None}
+            for mal_id in sorted(snapshot["franchise"])
+        ]
+        rows += [
+            {"Signal": SIGNAL_HIDDEN_EXCLUDED, "Anime ID": mal_id, "Value": None, "Text": None}
+            for mal_id in sorted(snapshot["hidden"])
+        ]
+        rows += [
+            {"Signal": signal, "Anime ID": None, "Value": None, "Text": text}
+            for signal, text in (
+                (SIGNAL_AS_OF, snapshot["as_of"].isoformat()),
+                (SIGNAL_INPUT_DIGEST, snapshot["digest"]),
+                (SIGNAL_RANKING_ENGINE, snapshot["engine"]),
+                (SIGNAL_FILTERS, snapshot["filters"]),
+                (SIGNAL_RANKING_ID, snapshot["ranking_id"]),
+            )
+        ]
+        frame = pd.DataFrame(rows, columns=["Signal", "Anime ID", "Value", "Text"])
+        path = self._storage.write(frame, directory / RANKING_SIGNALS_FILENAME)
+        self._archive_ranking_snapshot(directory, snapshot["ranking_id"], frame)
+        return str(path)
+
+    def _archive_ranking_snapshot(self, directory: Path, ranking_id: str, frame) -> None:
+        """Keep an immutable copy under the ranking id; prune expired copies."""
+        archive = directory / RANKING_SNAPSHOT_ARCHIVE
+        target = archive / f"{ranking_id}.csv"
+        if not target.exists():
+            self._storage.write(frame, target)
+        cutoff = self._clock().timestamp() - SNAPSHOT_ARCHIVE_RETENTION_SECONDS
+        for path in archive.glob("*.csv"):
+            try:
+                if path != target and path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except OSError:
+                pass  # pruning is housekeeping; a failure must not fail a run
+
+    def ranking_snapshot(self, username: str, ranking_id: str) -> dict | None:
+        """Resolve an archived ranking snapshot, e.g. for an activity event."""
+        profile = self._profiles.resolve_profile(username)
+        path = (
+            self._profiles.directory(profile.profile_id)
+            / RANKING_SNAPSHOT_ARCHIVE
+            / f"{ranking_id}.csv"
+        )
+        return self._read_ranking_snapshot(path.parent, path=path)
+
+    def _read_ranking_snapshot(self, directory: Path, path: Path | None = None) -> dict | None:
+        """The last generated feed's ranking snapshot, or None if it has none."""
+        path = path or directory / RANKING_SIGNALS_FILENAME
+        if not path.exists():
+            return None
+        frame = self._storage.read(path, required_columns=["Signal", "Anime ID", "Value"])
+        snapshot = {
+            "collaborative": {},
+            "franchise": set(),
+            "hidden": set(),
+            "as_of": None,
+            "digest": None,
+            "engine": None,
+            "filters": None,
+            "ranking_id": None,
+        }
+        for _index, row in frame.iterrows():
+            signal = row.get("Signal")
+            text = row.get("Text") if "Text" in frame.columns else None
+            text = None if text is None or pd.isna(text) else str(text)
+            if signal == SIGNAL_AS_OF and text:
+                snapshot["as_of"] = datetime.fromisoformat(text).date()
+                continue
+            if signal == SIGNAL_INPUT_DIGEST:
+                snapshot["digest"] = text
+                continue
+            if signal == SIGNAL_RANKING_ENGINE:
+                snapshot["engine"] = text
+                continue
+            if signal == SIGNAL_RANKING_ID:
+                snapshot["ranking_id"] = text
+                continue
+            if signal == SIGNAL_FILTERS:
+                snapshot["filters"] = text
+                continue
+            mal_id = pd.to_numeric(row.get("Anime ID"), errors="coerce")
+            if pd.isna(mal_id) or int(mal_id) <= 0:
+                continue
+            if signal == SIGNAL_COLLABORATIVE:
+                value = pd.to_numeric(row.get("Value"), errors="coerce")
+                if pd.notna(value):
+                    snapshot["collaborative"][int(mal_id)] = float(value)
+            elif signal == SIGNAL_FRANCHISE_EXCLUDED:
+                snapshot["franchise"].add(int(mal_id))
+            elif signal == SIGNAL_HIDDEN_EXCLUDED:
+                snapshot["hidden"].add(int(mal_id))
+        if (
+            snapshot["as_of"] is None
+            or snapshot["digest"] is None
+            or not snapshot["ranking_id"]
+            or snapshot["filters"] is None
+        ):
+            # A file from before snapshots existed cannot vouch for a ranking.
+            return None
+        return snapshot
+
+    @staticmethod
+    def _ranking_inputs_digest(directory: Path, genre_adjustments) -> str:
+        """Content digest of every input that decides the feed's ranking."""
+        digest = hashlib.sha256()
+        for name in RANKING_INPUT_FILES:
+            path = directory / name
+            digest.update(name.encode("utf-8") + b"\0")
+            digest.update(path.read_bytes() if path.exists() else b"<absent>")
+            digest.update(b"\0")
+        adjustments = sorted(
+            (str(genre).strip().casefold(), round(float(value), 9))
+            for genre, value in (genre_adjustments or {}).items()
+            if str(genre).strip() and value
+        )
+        digest.update(json.dumps(adjustments).encode("utf-8"))
+        return digest.hexdigest()
+
+    @staticmethod
+    def _engine_label(metadata, audit=None) -> str:
+        """Engine, version, primary/fallback and the eligibility catalogue.
+
+        The catalogue version fingerprints the bundle's catalogue, mask and
+        prerequisites, which can change the ranked population without the
+        model checkpoint changing.
+        """
+        if metadata is None:
+            return "unknown"
+        catalogue = getattr(audit, "catalog_version", None) or "unversioned"
+        return (
+            f"{metadata.engine_id}:{metadata.engine_version}:"
+            f"{'fallback' if metadata.fallback_used else 'primary'}:{catalogue}"
+        )
+
+    @staticmethod
+    def _filters_label(settings: PipelineSettings) -> str:
+        """Settings that decide which titles may be ranked at all."""
+        return json.dumps(
+            {
+                "include_nsfw": bool(settings.include_nsfw),
+                "minimum_mean_score": settings.minimum_mean_score,
+            },
+            sort_keys=True,
+        )
+
+    def _hidden_titles(self, profile_id: str, excluded_mal_ids) -> set[int]:
+        """Hidden titles: the caller's set, or the profile's saved state."""
+        if excluded_mal_ids is None:
+            excluded_mal_ids = self._recommendation_state.load(profile_id).hidden_mal_ids
+        return {int(value) for value in excluded_mal_ids if value}
+
+    def _read_rated_history(self, directory: Path) -> pd.DataFrame | None:
+        """The synced list with the reader's own scores, never the imputed copy.
+
+        Explanations quote these scores as "you rated this", so a filled-in
+        guess must never reach them.
+        """
+        path = directory / "completed_anime.csv"
+        if not path.exists():
+            return None
+        return self._storage.read(path, required_columns=["Title", "User Score"])
 
     def _read_candidate_catalogue(self, directory: Path) -> pd.DataFrame:
         current = directory / CANDIDATE_CATALOGUE_FILENAME
@@ -785,7 +1138,11 @@ class PipelineOrchestrator:
         )
 
     @staticmethod
-    def _recommendation_models(frame: pd.DataFrame) -> tuple[Recommendation, ...]:
+    def _recommendation_models(
+        frame: pd.DataFrame,
+        ranking_id: str | None = None,
+        settings: PipelineSettings | None = None,
+    ) -> tuple[Recommendation, ...]:
         models = []
         for rank, (_, row) in enumerate(frame.iterrows(), start=1):
             anime = anime_from_row(row)
@@ -799,6 +1156,16 @@ class PipelineOrchestrator:
                     genre_contributions=tuple(row.get("Genre Contributions") or ()),
                     reason=row.get("Recommendation Reason"),
                     rank=rank,
+                    model_rank=row.get(MODEL_RANK_COLUMN),
+                    ranked_candidate_count=row.get(RANKED_COUNT_COLUMN),
+                    explanation=row.get(EXPLANATION_COLUMN),
+                    ranking_id=ranking_id,
+                    selection_policy=SELECTION_POLICY_VERSION if settings else None,
+                    adventurousness=(
+                        clamp_adventurousness(settings.randomness_factor)
+                        if settings
+                        else None
+                    ),
                 )
             )
         return tuple(models)

@@ -285,7 +285,7 @@ class RecommendationWorker(BaseWorker):
         *,
         step_id: str | None = None,
         genre_adjustments: dict[str, float] | None = None,
-        excluded_mal_ids: set[int] | frozenset[int] = frozenset(),
+        excluded_mal_ids: set[int] | frozenset[int] | None = None,
         **worker_options,
     ) -> None:
         super().__init__(**worker_options)
@@ -294,7 +294,11 @@ class RecommendationWorker(BaseWorker):
         self.settings = settings
         self.step_id = step_id
         self.genre_adjustments = dict(genre_adjustments or {})
-        self.excluded_mal_ids = frozenset(excluded_mal_ids)
+        # None, not an empty set: an unsupplied hidden set lets the pipeline
+        # read the profile's saved hidden titles instead of ranking without them.
+        self.excluded_mal_ids = (
+            frozenset(excluded_mal_ids) if excluded_mal_ids is not None else None
+        )
 
     def execute(self) -> object:
         options = {
@@ -306,6 +310,8 @@ class RecommendationWorker(BaseWorker):
                 self.step_id,
                 self.username,
                 self.settings,
+                excluded_mal_ids=self.excluded_mal_ids,
+                genre_adjustments=self.genre_adjustments or None,
                 **options,
             )
         if self.genre_adjustments:

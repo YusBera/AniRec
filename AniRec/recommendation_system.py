@@ -4,14 +4,24 @@ import pandas as pd
 
 try:
     from .genre_utils import parse_genres
-    from .scoring.features import GENRE, feature_label, token
+    from .scoring.explanation import (
+        MODEL_RANK_COLUMN,
+        RANKED_COUNT_COLUMN,
+        SCORE_PARTS_COLUMN,
+    )
+    from .scoring.features import GENRE, feature_label, feature_namespace, token
     from .scoring.ranking import score_candidates
     from .scoring.selection import select_feed
     from .scoring.serialization import profile_from_frame
     from .title_utils import normalize_title_key
 except ImportError:  # Backward compatibility for direct script-style imports.
     from genre_utils import parse_genres
-    from scoring.features import GENRE, feature_label, token
+    from scoring.explanation import (
+        MODEL_RANK_COLUMN,
+        RANKED_COUNT_COLUMN,
+        SCORE_PARTS_COLUMN,
+    )
+    from scoring.features import GENRE, feature_label, feature_namespace, token
     from scoring.ranking import score_candidates
     from scoring.selection import select_feed
     from scoring.serialization import profile_from_frame
@@ -20,6 +30,7 @@ except ImportError:  # Backward compatibility for direct script-style imports.
 
 # How many drivers to name in an explanation before summarising the rest.
 CONTRIBUTION_LIMIT = 3
+
 
 OTHER_FEATURES_LABEL = "Other tags"
 QUALITY_LABEL = "Community rating"
@@ -93,7 +104,8 @@ def rank_recommendations(
     positions = select_feed(
         ranked_df.to_dict("records"), num_recommendations, randomness_factor
     )
-    return ranked_df.iloc[list(positions)].copy()
+    selected = ranked_df.iloc[list(positions)].copy()
+    return selected.drop(columns=[SCORE_PARTS_COLUMN], errors="ignore")
 
 
 def rank_candidate_pool(
@@ -149,7 +161,11 @@ def rank_candidate_pool(
         for genre, value in (genre_adjustments or {}).items()
         if str(genre).strip()
     }
-    profile = _apply_adjustments(profile, adjustment_by_key)
+    profile = _apply_adjustments(
+        profile,
+        adjustment_by_key,
+        _genre_labels(candidates_df["Genres"], genre_adjustments),
+    )
 
     recommendations_df = candidates_df.copy()
     rows = [row for _index, row in recommendations_df.iterrows()]
@@ -176,6 +192,12 @@ def rank_candidate_pool(
         )
         for row, item in zip(rows, scored)
     ]
+    collaborative_in_blend = bool(
+        _collaborative_by_position(rows, collaborative_scores)
+    )
+    recommendations_df[SCORE_PARTS_COLUMN] = [
+        _score_parts(item, profile, collaborative_in_blend) for item in scored
+    ]
 
     sort_columns = ["Recommendation Score"]
     ascending = [False]
@@ -194,7 +216,39 @@ def rank_candidate_pool(
         kind="mergesort",
         na_position="last",
     )
+    # Position in the full ordering of every candidate this call ranked, before
+    # the pool is cut or a feed is selected from it.
+    ranked_df[MODEL_RANK_COLUMN] = range(1, len(ranked_df) + 1)
+    ranked_df[RANKED_COUNT_COLUMN] = len(ranked_df)
     return ranked_df.head(max(top_anime_count, num_recommendations)).copy()
+
+
+def _score_parts(scored, profile, collaborative_in_blend):
+    """The exact ranking-score terms, for the explanation built after selection.
+
+    Every value is in ranking-score units and the parts sum to ``total``. A
+    missing community score or collaborative signal still contributes its
+    neutral stand-in, so the flags say whether the real signal was present.
+    """
+    return {
+        "total": scored.final_score,
+        "features": [
+            [
+                feature,
+                value,
+                profile.affinity(feature),
+                profile.feature_idf(feature),
+            ]
+            for feature, value in scored.raw_contributions
+        ],
+        "community": scored.raw_quality,
+        "community_available": scored.quality_score is not None,
+        "similar_viewers": scored.raw_collaborative,
+        "similar_viewers_available": scored.collaborative_score is not None,
+        # ``score_candidates`` blends the signal in for the whole batch
+        # whenever any title has it, so a title without it scored 0 there.
+        "similar_viewers_in_blend": collaborative_in_blend,
+    }
 
 
 def _collaborative_by_position(rows, collaborative_scores):
@@ -217,26 +271,53 @@ def _collaborative_by_position(rows, collaborative_scores):
     return by_position or None
 
 
-def _apply_adjustments(profile, adjustment_by_key):
+def _genre_labels(candidate_genres, genre_adjustments):
+    """Map each casefolded genre name to the spelling feature tokens use.
+
+    Candidate tokens keep the catalogue's spelling (``genre:Horror``), so a new
+    feature must use it too or it never matches. The catalogue's spelling wins;
+    a genre absent from the candidates keeps the vote's own spelling. Sorting
+    makes the choice deterministic if one genre appears with two spellings.
+    """
+    labels = {}
+    for label in sorted(
+        {genre for value in candidate_genres for genre in parse_genres(value)}
+    ):
+        labels.setdefault(label.strip().casefold(), label.strip())
+    for label in sorted(str(genre).strip() for genre in (genre_adjustments or {})):
+        if label:
+            labels.setdefault(label.casefold(), label)
+    return labels
+
+
+def _apply_adjustments(profile, adjustment_by_key, labels=None):
     """Fold explicit feedback into the profile before anything is scored.
 
     Adjustments arrive keyed by plain genre name. They are matched against the
     profile's own features, and a genre the user has never rated creates a new
     feature rather than being silently dropped, which is exactly the discovery
-    case feedback exists to serve.
+    case feedback exists to serve. ``labels`` supplies the spelling that new
+    feature must carry to match candidate tokens; matching stays
+    case-insensitive.
     """
     if not adjustment_by_key:
         return profile
 
+    # Votes are genre votes. MAL reuses names across axes (genre "Music",
+    # source "music", media type "music"), so matching must stay inside the
+    # genre namespace or a genre vote would silently move a source or type.
+    genre_features = [
+        feature for feature in profile.affinities if feature_namespace(feature) == GENRE
+    ]
     matched: dict[str, float] = {}
-    for feature in profile.affinities:
+    for feature in genre_features:
         value = adjustment_by_key.get(feature_label(feature).strip().casefold())
         if value:
             matched[feature] = value
-    seen = {feature_label(feature).strip().casefold() for feature in profile.affinities}
+    seen = {feature_label(feature).strip().casefold() for feature in genre_features}
     for key, value in adjustment_by_key.items():
         if key not in seen and value:
-            matched[token(GENRE, key)] = value
+            matched[token(GENRE, (labels or {}).get(key, key))] = value
     if not matched:
         return profile
 

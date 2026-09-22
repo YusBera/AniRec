@@ -32,12 +32,17 @@ from ..services import RecommendationLocalState
 
 
 def view_model_to_dict(model: RecommendationViewModel) -> dict[str, Any]:
-    """One recommendation, exactly as the presentation layer computed it."""
+    """One recommendation, as the presentation layer computed it.
+
+    The retired uncalibrated percentage (D-008) and its percentage-point
+    breakdown stop at this boundary: the web contract carries personal fit as
+    ``fit_rank`` and the breakdown as ``why``. The deprecated desktop client
+    still reads the presentation model directly.
+    """
     payload = asdict(model)
-    payload["genre_contributions"] = [
-        {"label": str(name), "value": float(value)}
-        for name, value in model.genre_contributions
-    ]
+    payload["personal_match"] = 0.0
+    payload["personal_match_available"] = False
+    payload["genre_contributions"] = []
     # A property rather than a field, so asdict does not see it. The card
     # needs it and the rule for composing it belongs beside the two dates.
     payload["aired_text"] = model.aired_text

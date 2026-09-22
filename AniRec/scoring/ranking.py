@@ -103,6 +103,11 @@ class ScoredCandidate:
     contributions: tuple[tuple[str, float], ...] = ()
     quality_contribution: float = 0.0
     collaborative_contribution: float = 0.0
+    # The same parts in ranking-score units, before the display scaling. They
+    # sum exactly to ``final_score``.
+    raw_contributions: tuple[tuple[str, float], ...] = ()
+    raw_quality: float = 0.0
+    raw_collaborative: float = 0.0
 
     @property
     def explained_total(self) -> float:
@@ -233,6 +238,17 @@ def score_candidate(
         contributions=contributions,
         quality_contribution=quality_term * scale,
         collaborative_contribution=collaborative_term * scale,
+        raw_contributions=tuple(
+            sorted(
+                (
+                    (feature, content_weight * value)
+                    for feature, value in per_feature.items()
+                ),
+                key=lambda item: (-item[1], item[0]),
+            )
+        ),
+        raw_quality=quality_term,
+        raw_collaborative=collaborative_term,
     )
 
 

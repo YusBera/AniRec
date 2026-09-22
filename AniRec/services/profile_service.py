@@ -202,6 +202,11 @@ class ProfileService:
             access_token=access_token,
         )
 
+    @property
+    def root_override(self) -> str | Path | None:
+        """The data root this service resolves profile directories under."""
+        return self._root_override
+
     def directory(self, profile_id: str, *, create: bool = False) -> Path:
         directory = profile_dir(profile_id, self._root_override)
         if create:

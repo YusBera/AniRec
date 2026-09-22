@@ -36,8 +36,9 @@ not a genre. Where the underlying data mixes these, normalise before display and
 keep the raw value separately for debugging.
 
 A ranking that cannot explain itself must say so rather than borrow an
-explanation. This is a live constraint: the ONNX sequence engine returns no score
-and no contributions, and nothing has been built to fill that gap.
+explanation. The ONNX sequence engine has no additive contributions; it is
+explained by counterfactual removal of the reader's own history
+(`DECISIONS.md` D-012), which must never be presented as shares of the score.
 
 ---
 
