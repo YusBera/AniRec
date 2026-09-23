@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from AniRec.application.pipeline import (
 )
 from AniRec.errors import CancelledError, DataError
 from AniRec.infrastructure.csv_storage import CsvStorage
-from AniRec.models import PipelineSettings
+from AniRec.models import PipelineSettings, UserProfile
 from AniRec.scoring.engines import HeuristicRankingEngine
 from AniRec.scoring.contracts import RankingEngineMetadata
 from AniRec.scoring.eligibility import EligibilityAudit
@@ -49,6 +50,71 @@ def _orchestrator(
         access_token_provider=lambda: "fake-access-token",
         clock=lambda: instant,
     )
+
+
+def test_sync_uses_bound_profile_and_credentials_after_active_switch(
+    system_temp_dir, top_anime_df, completed_anime_df,
+):
+    seen_credentials = []
+    def completed_fetcher(_username, access_token=None, **kwargs):
+        seen_credentials.append({"access_token": access_token, **kwargs})
+        return completed_anime_df
+
+    anime_data = AnimeDataService(
+        top_fetcher=lambda **kwargs: seen_credentials.append(kwargs) or top_anime_df,
+        completed_fetcher=completed_fetcher,
+    )
+    orchestrator = _orchestrator(
+        system_temp_dir, top_anime_df, completed_anime_df, anime_data=anime_data,
+    )
+    bound = UserProfile(profile_id="bound", username="fixture-user")
+    other = UserProfile(profile_id="other", username="fixture-user")
+    profiles = orchestrator._profiles
+    directory = profiles.directory(other.profile_id, create=True)
+    (directory / "profile.json").write_text(json.dumps(other.to_dict()), encoding="utf-8")
+    profiles.set_active(other.profile_id)
+
+    result = orchestrator.run_sync(
+        bound.username, PipelineSettings(), profile_override=bound,
+        access_token_provider=lambda: "bound-token",
+    )
+
+    assert result.generated_files
+    assert all(Path(path).parent.name == "bound" for path in result.generated_files)
+    assert not (directory / "completed_anime.csv").exists()
+    assert seen_credentials
+    assert all(kwargs.get("access_token") == "bound-token" for kwargs in seen_credentials)
+
+
+def test_full_and_more_keep_bound_profile_after_active_switch(
+    system_temp_dir, top_anime_df, completed_anime_df,
+):
+    orchestrator = _orchestrator(system_temp_dir, top_anime_df, completed_anime_df)
+    orchestrator._access_token_provider = lambda: pytest.fail("unbound token used")
+    bound = UserProfile(profile_id="bound", username="fixture-user")
+    other = UserProfile(profile_id="other", username="fixture-user")
+    profiles = orchestrator._profiles
+    other_directory = profiles.directory(other.profile_id, create=True)
+    (other_directory / "profile.json").write_text(json.dumps(other.to_dict()), encoding="utf-8")
+    profiles.set_active(other.profile_id)
+    settings = PipelineSettings(
+        top_anime_limit=3, recommendation_count=1,
+        candidate_pool_size=2, randomness_factor=1,
+    )
+
+    initial = orchestrator.run_full(
+        bound.username, settings, profile_override=bound,
+        access_token_provider=lambda: "bound-token",
+    )
+    expanded = orchestrator.run_more(
+        bound.username, settings, profile_override=bound,
+        existing_recommendations=initial.recommendations, count=1,
+    )
+
+    assert all(Path(path).parent.name == "bound" for path in initial.generated_files)
+    assert len(expanded.recommendations) == 2
+    assert not (other_directory / "completed_anime.csv").exists()
+    assert not (other_directory / "ranking_signals.csv").exists()
 
 
 def test_full_pipeline_runs_six_steps_in_order_and_returns_typed_result(

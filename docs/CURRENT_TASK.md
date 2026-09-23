@@ -5,8 +5,9 @@
 As reported in the 2026-09-23 cross-session handoff, Goal 4's chronological
 training grid is scheduled in `AniRecTrainer`/`AniRecTrainerWork` under another
 owner. Do not alter its frozen trainer source or its scheduled task. The local
-backend state lock is complete; account isolation is a docs-only proposal
-pending a user decision (proposed D-014 and `ACCOUNT_SCOPE_INVENTORY.md`).
+backend state lock and the local API request-field authority fix are complete.
+D-014 records the accepted hosted database direction; the local single-user
+mode is still undecided, so account/login/migration work remains paused.
 
 Goals 1-3 and vote collection are committed (`4671326`, `fbda46e`, `911fe21`).
 React UI refinement continues in another session and works from the UI
@@ -80,6 +81,7 @@ The UI session adds the buttons from the contract in
 
 ## Next task
 
-For account/login work, obtain the user's D-014 isolation choice before writing
+For account/login work, obtain the user's D-014 local-mode choice before writing
 identity or migration code. The Goal 4 owner will complete evaluation and
-decision; ONNX export and promotion are separate later work.
+decision; ONNX export and promotion are separate later work. A future state
+service task must address stale whole-state `save()` calls.

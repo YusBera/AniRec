@@ -1,6 +1,6 @@
 # Account and profile scope: current implementation
 
-This is an inventory, not an account design approval. D-002 requires AniRec-owned
+This is an inventory, not an account implementation approval. D-002 requires AniRec-owned
 accounts, but no AniRec account or browser session exists yet. The current
 `profile_id` names a local MyAnimeList import/profile, not a signed-in AniRec
 person. The local API's optional per-launch bearer token authenticates one
@@ -19,8 +19,8 @@ on a hosted server (`AniRec/api/security.py`, `AniRec/api/app.py`).
 | `OnboardingService` and desktop setup | Creates or selects a MAL-backed local profile and sets the active one | Import/setup currently changes machine-wide context, not one reader's account. |
 | `GET /api/system/state`, `GET /api/discover/feed` | The machine-wide active profile, or labelled sample data | Any future session would see the same active person's feed until scope is changed. Sample data is deliberately ephemeral. |
 | `GET|POST|DELETE /api/discover/activity`, activity settings | Active profile is selected on the server; event POST checks payload profile and current feed | Better than an arbitrary path, but still shared global identity; the event service writes in that profile directory. |
-| `POST /api/discover/feedback` | Request `profile_id` is passed directly to the state service; vote attribution only checks the active feed | A well-formed ID can choose another local profile's hidden, Watch Later or vote state. The attribution check does not authorize the write. |
-| `POST /api/operations/{kind}` | Request `profile_id` and `username` override the active values; operation key and result path use that ID; pipeline resolves profile again from username | The requested ID and resolved MAL profile may differ. For hosted accounts, both the work and persisted result require a server-derived owner and a checked import binding. |
+| `POST /api/discover/feedback` | Request `profile_id` must match the server's active profile before state changes | Fixed locally on 2026-09-23. Hosted use still needs account-derived scope instead of a machine-wide active profile. |
+| `POST /api/operations/{kind}` | Request `profile_id` and `username`, when supplied, must match the captured active profile; the API binds that profile and its credentials through the pipeline | Fixed locally on 2026-09-23. Hosted work still requires a session-owned import binding. `profile-lookup` may use a separate public `target`. |
 | `GET /api/workspace/library`, `POST /library/resolve` | Request profile ID must equal the machine-wide active ID; checked again after reads | Active-profile equality helps local consistency but is not account authorization. |
 | `GET /api/workspace/profile`, `/compare`, `/settings` | Profile statistics and comparison read the global active profile; settings are global `config/settings.json` | Settings, source credentials and current profile would be shared by hosted readers. Comparison's other MAL username is a public comparison target, not the reader's identity. |
 | PySide (`gui/main_window.py`, `gui/settings_page.py`, `gui/recommendation_page.py`) | Loads or switches the global active profile; actions pass its ID to services | Valid for one local operator, but switching affects the API process using the same data root. |
@@ -35,4 +35,5 @@ is source data and can identify a public list; it cannot identify its AniRec
 owner. Keep sample reports outside real account storage. Decide ownership and
 migration for existing `profiles/<mal-derived-id>/` directories and global
 `config/settings.json`, `config/profile_state.json` and `tokens/<id>.json`
-before enabling a second reader. See proposed D-014 in `DECISIONS.md`.
+before enabling a second reader. See D-014 in `DECISIONS.md`; its hosted
+direction is accepted, but the local-mode choice remains open.

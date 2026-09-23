@@ -24,6 +24,7 @@ try:
         PipelineResult,
         PipelineSettings,
         Recommendation,
+        UserProfile,
     )
     from ..scoring.collaborative import (
         collaborative_scores,
@@ -58,6 +59,7 @@ except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
         PipelineResult,
         PipelineSettings,
         Recommendation,
+        UserProfile,
     )
     from scoring.collaborative import (
         collaborative_scores,
@@ -202,13 +204,17 @@ class PipelineOrchestrator:
         *,
         progress_callback: Callable[[PipelineProgress], None] | None = None,
         cancellation_token: CancellationToken | None = None,
+        profile_override: UserProfile | None = None,
+        access_token_provider: Callable[[], str] | None = None,
     ) -> PipelineResult:
         """Persist the candidate catalogue and current MAL user datasets."""
         token = cancellation_token or CancellationToken()
-        profile = self._profiles.resolve_profile(username)
+        profile = profile_override or self._profiles.resolve_profile(username)
+        if profile.username.casefold() != username.strip().casefold():
+            raise DataError("The selected profile does not match the requested MAL username.")
         directory = self._profiles.directory(profile.profile_id, create=True)
         started_at = self._timestamp()
-        credentials = self._checked_credentials(token)
+        credentials = self._checked_credentials(token, access_token_provider)
 
         self._emit(progress_callback, "fetch_top", 1, len(SYNC_STEP_IDS))
         token.raise_if_cancelled()
@@ -265,12 +271,16 @@ class PipelineOrchestrator:
         cancellation_token: CancellationToken | None = None,
         genre_adjustments: dict[str, float] | None = None,
         excluded_mal_ids: set[int] | frozenset[int] | None = None,
+        profile_override: UserProfile | None = None,
+        access_token_provider: Callable[[], str] | None = None,
     ) -> PipelineResult:
         token = cancellation_token or CancellationToken()
-        profile = self._profiles.resolve_profile(username)
+        profile = profile_override or self._profiles.resolve_profile(username)
+        if profile.username.casefold() != username.strip().casefold():
+            raise DataError("The selected profile does not match the requested MAL username.")
         directory = self._profiles.directory(profile.profile_id, create=True)
         started_at = self._timestamp()
-        credentials = self._checked_credentials(token)
+        credentials = self._checked_credentials(token, access_token_provider)
 
         self._emit(progress_callback, "fetch_top", 1, 6)
         token.raise_if_cancelled()
@@ -411,11 +421,14 @@ class PipelineOrchestrator:
         count: int = 5,
         progress_callback: Callable[[PipelineProgress], None] | None = None,
         cancellation_token: CancellationToken | None = None,
+        profile_override: UserProfile | None = None,
     ) -> PipelineResult:
         """Generate additional feedback-aware picks from the persisted candidate pool."""
 
         token = cancellation_token or CancellationToken()
-        profile = self._profiles.resolve_profile(username)
+        profile = profile_override or self._profiles.resolve_profile(username)
+        if profile.username.casefold() != username.strip().casefold():
+            raise DataError("The selected profile does not match the requested MAL username.")
         directory = self._profiles.directory(profile.profile_id, create=True)
         started_at = self._timestamp()
         self._emit(progress_callback, "generate_recommendations", 1, 1)
@@ -714,18 +727,27 @@ class PipelineOrchestrator:
             completed_at=result.completed_at,
         )
 
-    def _checked_token(self, cancellation_token: CancellationToken) -> str:
+    def _checked_token(
+        self,
+        cancellation_token: CancellationToken,
+        access_token_provider: Callable[[], str] | None = None,
+    ) -> str:
         """Return an OAuth token for compatibility with authenticated CLI flows."""
         cancellation_token.raise_if_cancelled()
-        if self._access_token_provider is None:
+        provider = access_token_provider or self._access_token_provider
+        if provider is None:
             raise DataError("No access token provider is configured.")
-        access_token = self._access_token_provider()
+        access_token = provider()
         cancellation_token.raise_if_cancelled()
         if not access_token:
             raise DataError("The access token provider returned an empty token.")
         return access_token
 
-    def _checked_credentials(self, cancellation_token: CancellationToken) -> dict[str, str]:
+    def _checked_credentials(
+        self,
+        cancellation_token: CancellationToken,
+        access_token_provider: Callable[[], str] | None = None,
+    ) -> dict[str, str]:
         """Prefer the public Client ID flow; fall back to OAuth when configured."""
         cancellation_token.raise_if_cancelled()
         if self._client_id_provider is not None:
@@ -733,7 +755,7 @@ class PipelineOrchestrator:
             cancellation_token.raise_if_cancelled()
             if client_id:
                 return {"client_id": client_id}
-        return {"access_token": self._checked_token(cancellation_token)}
+        return {"access_token": self._checked_token(cancellation_token, access_token_provider)}
 
     def _read_completed(self, directory: Path) -> pd.DataFrame:
         imputed = directory / "completed_anime_imputed.csv"

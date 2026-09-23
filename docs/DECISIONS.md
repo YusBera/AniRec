@@ -5,36 +5,52 @@ accepted decision without a new reason from the user.
 
 ---
 
-## D-014 - AniRec account data isolation (proposed; user decision pending)
-**2026-09-23 - Proposed, not accepted**
+## D-014 - AniRec account data isolation (direction accepted; local mode open)
+**2026-09-23 - Hosted direction accepted; account implementation pending local-mode choice**
 
 D-002 already chooses AniRec-owned accounts. This decision is about how one
 signed-in reader's data is separated from another's. The current shared active
-profile and request-supplied profile IDs cannot serve as account scope; see
+profile cannot serve as account scope. Request-supplied profile IDs could once
+choose local state, which the same-day API fix closed; see
 `ACCOUNT_SCOPE_INVENTORY.md`.
 
-All options require server-side sessions, an AniRec account ID assigned by the
-server, checked ownership of each imported MAL list, and a migration/claim step
-for existing local profiles. MAL login remains optional for public-list imports.
+Across every storage option, the AniRec account ID is assigned by the server.
+A MAL identity is an attribute of an import, never an account ID or a storage
+key. A hosted deployment requires server-side sessions, checked ownership of
+each imported MAL list, and a migration/claim step for existing local profiles.
+MAL login remains optional for public-list imports.
 
 1. **Account directories (smallest transition).** Store each reader's settings,
    imports, results, decisions and activity under an account-specific root.
    Bind requests to that root from the session, with imports keyed beneath it.
    Existing file services can mostly remain, but cross-process writes, backup,
    deletion and multi-worker coordination stay our responsibility.
-2. **Account-scoped database (recommended for a hosted web product).** Keep
-   catalogue/model artefacts shared and put user-owned records in a database
-   keyed by the server-derived AniRec account ID. Use explicit import ownership
-   and transactions for mutable state. This costs a larger migration now but
-   gives one enforceable boundary for concurrent readers, recovery and deletion.
-3. **One isolated runtime/data root per account.** Reuse the current single-user
-   application almost unchanged behind a session router. It gives strong file
-   separation but high process, deployment and operations cost per reader.
+2. **Account-scoped database (accepted hosted direction).** Store account-owned
+   *records* there: identity, import ownership, settings, saved decisions, votes
+   and activity. The existing activity SQLite store already demonstrates schema
+   migration for one record type. Scope mutable records by the server-assigned
+   account ID and use transactions. Keep catalogue/model artefacts shared; bulk
+   ranking snapshots, per-ranking archives and generated feeds remain files
+   addressed by IDs owned by database records. Export and deletion must cover
+   both records and referenced files; activity remains opt-in and retention-
+   bounded.
+3. **One isolated runtime/data root per account (ruled out for hosting).** It
+   would reuse the single-user application but incur a runtime and deployment
+   cost for every reader.
 
-Proposed choice: option 2, with a staged migration that leaves current local
-profiles untouched until an account claims them. No account, login, session or
-storage code is authorized by this proposal; the user must choose the isolation
-model before implementation.
+**Open before login or migration code:** decide whether the current local
+loopback product stays a file-backed single-user mode, or runs the same database
+schema as a one-account hosted deployment. This choice changes the migration
+and claim path, so no account, login, session or migration code starts until it
+is made. Preserve existing local profiles until their owner explicitly claims
+or exports them.
+
+**Independent present-tense fixes:** API request fields no longer select a
+profile for feedback or operations; they are checked against the active local
+profile. `RecommendationStateService.save()` remains a whole-state replacement
+and can erase a newer field change when given an old snapshot. A later
+implementation must give that operation an expected-version check or make it
+private; no change to its persisted schema is authorized here.
 
 ---
 

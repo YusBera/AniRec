@@ -41,7 +41,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..application.pipeline import CancellationToken
-from ..models import PipelineProgress, PipelineResult
+from ..models import PipelineProgress, PipelineResult, UserProfile
 from ..presentation import recommendation_view_models
 from ..services import ApiConnectionService
 from ..services.recommendation_event_service import (
@@ -418,6 +418,10 @@ def create_app(
         profile_id = payload.profile_id.strip()
         if not profile_id:
             raise HTTPException(status_code=400, detail="profile_id is required.")
+        profile = services.profiles.active_profile()
+        if profile is None or profile.profile_id != profile_id:
+            raise HTTPException(status_code=409, detail="Active profile changed. Reload this view.")
+        profile_id = profile.profile_id
 
         state_service = services.recommendation_state
         if payload.action == "hidden":
@@ -493,19 +497,24 @@ def create_app(
                 status_code=404, detail=f"Unsupported operation kind: {kind}"
             )
         profile = services.profiles.active_profile()
-        profile_id = (payload.profile_id or (profile.profile_id if profile else "")).strip()
-        username = (payload.username or (profile.username if profile else "")).strip()
-        if not profile_id:
+        if profile is None:
             raise HTTPException(
                 status_code=409,
-                detail="No active profile. Complete setup or pass profile_id.",
+                detail="No active profile. Complete setup first.",
             )
+        if (
+            (payload.profile_id is not None and payload.profile_id.strip() != profile.profile_id)
+            or (payload.username is not None and payload.username.strip().casefold() != profile.username.casefold())
+        ):
+            raise HTTPException(status_code=409, detail="Active profile changed. Reload this view.")
+        profile_id = profile.profile_id
+        username = profile.username
         try:
             key = operation_key(kind, profile_id)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
-        handler = _build_handler(services, kind, payload, username, profile_id)
+        handler = _build_handler(services, kind, payload, username, profile_id, profile=profile)
         exclusive_with = (
             tuple(
                 operation_key(other, profile_id)
@@ -578,6 +587,8 @@ def _build_handler(
     payload: OperationStartRequest,
     username: str,
     profile_id: str,
+    *,
+    profile: UserProfile | None = None,
 ) -> Callable[[CancellationToken, Callable[[PipelineProgress], None]], Any]:
     """The one place a kind is bound to a service call.
 
@@ -586,6 +597,14 @@ def _build_handler(
     ``self.report_progress`` arriving as arguments instead of attributes.
     """
     settings = services.settings.load()
+    binding = (
+        {}
+        if profile is None
+        else {
+            "profile_override": profile,
+            "access_token_provider": lambda: services.auth.get_access_token(profile.profile_id, settings),
+        }
+    )
 
     def persisted(result: Any) -> Any:
         # The desktop saves every pipeline result on completion
@@ -603,6 +622,7 @@ def _build_handler(
                 settings.pipeline,
                 progress_callback=report,
                 cancellation_token=token,
+                **binding,
             ))
 
         return run_sync
@@ -616,6 +636,7 @@ def _build_handler(
                 progress_callback=report,
                 cancellation_token=token,
                 excluded_mal_ids=state.hidden_mal_ids,
+                **binding,
             ))
 
         return run_full
@@ -636,6 +657,7 @@ def _build_handler(
                 count=count,
                 progress_callback=report,
                 cancellation_token=token,
+                **({"profile_override": profile} if profile is not None else {}),
             ))
 
         return run_more

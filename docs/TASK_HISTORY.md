@@ -7,6 +7,30 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-23 - Local API request fields cannot choose another profile
+
+Feedback and operation requests now derive their profile from the server-side
+active local profile and reject a supplied ID or MAL username that disagrees.
+The API binds that captured profile and its MAL credentials through queued
+sync/generate work, even if the machine-wide active profile changes later.
+Public `profile-lookup.target` remains a separate comparison target. No account,
+session, schema or ranking behavior changed. D-014 now records the accepted
+hosted database direction and the unresolved local-mode choice.
+
+*Verification:* eight new API regression cases failed before the route fix;
+59 focused API/service/pipeline tests passed after binding the operation's
+profile and credentials, including real sync/full/more runs after an active
+profile switch. A reviewer identified the queued-operation identity split that
+the route-only fix would have left open.
+
+*Left open:* local loopback still has a machine-wide active profile, and
+account/session/migration work waits for the local-mode choice. Stale
+whole-state `save()` calls remain a separate data-loss risk.
+The pre-existing `list-sync` handler omits the sync service's required
+`synced_at` argument and needs a separate repair.
+
+---
+
 ## 2026-09-23 - Cross-process recommendation state writes and account-scope inventory
 
 `RecommendationStateService` now serializes each profile's read, mutation and

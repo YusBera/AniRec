@@ -31,6 +31,15 @@ from AniRec.api.operations import (  # noqa: E402
 from AniRec.errors import NetworkError  # noqa: E402
 
 
+def _activate_local_profile(app, username="someone"):
+    profiles = app.state.container.profiles
+    profile = profiles.create_profile(username)
+    directory = profiles.directory(profile.profile_id, create=True)
+    (directory / "profile.json").write_text(json.dumps(profile.to_dict()), encoding="utf-8")
+    profiles.set_active(profile.profile_id)
+    return profile
+
+
 @pytest.fixture()
 def client(tmp_path):
     app = create_app(root_override=str(tmp_path))
@@ -153,18 +162,22 @@ def test_feed_writing_operations_never_overlap_for_one_profile(tmp_path):
     """A generate and a "more" for one profile would race to save the feed."""
     registry = OperationRegistry()
     app = create_app(root_override=str(tmp_path), registry=registry)
+    profile = _activate_local_profile(app)
     release = threading.Event()
 
     def blocking(_token, _report):
         release.wait(5)
         return {"done": True}
 
-    registry.start("more-recommendations:someone", "more-recommendations", "someone", blocking)
+    registry.start(
+        f"more-recommendations:{profile.profile_id}",
+        "more-recommendations", profile.profile_id, blocking,
+    )
     with TestClient(app) as client:
         for kind in ("recommendation", "sync"):
             response = client.post(
                 f"/api/operations/{kind}",
-                json={"profile_id": "someone", "username": "someone"},
+                json={"profile_id": profile.profile_id, "username": profile.username},
             )
             assert response.status_code == 409, kind
     release.set()
@@ -335,8 +348,9 @@ def test_every_error_uses_one_envelope_shape(client):
 
 
 def test_a_vote_round_trips_through_the_real_state_service(client):
+    profile = _activate_local_profile(client.app)
     payload = {
-        "profile_id": "someone",
+        "profile_id": profile.profile_id,
         "mal_id": 1535,
         "action": "watch_later",
         "value": True,
@@ -350,11 +364,12 @@ def test_a_vote_round_trips_through_the_real_state_service(client):
 
 
 def test_sentiment_is_mutually_exclusive_at_the_boundary(client):
+    profile = _activate_local_profile(client.app)
     def vote(sentiment):
         return client.post(
             "/api/discover/feedback",
             json={
-                "profile_id": "someone",
+                "profile_id": profile.profile_id,
                 "mal_id": 42,
                 "action": "sentiment",
                 "sentiment": sentiment,
