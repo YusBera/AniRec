@@ -12,7 +12,7 @@ import type { Catalogue } from "../api/types";
 import { EMPTY_FILTERS, activeFilterCount, type Filters, type SortMode } from "./filtering";
 
 const SORTS: { value: SortMode; label: string }[] = [
-  { value: "personal-match", label: "Match" },
+  { value: "personal-match", label: "Personal fit" },
   { value: "mal-score", label: "MAL" },
   { value: "year", label: "Year" },
   { value: "title", label: "Title" },

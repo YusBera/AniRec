@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, AniRecApiError } from "../api/client";
 import type { Feed, RecommendationViewModel } from "../api/types";
+import { personalFitText, rankingEngineId } from "../discover/ScoreRail";
 import { Genres, Poster } from "./common";
 
 export function LibraryPage({ feed, pending, onVote, onDetails }: {
@@ -17,6 +18,7 @@ export function LibraryPage({ feed, pending, onVote, onDetails }: {
   const [resolving, setResolving] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
   const profileId = feed.ephemeral ? null : feed.state_profile_id;
+  const feedEngineId = rankingEngineId(feed.user_stats);
   const currentProfile = useRef(profileId);
   currentProfile.current = profileId;
   useEffect(() => {
@@ -54,15 +56,15 @@ export function LibraryPage({ feed, pending, onVote, onDetails }: {
     {ids.length === 0 ? <div className="workspace-empty"><h3>{collection === "watch_later" ? "Your Watch Later list is empty" : "No titles set aside"}</h3><p>Choose a title in Discover to add it to this collection.</p><a className="btn" href="#/discover">Explore Discover</a></div>
       : !shown.length && !missing.length ? <p>No saved titles match this search. <button className="btn" onClick={() => setQuery("")}>Clear search</button></p> : null}
     {view === "table" ? <div className="library-table-scroll" role="region" aria-label="Saved titles table, scroll horizontally for all columns" tabIndex={0}>
-      <table className="library-table"><caption>{collection === "watch_later" ? "Watch Later" : "Not interested"} — {shown.length} saved titles</caption><thead><tr><th scope="col">Anime</th><th scope="col">Personal match</th><th scope="col">MAL score / 10</th><th scope="col">Action</th></tr></thead><tbody>
-        {shown.map(model => <tr key={model.mal_id}><th scope="row"><button className="table-title" onClick={() => onDetails(model)}><Poster title={model.display_title} url={model.cover_url} /><span>{model.display_title}</span></button></th><td>{model.personal_match_available ? `${model.personal_match.toFixed(1)}%` : "N/A"}</td><td>{model.mal_score === null ? "N/A" : model.mal_score.toFixed(2)}</td><td><button className="btn" disabled={pending} onClick={() => undo(model.mal_id!)}>{collection === "watch_later" ? "Remove from Watch Later" : "Show again"}</button></td></tr>)}
+      <table className="library-table"><caption>{collection === "watch_later" ? "Watch Later" : "Not interested"} — {shown.length} saved titles</caption><thead><tr><th scope="col">Anime</th><th scope="col">Personal fit</th><th scope="col">MAL score / 10</th><th scope="col">Action</th></tr></thead><tbody>
+        {shown.map(model => <tr key={model.mal_id}><th scope="row"><button className="table-title" onClick={() => onDetails(model)}><Poster title={model.display_title} url={model.cover_url} /><span>{model.display_title}</span></button></th><td>{personalFitText(model, feedEngineId)}</td><td>{model.mal_score === null ? "N/A" : model.mal_score.toFixed(2)}</td><td><button className="btn" disabled={pending} onClick={() => undo(model.mal_id!)}>{collection === "watch_later" ? "Remove from Watch Later" : "Show again"}</button></td></tr>)}
       </tbody></table>
     </div> : <div className={`library-shelf ${view}`}>
       {shown.map(model => <article className="library-card" key={model.mal_id}>
         <button className="poster-link" aria-label={`Details for ${model.display_title}`} onClick={() => onDetails(model)}><Poster title={model.display_title} url={model.cover_url} /></button>
         <div className="library-evidence"><h3><button onClick={() => onDetails(model)}>{model.display_title}</button></h3>
           <Genres genres={model.genres} />
-          <dl className="library-scores"><div><dt>Personal match</dt><dd>{model.personal_match_available ? `${model.personal_match.toFixed(1)}%` : "N/A"}</dd></div><div><dt>MAL score</dt><dd>{model.mal_score === null ? "N/A" : `${model.mal_score.toFixed(2)} / 10`}</dd></div></dl>
+          <dl className="library-scores"><div><dt>Personal fit</dt><dd>{personalFitText(model, feedEngineId)}</dd></div><div><dt>MAL score</dt><dd>{model.mal_score === null ? "N/A" : `${model.mal_score.toFixed(2)} / 10`}</dd></div></dl>
           <button className="btn" disabled={pending} onClick={() => undo(model.mal_id!)}>{collection === "watch_later" ? "Remove from Watch Later" : "Show again"}</button>
         </div>
       </article>)}

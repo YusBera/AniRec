@@ -103,13 +103,13 @@ export function filterAndSort(
     return true;
   });
 
-  // Missing-last, then descending. Mirrors the Python tuple keys exactly:
-  // `(not available, -value)`.
+  if (sortMode === "personal-match") return sortPersonalFit(filtered);
+
+  // Missing-last, then descending. Mirrors the Python tuple keys for the
+  // remaining source fields exactly: `(not available, -value)`.
   const compare: Record<SortMode, (a: RecommendationViewModel, b: RecommendationViewModel) => number> =
     {
-      "personal-match": (a, b) =>
-        rank(!a.personal_match_available, !b.personal_match_available) ||
-        b.personal_match - a.personal_match,
+      "personal-match": () => 0,
       "mal-score": (a, b) =>
         rank(a.mal_score === null, b.mal_score === null) ||
         (b.mal_score ?? 0) - (a.mal_score ?? 0),
@@ -119,6 +119,37 @@ export function filterAndSort(
     };
 
   return [...filtered].sort(compare[sortMode]);
+}
+
+/**
+ * Fit ranks are comparable only inside one ranking snapshot. Sort each
+ * ranking's existing slots independently, then append rows whose rank is
+ * unavailable. This preserves cross-ranking order instead of silently
+ * pretending that #4 from two different candidate pools means the same thing.
+ */
+function sortPersonalFit(models: RecommendationViewModel[]): RecommendationViewModel[] {
+  const ranked = models.filter((model) => model.fit_rank !== null && model.fit_rank !== undefined);
+  const unavailable = models.filter((model) => model.fit_rank === null || model.fit_rank === undefined);
+  const groups = new Map<string, RecommendationViewModel[]>();
+
+  ranked.forEach((model, index) => {
+    const key = model.ranking_id ?? `missing-ranking-id:${index}`;
+    groups.set(key, [...(groups.get(key) ?? []), model]);
+  });
+  for (const [key, items] of groups) {
+    if (!key.startsWith("missing-ranking-id:")) {
+      groups.set(key, [...items].sort((a, b) => a.fit_rank! - b.fit_rank!));
+    }
+  }
+
+  const offsets = new Map<string, number>();
+  const sorted = ranked.map((model, index) => {
+    const key = model.ranking_id ?? `missing-ranking-id:${index}`;
+    const offset = offsets.get(key) ?? 0;
+    offsets.set(key, offset + 1);
+    return groups.get(key)![offset]!;
+  });
+  return [...sorted, ...unavailable];
 }
 
 function rank(missingA: boolean, missingB: boolean): number {

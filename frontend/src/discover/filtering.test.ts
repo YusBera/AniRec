@@ -106,17 +106,28 @@ describe("filterAndSort", () => {
     expect(result.map((item) => item.mal_id)).toEqual([3, 2, 1]);
   });
 
-  it("sorts an unavailable personal match last", () => {
+  it("sorts personal fit by ascending rank with missing ranks last", () => {
     const models = [
-      model({ mal_id: 1, personal_match: 0, personal_match_available: false }),
-      model({ mal_id: 2, personal_match: 12 }),
+      model({ mal_id: 1, fit_rank: null, ranking_id: "ranking-a" }),
+      model({ mal_id: 2, fit_rank: 12, ranking_id: "ranking-a" }),
+      model({ mal_id: 3, fit_rank: 2, ranking_id: "ranking-a" }),
     ];
     const result = filterAndSort(models, EMPTY_FILTERS, "personal-match");
-    expect(result.map((item) => item.mal_id)).toEqual([2, 1]);
+    expect(result.map((item) => item.mal_id)).toEqual([3, 2, 1]);
+  });
+
+  it("never compares ranks from different ranking snapshots", () => {
+    const models = [
+      model({ mal_id: 1, fit_rank: 80, ranking_id: "ranking-a" }),
+      model({ mal_id: 2, fit_rank: 1, ranking_id: "ranking-b" }),
+      model({ mal_id: 3, fit_rank: 2, ranking_id: "ranking-a" }),
+    ];
+    const result = filterAndSort(models, EMPTY_FILTERS, "personal-match");
+    expect(result.map((item) => item.mal_id)).toEqual([3, 2, 1]);
   });
 
   it("does not mutate the input array", () => {
-    const models = [model({ mal_id: 1, personal_match: 10 }), model({ mal_id: 2, personal_match: 90 })];
+    const models = [model({ mal_id: 1, fit_rank: 10, ranking_id: "ranking-a" }), model({ mal_id: 2, fit_rank: 90, ranking_id: "ranking-a" })];
     const before = models.map((item) => item.mal_id);
     filterAndSort(models, EMPTY_FILTERS, "personal-match");
     expect(models.map((item) => item.mal_id)).toEqual(before);

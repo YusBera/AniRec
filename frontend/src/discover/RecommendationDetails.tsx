@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import type { RecommendationViewModel } from "../api/types";
 import { usePlatform } from "../platform/PlatformContext";
-import { Breakdown } from "./ScoreRail";
+import { personalFitText, WhyExplanation } from "./ScoreRail";
 
 export function MalLink({ model }: { model: RecommendationViewModel }) {
   const platform = usePlatform();
@@ -17,7 +17,11 @@ export function MalLink({ model }: { model: RecommendationViewModel }) {
 }
 
 /** Native modality supplies focus containment, Escape, and return-to-invoker. */
-export function RecommendationDetails({ model, onClose }: { model: RecommendationViewModel; onClose: () => void }) {
+export function RecommendationDetails({ model, engineId = null, onClose }: {
+  model: RecommendationViewModel;
+  engineId?: string | null;
+  onClose: () => void;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const headingId = useId();
   useEffect(() => {
@@ -37,12 +41,14 @@ export function RecommendationDetails({ model, onClose }: { model: Recommendatio
     </header>
     <h2 id={headingId}>{model.display_title}</h2>
     {model.secondary_title ? <p className="details-secondary">{model.secondary_title}</p> : null}
+    <div className="details-fit">
+      <span className="lbl">Personal fit</span>
+      <strong>{personalFitText(model, engineId)}</strong>
+    </div>
     <div className="details-grid">
-      <section aria-label="Match explanation">
-        <h3>Personal match {model.personal_match_available ? `${model.personal_match.toFixed(1)}%` : "unavailable"}</h3>
-        <p>{model.reason || "No recommendation explanation is available for this title."}</p>
-        <Breakdown contributions={model.genre_contributions} score={model.personal_match} available={model.personal_match_available} />
-        <p className="details-note">Signed contributions are percentage points, not separate match scores. Community signals are shown in aqua.</p>
+      <section className="details-explanation" aria-label="Why this pick">
+        <h3>Why this pick</h3>
+        <WhyExplanation why={model.why} />
       </section>
       <section aria-label="Title information">
         <h3>About this title</h3>

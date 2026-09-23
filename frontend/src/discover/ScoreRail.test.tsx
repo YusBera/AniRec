@@ -1,107 +1,200 @@
-/**
- * The invariant the product is built on: the parts of an explanation add up to
- * the score shown, and the community term is never presented as one of the
- * user's own genres. tests/test_scoring_invariants.py states these for the
- * engine; this states the presentation half.
- */
-
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { Breakdown, ScoreRail, isCommunityTerm, toneFor } from "./ScoreRail";
+import type { Explanation, RecommendationViewModel } from "../api/types";
+import { FitIndicator, WhyExplanation } from "./ScoreRail";
 
-const CONTRIBUTIONS = [
-  { label: "Psychological", value: 44.1 },
-  { label: "Thriller", value: 26.8 },
-  { label: "Supernatural", value: 5.2 },
-  { label: "Community rating", value: 16.3 },
-];
+function model(overrides: Partial<RecommendationViewModel> = {}): RecommendationViewModel {
+  return {
+    mal_id: 1,
+    rank: 1,
+    display_title: "Perfect Blue",
+    secondary_title: null,
+    alternative_titles: [],
+    personal_match: 0,
+    personal_match_text: "",
+    personal_match_available: false,
+    mal_score: 8.55,
+    mal_score_text: "",
+    genres: ["Psychological"],
+    genres_text: "Psychological",
+    studios: ["Madhouse"],
+    studios_text: "Madhouse",
+    episodes: 1,
+    episodes_text: "1 episode",
+    status: "Finished Airing",
+    year: 1998,
+    year_text: "1998",
+    start_date: "",
+    end_date: "",
+    aired_text: null,
+    synopsis: "",
+    reason: "",
+    contributing_genres: [],
+    genre_contributions: [],
+    cover_url: null,
+    large_cover_url: null,
+    mal_url: null,
+    media_type: "movie",
+    fit_rank: 4,
+    fit_pool_size: 13_458,
+    fit_top_percent: 0.0297,
+    ranking_id: "ranking-a",
+    why: null,
+    ...overrides,
+  };
+}
 
-describe("score rail", () => {
-  it("gives the community term the system colour, never a taste colour", () => {
-    expect(toneFor({ label: "Community rating", value: 16.3 }, 0)).toBe("x");
-    expect(toneFor({ label: "Similar viewers", value: 4 }, 1)).toBe("x");
-    expect(toneFor({ label: "Psychological", value: 44.1 }, 0)).toBe("a");
+const ADDITIVE: Explanation = {
+  schema_version: 1,
+  method: "exact-additive",
+  unit: "ranking-score",
+  baseline: 0,
+  total: 2.25,
+  full_score: 2.25,
+  full_rank: 4,
+  ranked_candidate_count: 13_458,
+  unavailable_reason: null,
+  influences: [],
+  segments: [
+    {
+      kind: "taste",
+      label: "Psychological",
+      facet: "genre",
+      value: 3.5,
+      member_count: null,
+      rank_without: null,
+      signal_available: true,
+      feedback_adjustment: 0.25,
+      taste: { affinity: 0.8, rarity: 1.1, rated_count: 2, mean_user_score: 9, overall_mean_user_score: 7.4 },
+      community: null,
+      evidence: [{ mal_id: 19, title: "Monster", user_score: 10, list_status: null, value: null, rank_without: null }],
+    },
+    {
+      kind: "community",
+      label: "Community rating",
+      facet: null,
+      value: -1.25,
+      member_count: null,
+      rank_without: null,
+      signal_available: false,
+      feedback_adjustment: null,
+      taste: null,
+      community: { mean_score: null, scoring_users: null },
+      evidence: [],
+    },
+  ],
+};
+
+const COUNTERFACTUAL: Explanation = {
+  schema_version: 1,
+  method: "counterfactual-removal",
+  unit: "model-score",
+  baseline: null,
+  total: null,
+  full_score: 0.8,
+  full_rank: 4,
+  ranked_candidate_count: 13_458,
+  history_window: 2,
+  unavailable_reason: null,
+  segments: [{
+    kind: "history-group",
+    label: "Psychological",
+    facet: "genre",
+    value: -0.3,
+    member_count: 2,
+    rank_without: 2,
+    signal_available: true,
+    feedback_adjustment: null,
+    taste: null,
+    community: null,
+    evidence: [
+      { mal_id: 19, title: "Monster", user_score: 10, list_status: "completed", value: 0.7, rank_without: 33 },
+      { mal_id: 437, title: "Perfect Blue", user_score: 9, list_status: "completed", value: 0.2, rank_without: 8 },
+    ],
+  }],
+  influences: [{ mal_id: 19, title: "Monster", user_score: 10, list_status: "completed", value: 0.7, rank_without: 33 }],
+};
+
+describe("personal fit indicator", () => {
+  it("shows the API rank, pool, and ranking engine without presenting a match percentage", () => {
+    render(<FitIndicator model={model()} engineId="sasrec-onnx" onOpen={() => undefined} />);
+    const button = screen.getByRole("button", { name: /Why this pick/ });
+    expect(button).toHaveTextContent("#4 of 13,458");
+    expect(button).toHaveTextContent("sequence model");
+    expect(button).not.toHaveTextContent("%");
   });
 
-  it("identifies the community term the same way the Qt side does", () => {
-    expect(isCommunityTerm("Community rating")).toBe(true);
-    expect(isCommunityTerm("Similar viewers")).toBe(true);
-    expect(isCommunityTerm("Supernatural")).toBe(false);
-  });
-
-  it("gives every positive term a share proportional to its value", () => {
-    const { container } = render(
-      <ScoreRail contributions={CONTRIBUTIONS} score={92.4} available />,
-    );
-    const segments = [...container.querySelectorAll<HTMLElement>(".rail-seg")];
-    expect(segments).toHaveLength(4);
-    const widths = segments.map((node) => Number.parseFloat(node.style.width));
-    // Proportions of the filled length, so they total the score.
-    expect(widths.reduce((sum, value) => sum + value, 0)).toBeCloseTo(92.4, 1);
-    // Ordering is preserved, and the largest term is the widest.
-    expect(Math.max(...widths)).toBeCloseTo(widths[0]!, 5);
-  });
-
-  it("never draws a negative term as positive width", () => {
-    const { container } = render(
-      <ScoreRail
-        contributions={[
-          { label: "Action", value: 30 },
-          { label: "Ecchi", value: -12 },
-        ]}
-        score={30}
-        available
-      />,
-    );
-    expect(container.querySelectorAll(".rail-seg")).toHaveLength(1);
-  });
-
-  it("renders an unavailable match as an empty rail, not a zero-width one", () => {
-    const { container } = render(
-      <ScoreRail contributions={[]} score={0} available={false} />,
-    );
-    expect(container.querySelectorAll(".rail-seg")).toHaveLength(0);
-    expect(screen.getByRole("img")).toHaveAccessibleName("Match not available");
-  });
-
-  it("describes the breakdown to a screen reader without a legend", () => {
-    render(<ScoreRail contributions={CONTRIBUTIONS} score={92.4} available />);
-    expect(screen.getByRole("img")).toHaveAccessibleName(
-      "Match 92.4%: Psychological 44.1, Thriller 26.8, Supernatural 5.2, Community rating 16.3",
-    );
+  it("uses words, not zero or a dash, when fit is unavailable", () => {
+    render(<FitIndicator model={model({ fit_rank: null, fit_pool_size: null, fit_top_percent: null })} engineId={null} onOpen={() => undefined} />);
+    expect(screen.getByRole("button", { name: /Why this pick/ })).toHaveTextContent("Personal fit unavailable");
+    expect(screen.queryByText("0")).not.toBeInTheDocument();
+    expect(screen.queryByText("—")).not.toBeInTheDocument();
   });
 });
 
-describe("breakdown", () => {
-  it("discloses a mismatch instead of silently implying that the parts reconcile", () => {
-    render(<Breakdown contributions={[{ label: "Adventure", value: 38.9 }]} score={34.7} />);
-    expect(screen.getByText(/does not fully reconcile/)).toHaveTextContent("38.9");
-    expect(screen.getByText(/does not fully reconcile/)).toHaveTextContent("34.7%");
+describe("why explanation", () => {
+  it("keeps additive negative terms, gives the bar a numeric text equivalent, and exposes rated evidence", async () => {
+    const user = userEvent.setup();
+    render(<WhyExplanation why={ADDITIVE} />);
+    expect(screen.getByText("Ranking score").nextSibling).toHaveTextContent("2.25");
+    expect(screen.getByRole("img", { name: /Genre · Psychological \+3.5, raised it.*Community rating -1.25, held it back/ })).toBeInTheDocument();
+    const segment = screen.getByText("Genre · Psychological").closest("details")!;
+    await user.click(within(segment).getByText("Genre · Psychological"));
+    expect(within(segment).getByText(/2 rated titles/)).toHaveTextContent("average 9 / 10");
+    expect(within(segment).getByText(/adjusted by your likes\/dislikes/i)).toHaveTextContent("+0.25");
+    expect(within(segment).getByText("Monster").parentElement).toHaveTextContent("10 / 10");
+    const community = screen.getByText("Community rating").closest("details")!;
+    await user.click(within(community).getByText("Community rating"));
+    expect(within(community).getByText(/not about your taste/i)).toBeInTheDocument();
+    expect(within(community).getByText(/neutral stand-in/i)).toBeInTheDocument();
   });
 
-  it("does not turn a missing match into a numeric zero", () => {
-    render(<Breakdown contributions={[]} score={0} available={false} />);
-    expect(screen.getByText("Personal match is not available.")).toBeInTheDocument();
-    expect(screen.queryByText("0.0")).not.toBeInTheDocument();
-  });
-  it("shows a total that reconciles with the score", () => {
-    render(<Breakdown contributions={CONTRIBUTIONS} score={92.4} />);
-    expect(screen.getByText("92.4")).toBeInTheDocument();
-  });
-
-  it("keeps the sign on a negative contribution", () => {
-    const { container } = render(
-      <Breakdown contributions={[{ label: "Ecchi", value: -12.5 }]} score={-12.5} />,
-    );
-    // Scoped to the row: the total below it reads -12.5 as well, and a bare
-    // text query cannot tell the two apart.
-    expect(container.querySelector(".breakdown-row .val")).toHaveTextContent("-12.5");
+  it("renders unknown taste counts and means as unknown, never zero", async () => {
+    const user = userEvent.setup();
+    const taste = ADDITIVE.segments[0]!;
+    render(<WhyExplanation why={{ ...ADDITIVE, segments: [{
+      ...taste,
+      feedback_adjustment: null,
+      taste: { ...taste.taste!, rated_count: null, mean_user_score: null, overall_mean_user_score: null },
+      evidence: [],
+    }] }} />);
+    await user.click(screen.getByText("Genre · Psychological"));
+    expect(screen.getByText("Rated-title count and mean rating: unknown.")).toBeInTheDocument();
+    expect(screen.getByText("Overall mean rating: unknown.")).toBeInTheDocument();
+    expect(screen.queryByText(/0 rated titles/)).not.toBeInTheDocument();
   });
 
-  it("adds a plus to a positive one, so the sign is never implied", () => {
-    const { container } = render(
-      <Breakdown contributions={[{ label: "Action", value: 30 }]} score={30} />,
-    );
-    expect(container.querySelector(".breakdown-row .val")).toHaveTextContent("+30.0");
+  it("describes sequence effects as removals from the recent history window, not genre inputs or shares", async () => {
+    const user = userEvent.setup();
+    render(<WhyExplanation why={COUNTERFACTUAL} />);
+    expect(screen.getByText(/your 2 most recent titles/i)).toBeInTheDocument();
+    const segment = screen.getByText("Your Psychological titles").closest("details")!;
+    expect(segment).toHaveTextContent("#4 → #2");
+    expect(segment).toHaveTextContent("-0.3 · Held it back");
+    await user.click(within(segment).getByText("Your Psychological titles"));
+    expect(within(segment).getByText(/removing it leaves no history/i)).toHaveTextContent("brand-new reader's rank");
+    expect(within(segment).getByText("Monster").parentElement).toHaveTextContent("+0.7 · raised it");
+    expect(screen.getByText(/Because you watched Monster/).closest("li")).toHaveTextContent("#4 → #33 · effect +0.7 · raised it");
+    expect(screen.queryByText(/because it is Psychological/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["engine-cannot-explain", "this engine can't explain its picks"],
+    ["explanation-failed", "couldn't compute an explanation this time"],
+    ["explanation-unavailable", "couldn't compute an explanation this time"],
+    ["outside-ranked-candidates", "not in the ranked set"],
+    ["score-parts-missing", "no score breakdown was recorded"],
+  ])("maps unavailable reason %s to plain text", (reason, copy) => {
+    render(<WhyExplanation why={{ ...ADDITIVE, method: "unavailable", total: null, baseline: null, segments: [], unavailable_reason: reason }} />);
+    expect(screen.getByText("This pick can't be explained")).toBeInTheDocument();
+    expect(screen.getByText(copy)).toBeInTheDocument();
+  });
+
+  it("treats a null explanation as unavailable without borrowing legacy reason copy", () => {
+    render(<WhyExplanation why={null} />);
+    expect(screen.getByText("This pick can't be explained")).toBeInTheDocument();
+    expect(screen.getByText("No explanation was recorded for this pick.")).toBeInTheDocument();
   });
 });

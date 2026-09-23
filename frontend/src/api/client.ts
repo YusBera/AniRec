@@ -103,6 +103,7 @@ export const api = {
     action: "hidden" | "watch_later" | "sentiment";
     value?: boolean;
     sentiment?: "liked" | "disliked" | null;
+    feed_id?: string | null;
     genres?: string[];
     title?: string;
   }) =>
