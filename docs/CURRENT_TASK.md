@@ -71,6 +71,12 @@ presentation model.
   is archived by `ranking_id`, so an event stays resolvable after later
   generations.
 
+## Likes and dislikes (D-013)
+
+Votes are collected with time and attribution, and are not fed into ranking.
+The UI session adds the buttons from the contract in
+`UI_ENGINE_INTEGRATION.md`.
+
 ## Next task
 
 Goal 4 requires the latest verified collector snapshot. Stop and ask the user

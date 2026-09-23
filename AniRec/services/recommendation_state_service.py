@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -16,27 +18,45 @@ except ImportError:  # Compatibility with legacy top-level imports.
 
 
 RECOMMENDATION_STATE_SCHEMA_VERSION = 3
+# Optional vote attribution (D-013). Absent in older schema 3 files.
+ATTRIBUTION_FIELDS = (
+    "recorded_at",
+    "ranking_id",
+    "model_rank",
+    "feed_rank",
+    "model_version",
+    "catalog_version",
+    "selection_policy",
+    "adventurousness",
+)
 
 
 @dataclass(frozen=True)
 class RecommendationFeedback:
     """One explicit user preference tied to a stable MyAnimeList anime ID.
 
-    Dormant since schema 3. No control writes one of these any more - the
-    like and dislike buttons that did are gone, and Not interested writes to
-    ``hidden_mal_ids`` instead. The record, ``set_feedback`` and the two id
-    properties below are kept because the ranking engine still accepts a
-    taste-adjustment map at its boundary and a future model may want to fill
-    it from something better earned than a click on a poster. Loading a
-    schema 1 or 2 profile migrates the old records out, so in practice the
-    collection is always empty and the adjustments it produces are always
-    ``{}``.
+    Collected, not fed (``DECISIONS.md`` D-013). A like or dislike is stored
+    with when it was cast and what was shown: the ranking it came from, the
+    engine's rank, the feed position, the engine and catalogue versions and
+    the selection settings. Nothing ranks with it until a pre-production
+    decision says how; the web API passes no taste adjustments, and the
+    desktop client no longer re-orders its feed by votes. Loading a schema 1
+    or 2 profile still migrates the old, unattributed records out.
     """
 
     mal_id: int
     sentiment: str
     genres: tuple[str, ...] = ()
     title: str = ""
+    # When the vote was cast (UTC, ISO 8601) and what was shown at the time.
+    recorded_at: str | None = None
+    ranking_id: str | None = None
+    model_rank: int | None = None
+    feed_rank: int | None = None
+    model_version: str | None = None
+    catalog_version: str | None = None
+    selection_policy: str | None = None
+    adventurousness: int | None = None
 
     def __post_init__(self) -> None:
         mal_id = int(self.mal_id)
@@ -56,6 +76,18 @@ class RecommendationFeedback:
         object.__setattr__(self, "sentiment", sentiment)
         object.__setattr__(self, "genres", genres)
         object.__setattr__(self, "title", str(self.title).strip())
+        for name in ("recorded_at", "ranking_id", "model_version", "catalog_version",
+                     "selection_policy"):
+            value = getattr(self, name)
+            text = str(value).strip() if value is not None else ""
+            object.__setattr__(self, name, text[:200] or None)
+        for name in ("model_rank", "feed_rank", "adventurousness"):
+            value = getattr(self, name)
+            try:
+                number = int(value) if value is not None else None
+            except (TypeError, ValueError):
+                number = None
+            object.__setattr__(self, name, number if number and number > 0 else None)
 
     def to_storage_dict(self) -> dict[str, object]:
         return {
@@ -63,6 +95,7 @@ class RecommendationFeedback:
             "sentiment": self.sentiment,
             "genres": list(self.genres),
             "title": self.title,
+            **{name: getattr(self, name) for name in ATTRIBUTION_FIELDS},
         }
 
     @classmethod
@@ -74,6 +107,7 @@ class RecommendationFeedback:
             sentiment=payload.get("sentiment"),
             genres=tuple(payload.get("genres") or ()),
             title=payload.get("title") or "",
+            **{name: payload.get(name) for name in ATTRIBUTION_FIELDS},
         )
 
 
@@ -243,8 +277,14 @@ class RecommendationStateService:
         *,
         genres: tuple[str, ...] | list[str] = (),
         title: str = "",
+        attribution: Mapping[str, object] | None = None,
+        recorded_at: datetime | None = None,
     ) -> RecommendationLocalState:
-        """Set mutually exclusive feedback, or clear it when sentiment is ``None``."""
+        """Set mutually exclusive feedback, or clear it when sentiment is ``None``.
+
+        ``attribution`` describes what was shown when the vote was cast (see
+        ``ATTRIBUTION_FIELDS``); the vote is timestamped now unless given.
+        """
 
         normalized_id = int(mal_id)
         if normalized_id <= 0:
@@ -254,11 +294,18 @@ class RecommendationStateService:
         if sentiment is None:
             records.pop(normalized_id, None)
         else:
+            moment = recorded_at or datetime.now(timezone.utc)
             records[normalized_id] = RecommendationFeedback(
                 mal_id=normalized_id,
                 sentiment=sentiment,
                 genres=tuple(genres),
                 title=title,
+                **{
+                    name: (attribution or {}).get(name)
+                    for name in ATTRIBUTION_FIELDS
+                    if name != "recorded_at"
+                },
+                recorded_at=moment.astimezone(timezone.utc).isoformat(),
             )
         return self.save(
             profile_id,

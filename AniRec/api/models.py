@@ -291,6 +291,14 @@ class FeedbackRequest(ApiModel):
     sentiment: Sentiment | None = None
     genres: tuple[str, ...] = ()
     title: str = ""
+    feed_id: str | None = Field(
+        default=None,
+        pattern="^[a-f0-9]{64}$",
+        description=(
+            "The activity_feed_id of the feed the vote was cast on. A vote is "
+            "attributed to what was shown only when this matches the served feed."
+        ),
+    )
 
 
 class ActivityStatus(ApiModel):

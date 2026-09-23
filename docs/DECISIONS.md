@@ -56,6 +56,39 @@ web-first.
 
 ---
 
+## D-013 - Likes and dislikes are collected, not fed
+**2026-09-22 - Accepted (user decision). Revises the schema 3 retirement.**
+
+Explicit likes and dislikes are collected again. Each vote is stored in the
+profile's `recommendation_state.json` with:
+- when it was cast;
+- what was shown: the ranking ID, the engine's rank, the feed position, the
+  engine and catalogue versions, and the selection policy and
+  adventurousness;
+- the served row's genres and title.
+
+Attribution, genres and title are taken on the server from the served row,
+but only when the vote names the feed it was cast on (`feed_id`) and that
+feed is still the one served. A vote from a stale screen, or for a title
+outside the feed, is kept unattributed with the client's genres and title.
+Only the latest vote per title is kept; re-voting replaces its attribution.
+
+Votes do not influence ranking, selection or explanations anywhere:
+- the web API passes no taste adjustments;
+- the desktop client no longer re-sorts its feed by votes;
+- a test fixes that a generated feed is identical with and without votes.
+
+How votes feed the ranker is decided right before production, using this
+attributed data.
+
+*Why:* the user wants the signal collected now so it can be evaluated later.
+The schema 3 concern still stands: a like is an opinion formed before
+watching, and a vote kept without context cannot be weighed. Attribution
+supplies that context. Keeping votes out of ranking until then means an
+unvalidated signal cannot quietly change what readers see.
+
+---
+
 ## D-012 - Explanations come from the engine that ranked
 **2026-09-22 - Accepted**
 

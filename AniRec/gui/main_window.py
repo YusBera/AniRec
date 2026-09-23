@@ -78,7 +78,6 @@ from ..services import (
     CoverImageService,
     SampleDataService,
     SettingsService,
-    TasteFeedbackService,
     TokenStore,
 )
 from ..services.recommendation_event_service import (
@@ -370,7 +369,6 @@ class MainWindow(QMainWindow):
         self.background_sync_timer = QTimer(self)
         self.background_sync_timer.setInterval(BACKGROUND_SYNC_INTERVAL_MS)
         self.background_sync_timer.timeout.connect(self._start_list_sync)
-        self.taste_feedback_service = TasteFeedbackService()
         self.settings_service = settings_service or SettingsService()
         self.token_store = token_store or TokenStore()
         self.data_management_service = data_management_service or DataManagementService()
@@ -571,17 +569,9 @@ class MainWindow(QMainWindow):
         if current_profile_id != previous_profile_id:
             self._loaded_taste_profile_id = None
             self._taste_profile_dirty = True
+        # Votes are collected, not fed (D-013): the feed is shown in the order
+        # and with the ranks the engine produced, not re-sorted by likes.
         display_result = result
-        local_state = None
-        if profile is not None:
-            local_state = self.recommendation_state_service.load(profile.profile_id)
-        if result is not None and local_state is not None:
-            display_result = replace(
-                result,
-                recommendations=self.taste_feedback_service.personalize(
-                    result.recommendations, local_state
-                ),
-            )
         self.home_page.set_state(profile, display_result)
         stats = result.genre_stats if result else ()
         # Discover and My Library are two views of one library, so both are

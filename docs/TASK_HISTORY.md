@@ -7,6 +7,37 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-22 - Likes and dislikes collected, not fed (D-013)
+
+Revived explicit like/dislike collection for later use, at the user's
+request, without letting votes influence anything yet.
+
+- `RecommendationFeedback` gains optional `recorded_at` and attribution:
+  `ranking_id`, `model_rank`, `feed_rank`, `model_version`,
+  `catalog_version`, `selection_policy` and `adventurousness`. The fields are
+  stored in `recommendation_state.json`, and older schema 3 files still load.
+- `POST /api/discover/feedback` (sentiment) derives attribution, genres and
+  title server-side from the served row of the active profile's own feed. A
+  vote for a title outside the feed is still kept, unattributed.
+- Votes feed nothing. The web API passes no taste adjustments, and the
+  desktop client no longer re-sorts its displayed feed by votes (it used
+  `TasteFeedbackService.personalize`, which also rewrote ranks).
+- The UI contract is in `UI_ENGINE_INTEGRATION.md`; the web client has no
+  vote buttons yet.
+
+*Verification:*
+- `tests/test_recommendation_events.py`:
+  - a vote stored with its time and server-side attribution, ignoring
+    client-claimed genres and title;
+  - a dislike stored;
+  - an out-of-feed vote kept unattributed;
+  - clearing a vote;
+  - legacy vote files loading.
+- `tests/test_recommendation_explanation.py`: web generate and "more" produce
+  identical rows, ranks, scores and explanations with and without votes.
+
+---
+
 ## 2026-09-22 - Activity attribution (Goal 3)
 
 Made every activity event attributable to exactly what was shown and why.

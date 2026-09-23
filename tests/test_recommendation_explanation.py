@@ -981,3 +981,41 @@ def test_a_snapshot_referenced_by_an_event_outlives_the_archive_window(system_te
     )
     assert archive.exists()
     assert orchestrator.ranking_snapshot("fixture-user", ranking_id)["ranking_id"] == ranking_id
+
+
+def test_votes_are_collected_but_never_change_what_is_recommended(system_temp_dir):
+    """D-013: until feeding is decided, likes and dislikes must not move the
+    ranking, the selection or the explanations of any generated feed."""
+    from types import SimpleNamespace
+
+    from AniRec.api.app import _build_handler
+    from AniRec.api.models import OperationStartRequest
+    from AniRec.application.pipeline import CancellationToken
+    from AniRec.services import RecommendationStateService
+
+    def generate(root, votes):
+        orchestrator = _orchestrator(root)
+        profile_id = orchestrator._profiles.resolve_profile("fixture-user").profile_id
+        state = RecommendationStateService(root_override=root / "app-data")
+        for mal_id, sentiment in votes:
+            state.set_feedback(profile_id, mal_id, sentiment, genres=("Comedy",))
+        services = SimpleNamespace(
+            settings=SimpleNamespace(load=lambda: SimpleNamespace(pipeline=SETTINGS, client_id=None)),
+            orchestrator=orchestrator,
+            results=ResultService(root_override=root / "app-data"),
+            recommendation_state=state,
+        )
+        for kind, payload in (("recommendation", {}), ("more-recommendations", {"count": 4})):
+            _build_handler(
+                services, kind, OperationStartRequest(**payload), "fixture-user", profile_id
+            )(CancellationToken(), lambda _progress: None)
+        return services.results.load(profile_id).recommendations
+
+    plain = generate(system_temp_dir / "plain", [])
+    voted = generate(system_temp_dir / "voted", [(503, "liked"), (507, "disliked"), (512, "liked")])
+
+    def essence(items):
+        return [(item.anime.mal_id, item.model_rank, item.raw_score, item.explanation)
+                for item in items]
+
+    assert essence(voted) == essence(plain)

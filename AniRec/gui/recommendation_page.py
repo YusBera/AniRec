@@ -651,12 +651,12 @@ class RecommendationExplorerPage(QWidget):
         self.refill_button.setEnabled(enabled)
         unavailable = self._more_unavailable_reason or "Generate recommendations first."
         self.more_button.setToolTip(
-            "Generate five unseen picks using your latest feedback."
+            "Generate five more unseen picks from the same ranking."
             if self._more_available
             else unavailable
         )
         self.refill_button.setToolTip(
-            "Generate ten unseen picks using your latest feedback."
+            "Generate ten more unseen picks from the same ranking."
             if self._more_available
             else unavailable
         )

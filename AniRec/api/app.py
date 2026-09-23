@@ -425,12 +425,41 @@ def create_app(
         elif payload.action == "watch_later":
             state = state_service.set_watch_later(profile_id, payload.mal_id, payload.value)
         else:
+            # Votes are collected with what was shown, never fed into ranking
+            # (D-013). Attribution, genres and title come from the served row
+            # when the vote is for the active profile's own feed.
+            genres, title, attribution = tuple(payload.genres), payload.title, None
+            feed = discover_feed(include_hidden=True)
+            served = next(
+                (m for m in feed.recommendations if m.mal_id == payload.mal_id), None
+            )
+            # Only a vote cast on the feed that is served now can be tied to
+            # what was shown; a vote from a stale screen stays unattributed.
+            if (
+                payload.sentiment is not None
+                and served is not None
+                and not feed.ephemeral
+                and feed.state_profile_id == profile_id
+                and payload.feed_id is not None
+                and payload.feed_id == feed.activity_feed_id
+            ):
+                genres, title = tuple(served.genres), served.display_title
+                attribution = {
+                    "ranking_id": served.ranking_id,
+                    "model_rank": served.fit_rank,
+                    "feed_rank": served.rank,
+                    "model_version": activity_model_version(feed.user_stats),
+                    "catalog_version": activity_catalog_version(feed.user_stats),
+                    "selection_policy": served.selection_policy,
+                    "adventurousness": served.adventurousness,
+                }
             state = state_service.set_feedback(
                 profile_id,
                 payload.mal_id,
                 payload.sentiment,
-                genres=payload.genres,
-                title=payload.title,
+                genres=genres,
+                title=title,
+                attribution=attribution,
             )
         return FeedbackResponse(state=local_state_to_dict(state))
 

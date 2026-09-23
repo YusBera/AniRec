@@ -710,6 +710,11 @@ export interface components {
              */
             action: "hidden" | "watch_later" | "sentiment";
             /**
+             * Feed Id
+             * @description The activity_feed_id of the feed the vote was cast on. A vote is attributed to what was shown only when this matches the served feed.
+             */
+            feed_id?: string | null;
+            /**
              * Genres
              * @default []
              */

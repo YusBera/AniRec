@@ -336,3 +336,102 @@ def test_feed_fingerprint_tracks_ranking_and_selection_not_the_retired_percentag
     assert feed_fingerprint([SimpleNamespace(**base, personal_match=90.0)]) == reference
     for change in ({"ranking_id": "cd" * 12}, {"fit_rank": 5}, {"adventurousness": 6}):
         assert feed_fingerprint([SimpleNamespace(**{**base, **change})]) != reference
+
+
+# --- likes and dislikes: collected with attribution, never fed (D-013) --------
+
+
+def test_a_vote_is_stored_with_when_and_what_was_shown(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from AniRec.api import create_app
+    from AniRec.api.container import build_container
+
+    services = build_container(tmp_path)
+    monkeypatch.setattr(
+        services.profiles, "active_profile",
+        lambda: SimpleNamespace(profile_id="profile", username="someone"),
+    )
+    services.results.save("profile", _attributed_result(services.samples.load()))
+    with TestClient(create_app(container=services)) as client:
+        feed = client.get("/api/discover/feed").json()
+        second = feed["recommendations"][1]
+        other = feed["recommendations"][0]
+        vote = {"profile_id": "profile", "mal_id": second["mal_id"], "action": "sentiment",
+                "sentiment": "liked", "genres": ["Client-claimed"], "title": "Client title",
+                "feed_id": feed["activity_feed_id"]}
+        state = client.post("/api/discover/feedback", json=vote).json()["state"]
+        assert second["mal_id"] in state["liked_mal_ids"]
+        client.post("/api/discover/feedback", json={
+            **vote, "mal_id": other["mal_id"], "sentiment": "disliked"})
+        # A vote for a title that is not in the served feed is still kept,
+        # but carries no attribution it could not prove.
+        client.post("/api/discover/feedback", json={**vote, "mal_id": 987654321})
+
+    stored = json.loads(
+        (tmp_path / "profiles/profile/recommendation_state.json").read_text(encoding="utf-8")
+    )
+    by_id = {item["mal_id"]: item for item in stored["feedback"]}
+    liked = by_id[second["mal_id"]]
+    assert liked["sentiment"] == "liked"
+    assert liked["recorded_at"].endswith("+00:00")
+    assert (liked["ranking_id"], liked["model_rank"], liked["feed_rank"]) == ("ab12" * 6, 4, 2)
+    assert (liked["model_version"], liked["catalog_version"]) == (
+        "heuristic:1", "onnx-v3:aaa:bbb:ccc")
+    assert (liked["selection_policy"], liked["adventurousness"]) == ("rank-diversity-v1", 7)
+    # Genres and title come from the served row, not the client.
+    assert liked["title"] == second["display_title"]
+    assert liked["genres"] == list(second["genres"])
+    assert by_id[other["mal_id"]]["sentiment"] == "disliked"
+    assert by_id[other["mal_id"]]["model_rank"] == 1
+    orphan = by_id[987654321]
+    assert orphan["recorded_at"] and orphan["ranking_id"] is None and orphan["model_rank"] is None
+
+
+def test_clearing_a_vote_removes_it_and_older_vote_files_still_load(tmp_path):
+    from AniRec.services import RecommendationStateService
+
+    root = tmp_path / "profiles" / "profile"
+    root.mkdir(parents=True)
+    (root / "recommendation_state.json").write_text(json.dumps({
+        "schema_version": 3, "hidden_mal_ids": [], "watch_later_mal_ids": [],
+        "show_hidden": False,
+        "feedback": [{"mal_id": 5, "sentiment": "liked", "genres": ["Action"], "title": "Old"}],
+    }), encoding="utf-8")
+    service = RecommendationStateService(root_override=tmp_path)
+    state = service.load("profile")
+    assert state.liked_mal_ids == frozenset({5})
+    assert state.feedback[0].recorded_at is None
+    assert service.set_feedback("profile", 5, None).liked_mal_ids == frozenset()
+
+
+def test_a_vote_from_a_stale_feed_is_kept_but_not_attributed(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from AniRec.api import create_app
+    from AniRec.api.container import build_container
+
+    services = build_container(tmp_path)
+    monkeypatch.setattr(
+        services.profiles, "active_profile",
+        lambda: SimpleNamespace(profile_id="profile", username="someone"),
+    )
+    older = _attributed_result(services.samples.load())
+    services.results.save("profile", older)
+    with TestClient(create_app(container=services)) as client:
+        shown = client.get("/api/discover/feed").json()
+        target = shown["recommendations"][1]
+        # Another client regenerates: the saved feed is now a different ranking.
+        newer = replace(older, recommendations=tuple(
+            replace(item, ranking_id="cd34" * 6, model_rank=item.model_rank + 1)
+            for item in older.recommendations
+        ))
+        services.results.save("profile", newer)
+        for feed_id in (shown["activity_feed_id"], None):
+            client.post("/api/discover/feedback", json={
+                "profile_id": "profile", "mal_id": target["mal_id"], "action": "sentiment",
+                "sentiment": "liked", "feed_id": feed_id})
+            stored = json.loads(
+                (tmp_path / "profiles/profile/recommendation_state.json").read_text(encoding="utf-8")
+            )
+            vote = next(item for item in stored["feedback"] if item["mal_id"] == target["mal_id"])
+            assert vote["sentiment"] == "liked" and vote["recorded_at"]
+            assert (vote["ranking_id"], vote["model_rank"], vote["feed_rank"]) == (None, None, None)

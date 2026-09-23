@@ -165,6 +165,25 @@ mapped to plain text:
 
 Never substitute another engine's explanation.
 
+### Likes and dislikes (D-013)
+
+The backend collects votes. They do not change recommendations yet, so the UI
+must not say or imply that they do: no "we'll show you more like this".
+
+- Send `POST /api/discover/feedback` with `{profile_id, mal_id, action:
+  "sentiment", sentiment: "liked" | "disliked" | null, feed_id}`, where
+  `feed_id` is the feed's `activity_feed_id`. `null` clears the vote. Without
+  a matching `feed_id` the vote is still kept, but unattributed.
+- Liking clears a dislike and the reverse. The response `state` carries
+  `liked_mal_ids` and `disliked_mal_ids`.
+- The server records the time. It records what was shown, and ignores the
+  client's `genres` and `title`, only when the vote is attributed: the title is
+  in the served feed and `feed_id` matches it. Otherwise the vote is stored as
+  sent, unattributed. A later vote on the same title replaces the earlier
+  record, including its attribution.
+- A dislike is not "Not interested". To remove the title from the feed, also
+  send the existing `action: "hidden"`. They are separate decisions.
+
 ### Cost and states
 
 Sequence-model explanations are computed at generation, adding about 4 s for a
