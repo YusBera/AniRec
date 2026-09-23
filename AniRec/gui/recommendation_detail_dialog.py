@@ -1,10 +1,4 @@
-"""The recommendation score inspector.
-
-The landing page sells AniRec by showing how a score is assembled.  This
-dialog is the application-side version of that promise: the existing view
-model is presented as an inspectable instrument rather than as a metadata
-form followed by a newline-separated debug dump.
-"""
+"""The recommendation detail dialog for AniRec's development client."""
 
 from __future__ import annotations
 
@@ -181,21 +175,25 @@ class RecommendationDetailDialog(QDialog):
         score_layout.setContentsMargins(16, 13, 16, 14)
         score_layout.setSpacing(SPACE["sm"])
         score_header = QHBoxLayout()
-        score_header.addWidget(self._label("PERSONAL MATCH", "recommendationScoreLegend"))
+        score_header.addWidget(self._label("PERSONAL FIT", "recommendationScoreLegend"))
         score_header.addStretch()
-        score_header.addWidget(self._label("EXPLAINED SCORE", "recommendationScoreMode"))
+        score_header.addWidget(self._label("RANKED RESULT", "recommendationScoreMode"))
         score_layout.addLayout(score_header)
 
         readout = QHBoxLayout()
         readout.setSpacing(SPACE["md"])
         score_number = QHBoxLayout()
         score_number.setSpacing(2)
-        self.score_value_label = QLabel("0.0")
+        self.score_value_label = QLabel("")
         self.score_value_label.setObjectName("recommendationScoreValue")
-        self.score_percent_label = QLabel("%")
+        self.score_percent_label = QLabel("")
         self.score_percent_label.setObjectName("recommendationScorePercent")
         score_number.addWidget(self.score_value_label, 0, Qt.AlignmentFlag.AlignBottom)
         score_number.addWidget(self.score_percent_label, 0, Qt.AlignmentFlag.AlignTop)
+        self.score_value_label.hide()
+        self.score_percent_label.hide()
+        self.personal_match_label = self._label("", "personalMatchLabel", word_wrap=True)
+        score_number.addWidget(self.personal_match_label)
         readout.addLayout(score_number)
         self.reason_label = self._label(
             "", "recommendationDetailReason", word_wrap=True
@@ -203,11 +201,7 @@ class RecommendationDetailDialog(QDialog):
         readout.addWidget(self.reason_label, 1, Qt.AlignmentFlag.AlignBottom)
         score_layout.addLayout(readout)
 
-        # Compatibility/accessibility text is retained while the visible
-        # presentation is the numeric readout and segmented score rail.
-        self.personal_match_label = self._label("", "personalMatchLabel")
-        self.personal_match_label.setParent(self.score_bench)
-        self.personal_match_label.setVisible(False)
+        # Kept for compatibility with callers that inspect the old breakdown.
         self.contributions_label = self._label(
             "", "recommendationDetailContributions", word_wrap=True
         )
@@ -216,11 +210,13 @@ class RecommendationDetailDialog(QDialog):
 
         self.score_track = ScoreTrack()
         score_layout.addWidget(self.score_track)
+        self.score_track.hide()
         scale = QHBoxLayout()
         scale.setContentsMargins(1, 0, 1, 0)
         for value in ("0", "25", "50", "75", "100"):
             label = QLabel(value)
             label.setObjectName("recommendationScoreScale")
+            label.hide()
             if value != "100":
                 scale.addWidget(label)
                 scale.addStretch()
@@ -234,12 +230,14 @@ class RecommendationDetailDialog(QDialog):
         sum_row = QHBoxLayout()
         self.sum_caption_label = QLabel("SUMS TO")
         self.sum_caption_label.setObjectName("recommendationScoreSumCaption")
-        self.sum_total_label = QLabel("0.00")
+        self.sum_total_label = QLabel("")
         self.sum_total_label.setObjectName("recommendationScoreSum")
         sum_row.addWidget(self.sum_caption_label)
         sum_row.addStretch()
         sum_row.addWidget(self.sum_total_label)
         score_layout.addLayout(sum_row)
+        self.sum_caption_label.hide()
+        self.sum_total_label.hide()
         inspector_column.addWidget(self.score_bench)
 
         utilities = QHBoxLayout()
@@ -303,14 +301,6 @@ class RecommendationDetailDialog(QDialog):
         root.addWidget(self.scroll, 1)
         self.content_wipe = ChannelWipe(self.scroll.viewport())
 
-        # CHANGE [HONEST-READOUT]: the headline percentage no longer counts up
-        # from zero. It used to run 0 -> value over 680ms, which meant that for
-        # two thirds of a second this dialog printed a large, confident,
-        # wrong number - 13.5% - directly above a breakdown that already read
-        # "SUMS TO 94.60". The number is the one thing on this screen that
-        # must never be wrong, so it is now set once, final, before paint.
-        # The reveal it used to carry lives on the contribution track below,
-        # which is decoration and can afford to move.
         self.set_navigation(1, 1)
 
     @staticmethod
@@ -339,7 +329,6 @@ class RecommendationDetailDialog(QDialog):
         )
         self.alternative_titles_label.setVisible(bool(model.alternative_titles))
         self.personal_match_label.setText(model.personal_match_text)
-        self.score_value_label.setText(f"{model.personal_match:.1f}")
         self.mal_score_label.setText(model.mal_score_text)
         self.genres_label.setText(f"Genres: {model.genres_text}")
         self.episodes_label.setText(f"Episodes: {model.episodes_text}")
@@ -352,30 +341,15 @@ class RecommendationDetailDialog(QDialog):
         self.reason_label.setText(model.reason)
         contribution_text = self._contributions_text(model)
         self.contributions_label.setText(contribution_text)
-        self._render_contributions(model)
-        self.score_track.set_data(
-            model.genre_contributions,
-            model.personal_match,
-            genres=model.genres,
-            studios=model.studios,
-        )
-        contribution_sum = sum(value for _name, value in model.genre_contributions)
-        if model.genre_contributions:
-            self.sum_total_label.setText(
-                f"{contribution_sum:.2f}  →  {model.personal_match:.1f}%"
-            )
-        else:
-            self.sum_total_label.setText(f"{model.personal_match:.1f}%")
         self.mal_button.setEnabled(bool(model.mal_url))
         self._show_placeholder()
         cover_url = model.large_cover_url or model.cover_url
         if cover_url:
             self.cover_requested.emit(cover_url)
         self.synopsis_toggle.setChecked(False)
-        self._pending_animation = True
+        self._pending_animation = not self.isVisible()
         if self.isVisible():
             self.content_wipe.run()
-            self._animate_score()
 
     def _render_contributions(self, model: RecommendationViewModel) -> None:
         while self.contribution_rows.count():
@@ -435,9 +409,7 @@ class RecommendationDetailDialog(QDialog):
         if self.model is None:
             return
         self._pending_animation = False
-        # The readout is already showing the final value from set_model(); only
-        # the track reveals.
-        self.score_track.animate()
+        self.content_wipe.run()
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt API
         super().showEvent(event)

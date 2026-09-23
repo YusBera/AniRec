@@ -59,6 +59,11 @@ def test_detail_dialog_renders_all_metadata_reason_and_scored_contributions():
     assert dialog.secondary_title_label.text() == "Sousou no Frieren"
     assert "Frieren at the Funeral" in dialog.alternative_titles_label.text()
     assert dialog.personal_match_label.text() == "Personal match unavailable"  # D-008: no percentage
+    assert not dialog.personal_match_label.isHidden()
+    assert dialog.score_value_label.isHidden()
+    assert dialog.score_percent_label.isHidden()
+    assert dialog.score_track.isHidden()
+    assert dialog.sum_total_label.isHidden()
     assert dialog.mal_score_label.text() == "MAL score: 9.10 / 10"
     assert dialog.episodes_label.text() == "Episodes: 28 episodes"
     assert dialog.status_label.text() == "Status: Finished Airing"
@@ -67,13 +72,39 @@ def test_detail_dialog_renders_all_metadata_reason_and_scored_contributions():
     assert dialog.synopsis_label.text().startswith("An elf mage")
     assert dialog.reason_label.text().startswith("Matches your interest")
     assert dialog.contributions_label.text() == "Fantasy: +52.25\nDrama: +21.50"
-    assert dialog.score_track.contributions == (
-        ("Fantasy", 52.25),
-        ("Drama", 21.5),
-    )
-    assert dialog.sum_total_label.text() == "73.75  →  94.2%"
+    assert "%" not in dialog.sum_total_label.text()
     assert dialog.synopsis_label.isHidden()
     assert dialog.scroll.widgetResizable()
+    dialog.close()
+
+
+def test_detail_dialog_shows_engine_rank_without_a_percentage():
+    create_application([])
+    dialog = RecommendationDetailDialog()
+    model = RecommendationViewModel.from_recommendation(
+        Recommendation(
+            Anime("Ranked title", mal_id=123),
+            match_score=94.2,
+            model_rank=3,
+            ranked_candidate_count=100,
+        )
+    )
+    dialog.set_model(model)
+    dialog.show()
+    create_application([]).processEvents()
+
+    assert dialog.personal_match_label.text() == "Ranked #3 of 100 for you"
+    assert dialog.personal_match_label.isVisible()
+    assert dialog.score_value_label.isHidden()
+    assert dialog.score_percent_label.isHidden()
+    assert dialog.score_track.isHidden()
+    assert dialog.sum_total_label.isHidden()
+    assert "%" not in dialog.sum_total_label.text()
+    assert not any(
+        "%" in label.text()
+        for label in dialog.findChildren(type(dialog.personal_match_label))
+        if label.isVisible()
+    )
     dialog.close()
 
 

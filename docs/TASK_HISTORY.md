@@ -7,6 +7,22 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-23 - PySide detail uses honest personal fit
+
+The deprecated detail dialog now visibly shows the engine rank from the view
+model, or “Personal match unavailable” when there is no rank. Its retired
+percentage readout, score rail, and sum are hidden. No response or persisted
+format changed.
+
+*Verification:* the new rank and unavailable-state checks failed before the
+fix; 12 focused service/dialog tests passed afterward, including an offscreen
+visible-dialog assertion that no percentage text is shown.
+
+*Left open:* this is a maintenance fix for the deprecated PySide tool; React UI
+work remains with its separate owner.
+
+---
+
 ## 2026-09-23 - Recommendation state write safety
 
 Serialized read, change, and atomic write per profile across state-service
