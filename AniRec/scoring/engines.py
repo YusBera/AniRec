@@ -14,7 +14,6 @@ from time import perf_counter
 import pandas as pd
 
 try:
-    from ..recommendation_system import rank_candidate_pool
     from ..title_utils import normalize_title_key
     from .contracts import (
         RANKING_INPUT_SCHEMA_VERSION,
@@ -31,7 +30,6 @@ try:
         unavailable_explanation,
     )
 except ImportError:  # Compatibility with the sibling import path used by tests.
-    from recommendation_system import rank_candidate_pool
     from title_utils import normalize_title_key
     from scoring.contracts import (
         RANKING_INPUT_SCHEMA_VERSION,
@@ -72,6 +70,13 @@ class HeuristicRankingEngine:
     feature_schema_version = "heuristic-v1"
 
     def rank(self, request: RankingRequest) -> RankingResult:
+        # Import after scoring has initialized; recommendation_system imports
+        # scoring helpers and must also be importable first in a fresh process.
+        if __package__ == "scoring":  # Legacy top-level scoring package.
+            from recommendation_system import rank_candidate_pool
+        else:
+            from ..recommendation_system import rank_candidate_pool
+
         if request.input_schema_version != RANKING_INPUT_SCHEMA_VERSION:
             raise IncompatibleRankingEngine(
                 "The heuristic engine does not support ranking input schema "

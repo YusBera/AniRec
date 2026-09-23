@@ -7,6 +7,21 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-23 - Recommendation import cycle removed
+
+Deferred the heuristic engine's import of `rank_candidate_pool` until ranking
+is invoked. `AniRec.recommendation_system` can now import first in a fresh
+Python process; the engine's ranking logic and public exports are unchanged.
+
+*Verification:* the clean import failed with a circular import before the
+change and passed afterward. Standalone test files passed independently:
+`test_feed_selection.py` 35, `test_recommendation_explanation.py` 32, and
+`test_explainable_recommendations.py` 5.
+
+*Left open:* none for this import boundary.
+
+---
+
 ## 2026-09-23 - PySide detail uses honest personal fit
 
 The deprecated detail dialog now visibly shows the engine rank from the view
