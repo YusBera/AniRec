@@ -7,6 +7,25 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-23 - Recommendation state write safety
+
+Serialized read, change, and atomic write per profile across state-service
+instances. A write now refuses to replace a present state file that cannot be
+parsed or read; ordinary reads still expose their prior safe fallback. The JSON
+schema and older-file loading remain unchanged.
+
+*Verification:* the new concurrent-write and corrupt-file tests failed against
+the previous behavior, then 20 focused state/service tests and 47 related
+state, activity, and workspace tests passed. A read-only backend review gave GO
+after the race fixture and unreadable-file coverage were corrected.
+
+*Left open:* this is process-local thread serialization; a second application
+process would need an interprocess lock. Public `save()` remains an explicit
+whole-state replacement for callers holding a valid snapshot; production routes
+use the serialized setters.
+
+---
+
 ## 2026-09-22 - Likes and dislikes collected, not fed (D-013)
 
 Revived explicit like/dislike collection for later use, at the user's

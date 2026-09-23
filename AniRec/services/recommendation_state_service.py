@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock, RLock
 
 try:
     from ..errors import StorageError
@@ -190,6 +191,9 @@ class RecommendationLocalState:
 
 
 class RecommendationStateService:
+    _locks_guard = Lock()
+    _locks: dict[Path, RLock] = {}
+
     def __init__(
         self,
         *,
@@ -202,6 +206,28 @@ class RecommendationStateService:
 
     def path(self, profile_id: str) -> Path:
         return profile_dir(profile_id, self._root_override) / "recommendation_state.json"
+
+    def _profile_lock(self, path: Path) -> RLock:
+        # Services can be constructed more than once for the same local profile.
+        with self._locks_guard:
+            return self._locks.setdefault(path.resolve(), RLock())
+
+    def _read_for_write(self, path: Path) -> RecommendationLocalState:
+        if not path.exists():
+            return RecommendationLocalState()
+        try:
+            return RecommendationLocalState.from_storage_dict(self._store.read(path))
+        except (OSError, TypeError, ValueError) as error:
+            raise StorageError(
+                "Profile recommendation state could not be loaded safely; no changes were saved."
+            ) from error
+
+    def _update(self, profile_id: str, change) -> RecommendationLocalState:
+        path = self.path(profile_id)
+        with self._profile_lock(path):
+            state = change(self._read_for_write(path))
+            self._store.write(state.to_storage_dict(), path)
+            return state
 
     def load(self, profile_id: str) -> RecommendationLocalState:
         self.last_error = None
@@ -220,53 +246,40 @@ class RecommendationStateService:
     def save(
         self, profile_id: str, state: RecommendationLocalState
     ) -> RecommendationLocalState:
-        self._store.write(state.to_storage_dict(), self.path(profile_id))
+        path = self.path(profile_id)
+        with self._profile_lock(path):
+            self._read_for_write(path)
+            self._store.write(state.to_storage_dict(), path)
         return state
 
     def set_hidden(
         self, profile_id: str, mal_id: int, hidden: bool
     ) -> RecommendationLocalState:
-        state = self.load(profile_id)
-        values = set(state.hidden_mal_ids)
-        _update_id(values, mal_id, hidden)
-        return self.save(
+        return self._update(
             profile_id,
-            RecommendationLocalState(
-                hidden_mal_ids=frozenset(values),
-                watch_later_mal_ids=state.watch_later_mal_ids,
-                show_hidden=state.show_hidden,
-                feedback=state.feedback,
+            lambda state: replace(
+                state, hidden_mal_ids=_changed_ids(state.hidden_mal_ids, mal_id, hidden)
             ),
         )
 
     def set_watch_later(
         self, profile_id: str, mal_id: int, watch_later: bool
     ) -> RecommendationLocalState:
-        state = self.load(profile_id)
-        values = set(state.watch_later_mal_ids)
-        _update_id(values, mal_id, watch_later)
-        return self.save(
+        return self._update(
             profile_id,
-            RecommendationLocalState(
-                hidden_mal_ids=state.hidden_mal_ids,
-                watch_later_mal_ids=frozenset(values),
-                show_hidden=state.show_hidden,
-                feedback=state.feedback,
+            lambda state: replace(
+                state,
+                watch_later_mal_ids=_changed_ids(
+                    state.watch_later_mal_ids, mal_id, watch_later
+                ),
             ),
         )
 
     def set_show_hidden(
         self, profile_id: str, show_hidden: bool
     ) -> RecommendationLocalState:
-        state = self.load(profile_id)
-        return self.save(
-            profile_id,
-            RecommendationLocalState(
-                hidden_mal_ids=state.hidden_mal_ids,
-                watch_later_mal_ids=state.watch_later_mal_ids,
-                show_hidden=show_hidden,
-                feedback=state.feedback,
-            ),
+        return self._update(
+            profile_id, lambda state: replace(state, show_hidden=show_hidden)
         )
 
     def set_feedback(
@@ -289,33 +302,27 @@ class RecommendationStateService:
         normalized_id = int(mal_id)
         if normalized_id <= 0:
             raise ValueError("MAL ID must be a positive integer.")
-        state = self.load(profile_id)
-        records = {item.mal_id: item for item in state.feedback}
-        if sentiment is None:
-            records.pop(normalized_id, None)
-        else:
-            moment = recorded_at or datetime.now(timezone.utc)
-            records[normalized_id] = RecommendationFeedback(
-                mal_id=normalized_id,
-                sentiment=sentiment,
-                genres=tuple(genres),
-                title=title,
-                **{
-                    name: (attribution or {}).get(name)
-                    for name in ATTRIBUTION_FIELDS
-                    if name != "recorded_at"
-                },
-                recorded_at=moment.astimezone(timezone.utc).isoformat(),
-            )
-        return self.save(
-            profile_id,
-            RecommendationLocalState(
-                hidden_mal_ids=state.hidden_mal_ids,
-                watch_later_mal_ids=state.watch_later_mal_ids,
-                show_hidden=state.show_hidden,
-                feedback=tuple(records.values()),
-            ),
-        )
+        def change(state: RecommendationLocalState) -> RecommendationLocalState:
+            records = {item.mal_id: item for item in state.feedback}
+            if sentiment is None:
+                records.pop(normalized_id, None)
+            else:
+                moment = recorded_at or datetime.now(timezone.utc)
+                records[normalized_id] = RecommendationFeedback(
+                    mal_id=normalized_id,
+                    sentiment=sentiment,
+                    genres=tuple(genres),
+                    title=title,
+                    **{
+                        name: (attribution or {}).get(name)
+                        for name in ATTRIBUTION_FIELDS
+                        if name != "recorded_at"
+                    },
+                    recorded_at=moment.astimezone(timezone.utc).isoformat(),
+                )
+            return replace(state, feedback=tuple(records.values()))
+
+        return self._update(profile_id, change)
 
 
 def _mal_id_set(values) -> frozenset[int]:
@@ -326,6 +333,12 @@ def _mal_id_set(values) -> frozenset[int]:
             raise ValueError("MAL IDs must be positive integers.")
         result.add(mal_id)
     return frozenset(result)
+
+
+def _changed_ids(values: frozenset[int], mal_id: int, enabled: bool) -> frozenset[int]:
+    changed = set(values)
+    _update_id(changed, mal_id, enabled)
+    return frozenset(changed)
 
 
 def _update_id(values: set[int], mal_id: int, enabled: bool) -> None:
