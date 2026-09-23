@@ -29,6 +29,7 @@ them.
 | [MAL_DATA_SEMANTICS.md](MAL_DATA_SEMANTICS.md) | MAL field mapping, unknown values, and scoring use |
 | [ONNX_MODEL_SERVING.md](ONNX_MODEL_SERVING.md) | Bundle verification, model catalogue, and fallback behavior |
 | [RECOMMENDATION_ACTIVITY.md](RECOMMENDATION_ACTIVITY.md) | Activity events, privacy, retention, and attribution |
+| [ACCOUNT_SCOPE_INVENTORY.md](ACCOUNT_SCOPE_INVENTORY.md) | Current identity and profile-scope entry points; proposed account isolation boundary |
 | [UI_ENGINE_INTEGRATION.md](UI_ENGINE_INTEGRATION.md) | This checkout, launch commands, and last integration evidence |
 | [design/RECOMMENDER_EVALUATION.md](design/RECOMMENDER_EVALUATION.md) | Existing ranker measurements and what they do not prove |
 | [CHANGELOG.md](CHANGELOG.md) | Released desktop-version history |

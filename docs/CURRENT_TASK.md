@@ -1,16 +1,17 @@
 # Current Task
 
-## Status: Goals 1-3 complete; Goal 4 needs the user first
+## Status: Goals 1-3 committed; Goal 4 runs separately
 
-Goal 4 (chronological evaluation and model decision) must not start until
-the user pulls the latest verified collector snapshot. Goals 2 and 3 are
-complete but not yet committed.
+As reported in the 2026-09-23 cross-session handoff, Goal 4's chronological
+training grid is scheduled in `AniRecTrainer`/`AniRecTrainerWork` under another
+owner. Do not alter its frozen trainer source or its scheduled task. The local
+backend state lock is complete; account isolation is a docs-only proposal
+pending a user decision (proposed D-014 and `ACCOUNT_SCOPE_INVENTORY.md`).
 
-Goal 1 (deterministic, diverse feed selection) is complete and committed.
-Goal 2 (honest personal fit and "why this pick") is complete: the adversarial
-reviewer gave GO on its fifth pass. It is not yet committed. React UI
-refinement continues in another session and works from the UI contract in
-`UI_ENGINE_INTEGRATION.md`.
+Goals 1-3 and vote collection are committed (`4671326`, `fbda46e`, `911fe21`).
+React UI refinement continues in another session and works from the UI
+contract in `UI_ENGINE_INTEGRATION.md`. The Goal 2/3 record below is retained as
+implementation history.
 
 ## Task: honest personal fit and "why was this recommended to me?"
 
@@ -79,5 +80,6 @@ The UI session adds the buttons from the contract in
 
 ## Next task
 
-Goal 4 requires the latest verified collector snapshot. Stop and ask the user
-before starting it.
+For account/login work, obtain the user's D-014 isolation choice before writing
+identity or migration code. The Goal 4 owner will complete evaluation and
+decision; ONNX export and promotion are separate later work.

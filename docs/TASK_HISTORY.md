@@ -7,6 +7,28 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-23 - Cross-process recommendation state writes and account-scope inventory
+
+`RecommendationStateService` now serializes each profile's read, mutation and
+atomic write across processes through a persistent `.lock` sidecar. Busy or
+unavailable locks fail closed. The JSON state schema and field-setter behavior
+are unchanged. `ACCOUNT_SCOPE_INVENTORY.md` maps where the current local profile
+is chosen; D-014 proposes isolation options for a user decision, with no login
+or account implementation.
+
+*Verification:* a real two-process write test failed against the previous code;
+after the change, 22 targeted service tests and 56 state/activity/workspace
+tests pass, including lock timeout and corrupt-file cases. A final persistence
+review identified and resolved a
+contention-fixture weakness.
+
+*Left open:* `save()` is an explicit whole-state replacement and can overwrite
+a newer field-setter change if called with an old snapshot; production actions
+use field setters. Existing local profile IDs are not AniRec account IDs. The
+user must choose D-014 before account migration or hosted access.
+
+---
+
 ## 2026-09-23 - Recommendation import cycle removed
 
 Deferred the heuristic engine's import of `rank_candidate_pool` until ranking

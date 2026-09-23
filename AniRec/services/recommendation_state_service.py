@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import errno
+import os
 from pathlib import Path
 from threading import Lock, RLock
+import time
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 try:
     from ..errors import StorageError
@@ -193,6 +202,7 @@ class RecommendationLocalState:
 class RecommendationStateService:
     _locks_guard = Lock()
     _locks: dict[Path, RLock] = {}
+    _LOCK_TIMEOUT_SECONDS = 10.0
 
     def __init__(
         self,
@@ -212,6 +222,43 @@ class RecommendationStateService:
         with self._locks_guard:
             return self._locks.setdefault(path.resolve(), RLock())
 
+    @contextmanager
+    def _process_lock(self, path: Path):
+        # Keep this sidecar: unlinking it could give concurrent processes
+        # different file identities and let both enter the critical section.
+        lock_path = path.with_suffix(".lock")
+        try:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            handle = lock_path.open("a+b")
+        except OSError as error:
+            raise StorageError("Profile recommendation state could not be locked; no changes were saved.") from error
+        acquired = False
+        try:
+            deadline = time.monotonic() + self._LOCK_TIMEOUT_SECONDS
+            while not acquired:
+                try:
+                    handle.seek(0)
+                    if os.name == "nt":
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                except OSError as error:
+                    if error.errno not in {errno.EACCES, errno.EAGAIN} and getattr(error, "winerror", None) not in {33, 36}:
+                        raise StorageError("Profile recommendation state could not be locked; no changes were saved.") from error
+                    if time.monotonic() >= deadline:
+                        raise StorageError("Profile recommendation state is busy; no changes were saved.") from error
+                    time.sleep(0.05)
+            yield
+        finally:
+            if acquired:
+                handle.seek(0)
+                if os.name == "nt":
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
+
     def _read_for_write(self, path: Path) -> RecommendationLocalState:
         if not path.exists():
             return RecommendationLocalState()
@@ -225,9 +272,10 @@ class RecommendationStateService:
     def _update(self, profile_id: str, change) -> RecommendationLocalState:
         path = self.path(profile_id)
         with self._profile_lock(path):
-            state = change(self._read_for_write(path))
-            self._store.write(state.to_storage_dict(), path)
-            return state
+            with self._process_lock(path):
+                state = change(self._read_for_write(path))
+                self._store.write(state.to_storage_dict(), path)
+                return state
 
     def load(self, profile_id: str) -> RecommendationLocalState:
         self.last_error = None
@@ -246,10 +294,16 @@ class RecommendationStateService:
     def save(
         self, profile_id: str, state: RecommendationLocalState
     ) -> RecommendationLocalState:
+        """Replace a whole state under the lock; callers must supply a fresh snapshot.
+
+        Use the field setters for concurrent user actions. This method does not
+        merge a caller's older snapshot with changes committed by other writers.
+        """
         path = self.path(profile_id)
         with self._profile_lock(path):
-            self._read_for_write(path)
-            self._store.write(state.to_storage_dict(), path)
+            with self._process_lock(path):
+                self._read_for_write(path)
+                self._store.write(state.to_storage_dict(), path)
         return state
 
     def set_hidden(

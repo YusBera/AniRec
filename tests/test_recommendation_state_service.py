@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier, BrokenBarrierError
 
@@ -13,6 +14,26 @@ from AniRec.services import (
     RecommendationLocalState,
     RecommendationStateService,
 )
+
+
+def _process_state_write(root, action, entered, release, finished, attempting):
+    class ObservedStore(JsonStore):
+        def read(self, path):
+            state = super().read(path)
+            entered.set()
+            if action == "hidden" and not release.wait(timeout=10):
+                raise TimeoutError("fixture writer was not released")
+            return state
+
+    service = RecommendationStateService(root_override=root, store=ObservedStore())
+    try:
+        attempting.set()
+        if action == "hidden":
+            service.set_hidden("profile-a", 10, True)
+        else:
+            service.set_watch_later("profile-a", 20, True)
+    finally:
+        finished.set()
 
 
 def test_state_is_schema_versioned_sorted_and_round_trips_atomically(system_temp_dir):
@@ -157,6 +178,73 @@ def test_concurrent_writes_from_separate_services_keep_both_decisions(system_tem
     state = RecommendationStateService(root_override=system_temp_dir).load("profile-a")
     assert state.hidden_mal_ids == frozenset({10})
     assert state.watch_later_mal_ids == frozenset({20})
+
+
+def test_separate_processes_serialize_profile_read_modify_write(system_temp_dir):
+    RecommendationStateService(root_override=system_temp_dir).save(
+        "profile-a", RecommendationLocalState()
+    )
+    context = multiprocessing.get_context("spawn")
+    first_read, second_read = context.Event(), context.Event()
+    release, first_done, second_done = context.Event(), context.Event(), context.Event()
+    first_attempting, second_attempting = context.Event(), context.Event()
+    first = context.Process(
+        target=_process_state_write,
+        args=(system_temp_dir, "hidden", first_read, release, first_done, first_attempting),
+    )
+    second = context.Process(
+        target=_process_state_write,
+        args=(system_temp_dir, "watch_later", second_read, release, second_done, second_attempting),
+    )
+    try:
+        first.start()
+        assert first_read.wait(timeout=10)
+        second.start()
+        assert second_attempting.wait(timeout=10)
+        assert not second_read.wait(timeout=2), "second process read before first committed"
+    finally:
+        release.set()
+        for process in (first, second):
+            if process.pid is not None:
+                process.join(timeout=10)
+                if process.is_alive():
+                    process.terminate()
+                    process.join(timeout=5)
+    assert first.exitcode == second.exitcode == 0
+    assert first_done.is_set() and second_done.is_set()
+    assert second_read.is_set()
+    state = RecommendationStateService(root_override=system_temp_dir).load("profile-a")
+    assert state.hidden_mal_ids == frozenset({10})
+    assert state.watch_later_mal_ids == frozenset({20})
+
+
+def test_busy_profile_lock_refuses_write_without_changing_saved_state(system_temp_dir):
+    service = RecommendationStateService(root_override=system_temp_dir)
+    service.save("profile-a", RecommendationLocalState())
+    context = multiprocessing.get_context("spawn")
+    entered, release, finished, attempting = (
+        context.Event() for _ in range(4)
+    )
+    holder = context.Process(
+        target=_process_state_write,
+        args=(system_temp_dir, "hidden", entered, release, finished, attempting),
+    )
+    try:
+        holder.start()
+        assert entered.wait(timeout=10)
+        service._LOCK_TIMEOUT_SECONDS = 0.2
+        with pytest.raises(StorageError, match="busy; no changes were saved"):
+            service.set_watch_later("profile-a", 20, True)
+        assert service.load("profile-a") == RecommendationLocalState()
+    finally:
+        release.set()
+        if holder.pid is not None:
+            holder.join(timeout=10)
+            if holder.is_alive():
+                holder.terminate()
+                holder.join(timeout=5)
+    assert holder.exitcode == 0
+    assert service.load("profile-a").hidden_mal_ids == frozenset({10})
 
 
 @pytest.mark.parametrize("mutation", ["set_hidden", "set_watch_later", "set_show_hidden", "set_feedback", "save"])

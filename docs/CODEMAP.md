@@ -138,6 +138,7 @@ Per-account directory under the data root:
 | `genre_importance.csv` | `pipeline.py` | Serialised taste profile |
 | `latest_result.json` | `result_service.py` | Last generated recommendations |
 | `recommendation_state.json` | `recommendation_state_service.py` | Saved decisions: hidden, Watch Later, and likes/dislikes with time and attribution (collected, not fed; D-013) |
+| `recommendation_state.lock` | `recommendation_state_service.py` | Persistent per-profile sidecar for cross-process state-write serialization; contains no user data and must not be unlinked while writers run |
 | `anime_graph.json` | `anime_graph_service.py` | Cached relation/recommendation graph |
 | activity database | `recommendation_event_service.py` | Opt-in local activity events |
 
