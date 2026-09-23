@@ -27,6 +27,7 @@ import { EMPTY_FILTERS, activeFilterCount, filterAndSort, isActive, type Filters
 import { EmptyPanel, ErrorPanel, FeedSkeleton } from "./states";
 import "./discover.css";
 import { LibraryPage } from "../workspace/LibraryPage";
+import { useRecommendationActivity } from "./useRecommendationActivity";
 
 export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | "library" | "inactive" }) {
   const { feed, state, error, reload, setFeed } = useFeed();
@@ -49,6 +50,11 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
 
   const localState = feed?.state;
   const feedEngineId = feed ? rankingEngineId(feed.user_stats) : null;
+  const activity = useRecommendationActivity(feed, inspected !== null || surface !== "discover");
+  const inspect = (model: RecommendationViewModel) => {
+    activity.record(model, "detail_open");
+    setInspected(model);
+  };
 
   const vote = useCallback(
     async (
@@ -64,6 +70,8 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
       const outcome = action === "watch_later"
         ? (value ? "saved for later" : "removed from saved titles")
         : (value ? "set aside" : "restored to future feeds");
+      const model = feed.recommendations.find((m) => m.mal_id === malId);
+      const finishActivity = model && surface === "discover" ? activity.prepare(model, action === "watch_later" ? (value ? "watch_later_add" : "watch_later_remove") : (value ? "dismiss" : "restore")) : undefined;
       const previous = feed.state;
       const optimistic = applyVote(previous, malId, action, value);
       setFeed({ ...feed, state: optimistic });
@@ -86,6 +94,7 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
         });
         setFeed((current) => (current ? { ...current, state: response.state } : current));
         setFeedbackNotice(`${title} ${outcome}.`);
+        finishActivity?.();
       } catch (caught) {
         // Roll back rather than leaving the card showing a vote the profile
         // does not have.
@@ -102,7 +111,7 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
         setSaving(false);
       }
     },
-    [feed, setFeed, operation.status.state],
+    [feed, setFeed, operation.status.state, activity.prepare, surface],
   );
 
   const saveSentiment = useCallback(async (malId: number, next: Sentiment) => {
@@ -269,6 +278,15 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
             </div>
 
             <div className="feed-notices">
+              {!feed.ephemeral && <details className="activity-controls">
+                <summary>Recommendation activity</summary>
+                <label><input type="checkbox" checked={activity.enabled} disabled={activity.pending || !activity.loaded}
+                  onChange={(event) => void activity.setEnabled(event.target.checked)} /> Save activity on this device</label>
+                <p>Records visible recommendations and your actions locally. Nothing is uploaded. Keeps up to 90 days and 50,000 events.</p>
+                <button type="button" className="pill" disabled={activity.pending || !activity.loaded}
+                  onClick={() => void activity.clear()}>Clear saved activity</button>
+                <p role="status">{activity.notice}</p>
+              </details>}
               {feed.ephemeral ? <p className="sample-note">Sample library. Decisions stay in this preview; connect a MyAnimeList profile in the desktop app to keep them and generate personal picks.</p> : null}
               <p className="feedback-notice" role="status">{feedbackNotice}</p>
               {feedbackError ? <div className="feedback-error" role="alert">
@@ -298,7 +316,8 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
                     rankingEngineId={feedEngineId}
                     pending={saving || busy}
                     sentimentPending={model.mal_id !== null && pendingSentiments.has(model.mal_id)}
-                    onDetails={setInspected}
+                    onDetails={inspect}
+                    onExternal={(model) => { if (surface === "discover") activity.record(model, "external_open"); }}
                     watchLater={has(localState?.watch_later_mal_ids, model.mal_id)}
                     hidden={has(localState?.hidden_mal_ids, model.mal_id)}
                     sentiment={sentimentFor(localState, model.mal_id)}
@@ -325,7 +344,7 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
         {feedbackError ? <div role="alert"><p>{feedbackError.message}</p>{feedbackError.retryable ? <button className="btn" disabled={saving || busy} onClick={() => void vote(...feedbackError.vote)}>Retry decision</button> : null}</div> : null}
         {feed ? <LibraryPage feed={feed} pending={saving || busy} onVote={vote} onDetails={setInspected} /> : null}
       </main>
-      {inspected ? <RecommendationDetails model={inspected} engineId={feedEngineId} onClose={() => setInspected(null)} /> : null}
+      {inspected ? <RecommendationDetails model={inspected} engineId={feedEngineId} onClose={() => setInspected(null)} onExternal={(model) => { if (surface === "discover") activity.record(model, "external_open"); }} /> : null}
     </>
   );
 }

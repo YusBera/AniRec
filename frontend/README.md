@@ -1,13 +1,13 @@
 # AniRec frontend
 
-React + TypeScript workspace preview with Discover, Library, Profile, Compare
-and Settings. The shipping application remains the PySide6 desktop app in
-`AniRec/gui/`, which is the visual reference. A nonvisual Profile cache repair
-is included in this branch; this is not complete desktop parity or a release.
+React + TypeScript workspace with Discover, Library, Profile, Compare and
+Settings. The web client is AniRec's primary product surface. PySide remains a
+development tool and is not the current visual authority.
 
-Read [the latest handoff](../docs/design/LATEST_AGENT_HANDOFF.md) first for current
-scope, verification results and fresh-PC dependency installation, then
-[the migration handoff](../docs/design/MIGRATION_HANDOFF.md) for architecture.
+New agents start with [the documentation index](../docs/README.md). UI work must
+also read [the current task](../docs/CURRENT_TASK.md) to avoid colliding with
+backend work in another session. Older files under `docs/design/` are evidence
+and history unless the index names them for a specific task.
 
 ## Run it
 

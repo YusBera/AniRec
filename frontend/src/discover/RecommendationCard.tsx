@@ -14,6 +14,7 @@ interface Props {
   pending: boolean;
   sentimentPending: boolean;
   onDetails: (model: RecommendationViewModel) => void;
+  onExternal?: (model: RecommendationViewModel) => void;
   onVote: (malId: number, action: "watch_later" | "hidden", value: boolean) => void;
   onSentiment: (malId: number, sentiment: Sentiment) => void;
 }
@@ -29,6 +30,7 @@ function RecommendationCardInner({
   onDetails,
   onVote,
   onSentiment,
+  onExternal,
 }: Props) {
   const [failedCover, setFailedCover] = useState<string | null>(null);
   const malId = model.mal_id;
@@ -39,7 +41,7 @@ function RecommendationCardInner({
   const sentimentDisabled = malId === null || pending || sentimentPending;
 
   return (
-    <article className="card" data-hidden={hidden} aria-label={model.display_title}>
+    <article className="card" data-activity-mal-id={malId ?? undefined} data-hidden={hidden} aria-label={model.display_title}>
       <div className="card-art">
         <button type="button" className="card-art-open" aria-label={`Inspect ${model.display_title}`} onClick={() => onDetails(model)}>
           <span className="placeholder" aria-hidden="true"><b>{initials}</b><span>No artwork</span></span>
@@ -84,7 +86,7 @@ function RecommendationCardInner({
         <div className="card-mal">MAL score: {model.mal_score === null ? "not rated" : `${model.mal_score.toFixed(2)} / 10`}</div>
         <div className="card-utilities">
           <button type="button" className="pill" onClick={() => onDetails(model)}>Details</button>
-          <MalLink model={model} />
+          <MalLink model={model} onExternal={onExternal} />
         </div>
       </div>
     </article>

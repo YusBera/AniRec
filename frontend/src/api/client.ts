@@ -15,7 +15,7 @@
  * `api.feed()` either way.
  */
 
-import type { ApiError, Feed, FeedbackResponse, OperationSnapshot, SystemState } from "./types";
+import type { ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
 import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
@@ -90,6 +90,11 @@ export const api = {
   saveSettings: (payload: SettingsWrite) => request<SettingsRead>("/api/workspace/settings", { method: "POST", body: JSON.stringify(payload) }),
   library: (profileId: string) => request<LibraryRead>(`/api/workspace/library?profile_id=${encodeURIComponent(profileId)}`),
   resolveTitle: (profileId: string, malId: number) => request<RecommendationViewModel>("/api/workspace/library/resolve", { method: "POST", body: JSON.stringify({ profile_id: profileId, mal_id: malId }) }),
+  activityStatus: () => request<ActivityStatus>("/api/discover/activity"),
+  activitySetting: (enabled: boolean) => request<{ enabled: boolean }>("/api/discover/activity/settings", { method: "POST", body: JSON.stringify({ enabled }) }),
+  clearActivity: () => request<{ enabled: boolean }>("/api/discover/activity", { method: "DELETE" }),
+  activityEvent: (event: ActivityEvent) => request<ActivityReceipt>("/api/discover/activity", { method: "POST", body: JSON.stringify(event) }),
+
   health: () => request<{ status: string; version: string }>("/api/health"),
 
   systemState: () => request<SystemState>("/api/system/state"),

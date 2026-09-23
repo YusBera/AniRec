@@ -38,6 +38,9 @@ export type Catalogue = Schemas["Catalogue"];
 export type LocalState = Schemas["LocalState"];
 export type ProfileSummary = Schemas["ProfileSummary"];
 export type Feed = Schemas["FeedResponse"];
+export type ActivityEvent = Schemas["ActivityEvent"];
+export type ActivityStatus = Schemas["ActivityStatus"];
+export type ActivityReceipt = Schemas["ActivityReceipt"];
 export type FeedbackRequest = Schemas["FeedbackRequest"];
 export type FeedbackResponse = Schemas["FeedbackResponse"];
 
