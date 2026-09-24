@@ -105,6 +105,37 @@ web-first.
 
 ---
 
+## D-015 - Feedback is given after watching, in the Library
+**2026-09-24 - Accepted (user decision). Revises D-013.**
+
+A recommendation cannot be liked or disliked before it is watched, which is
+why the desktop client retired those buttons. Feedback therefore belongs to
+the Library, after the title has been watched, not to the Discover card.
+
+Two ways feedback reaches AniRec:
+- **Reported by the reader.** In the Library, a recommended title the reader
+  saved can be marked as watched, then liked, disliked, or given a score.
+- **Observed on return.** When the reader comes back, AniRec re-reads their
+  list. A title AniRec recommended, which the reader saved for later and which
+  now appears on the list as watched, and possibly scored, is recorded as
+  watched after that recommendation.
+
+The observed path is an inference, not proof: the reader may have watched the
+title for other reasons, and MAL update times only approximate when it was
+watched. So it is recorded as what it is. It keeps the recommendation's
+ranking identity, the time it was saved, and the list entry's status, score
+and update time, labelled as observed rather than reported. Like other
+activity, it is opt-in and stays local.
+
+The like and dislike buttons on Discover cards are retired from the web
+client. Votes already collected under D-013 stay stored with their
+attribution. Nothing feeds ranking until a later decision, as under D-013.
+
+*Why:* an opinion recorded after watching is evidence about the
+recommendation; one recorded before watching is a guess about a poster.
+
+---
+
 ## D-013 - Likes and dislikes are collected, not fed
 **2026-09-22 - Accepted (user decision). Revises the schema 3 retirement.**
 
