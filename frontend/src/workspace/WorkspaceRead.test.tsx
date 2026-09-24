@@ -22,6 +22,7 @@ it("does not substitute sample evidence for a failed local read and supports ret
   expect(screen.queryByRole("heading", { name: "anirec_sample" })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Try again" }));
   expect(await screen.findByRole("heading", { name: "Profile data unavailable" })).toBeInTheDocument();
+  expect(screen.getByText(/profile connection is not available in this browser build/i)).toBeInTheDocument();
   expect(read.mock.calls).toEqual([[false], [false]]);
 });
 
@@ -72,7 +73,15 @@ it("saves preferences, keeps failed edits, and excludes account fields", async (
   vi.spyOn(api, "settings").mockResolvedValue(initial);
   const save = vi.spyOn(api, "saveSettings").mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ ...initial, adventurousness: 8 });
   render(<SettingsPage />);
+  expect(await screen.findByRole("option", { name: "Personal fit" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "MAL score" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Alphabetical" })).toBeInTheDocument();
   const user = userEvent.setup();
+  const desktop = screen.getByText("Desktop-only settings").closest("details");
+  expect(desktop).not.toHaveAttribute("open");
+  await user.click(screen.getByText("Desktop-only settings"));
+  expect(desktop).toHaveAttribute("open");
+  expect(screen.getByRole("checkbox", { name: "Desktop background sync" })).toBeInTheDocument();
   const input = await screen.findByRole("spinbutton", { name: "Adventurousness (1–10)" });
   await user.clear(input); await user.type(input, "8");
   await user.click(screen.getByRole("button", { name: "Save preferences" }));

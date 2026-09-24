@@ -19,7 +19,7 @@ export function ProfilePage() {
     <div className="workspace-toolbar"><button className="btn" aria-pressed={!sample} onClick={() => setSample(false)}>Local profile</button><button className="btn" aria-pressed={sample} onClick={() => setSample(true)}>View sample profile</button></div>
     {sample ? <p className="sample-note">Bundled sample data. These figures describe anirec_sample, not your account.</p> : null}
     <ReadState {...read} />
-    {read.result?.reason ? <div className="workspace-empty"><h2>Profile data unavailable</h2><p>{read.result.reason === "not-connected" ? "Connect a profile in the desktop app to see your own taste." : "Sync your library in the desktop app, then reload this view."}</p><button className="btn" onClick={read.retry}>Reload profile</button></div> : null}
+    {read.result?.reason ? <div className="workspace-empty"><h2>Profile data unavailable</h2><p>{read.result.reason === "not-connected" ? "Profile connection is not available in this browser build. You can explore the sample profile above." : "No synchronized library is available for this profile yet. You can explore the sample profile above."}</p><button className="btn" onClick={read.retry}>Reload profile</button></div> : null}
     {profile ? <>
       <section className="identity-strip"><div><h2>{profile.identity?.username}</h2>{profile.identity?.member_since ? <p>MAL member since {profile.identity.member_since}</p> : null}</div>
         <dl>{([["Completed", profile.identity?.completed], ["Episodes", profile.identity?.episodes], ["Days watched", profile.identity?.days_watched], ["Mean score / 10", profile.identity?.mean_score]] as const).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{number(value, 2)}</dd></div>)}</dl>

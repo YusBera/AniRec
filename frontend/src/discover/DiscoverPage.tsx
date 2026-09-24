@@ -15,7 +15,7 @@
  * exactly what _enter_demo_mode does with set_ephemeral(True).
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AniRecApiError, api } from "../api/client";
 import { useFeed, useOperation } from "../api/hooks";
 import type { LocalState, RecommendationViewModel } from "../api/types";
@@ -27,12 +27,14 @@ import { EMPTY_FILTERS, activeFilterCount, filterAndSort, isActive, type Filters
 import { EmptyPanel, ErrorPanel, FeedSkeleton } from "./states";
 import "./discover.css";
 import { LibraryPage } from "../workspace/LibraryPage";
+import { PAGE_SIZE, PageControls } from "../workspace/common";
 import { useRecommendationActivity } from "./useRecommendationActivity";
 
 export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | "library" | "inactive" }) {
   const { feed, state, error, reload, setFeed } = useFeed();
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sortMode, setSortMode] = useState<SortMode>("personal-match");
+  const [page, setPage] = useState(0);
   const [inspected, setInspected] = useState<RecommendationViewModel | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -165,6 +167,13 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
     () => (feed ? filterAndSort(feed.recommendations, filters, sortMode) : []),
     [feed, filters, sortMode],
   );
+  useEffect(() => setPage(0), [feed?.activity_feed_id]);
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(visible.length / PAGE_SIZE) - 1));
+  const pageItems = visible.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const changePage = (next: number) => {
+    setPage(next);
+    document.getElementById("recommendations")?.focus();
+  };
 
   const busy = operation.status.state === "running";
   const progress = operation.status.progress;
@@ -179,18 +188,15 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
       <a className="skip-link" href="#recommendations">Skip to recommendations</a>
       <header className="titlebar">
         <div className="shell titlebar-inner">
-          <span className="wordmark">
-            Ani<span>Rec</span>
-          </span>
-          <h1 className="lbl">Discover</h1>
+          <h1>Discover</h1>
           <div className="tags">
             {feed?.source === "sample" ? (
               <span className="tag warn">Sample data</span>
             ) : null}
             {feed?.profile ? <span className="tag on">{feed.profile.username}</span> : null}
-            <span className="tag">
-              <span aria-hidden="true" className={`led ${busy ? "amber live" : "off"}`} /> Engine · {busy ? "Working" : state === "loading" ? "Loading" : state === "error" ? "Unavailable" : "Idle"}
-            </span>
+            {busy || state === "loading" || state === "error" ? <span className="tag">
+              <span aria-hidden="true" className={`led ${busy ? "amber live" : "off"}`} /> Engine · {busy ? "Working" : state === "loading" ? "Loading" : "Unavailable"}
+            </span> : null}
           </div>
         </div>
       </header>
@@ -210,8 +216,8 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
               catalogue={feed.catalogue}
               filters={filters}
               sortMode={sortMode}
-              onFilters={setFilters}
-              onSort={setSortMode}
+              onFilters={next => { setFilters(next); setPage(0); }}
+              onSort={next => { setSortMode(next); setPage(0); }}
             />
             </details>
 
@@ -233,7 +239,7 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
                   disabled={feed.ephemeral || saving || pendingSentiments.size > 0}
                   title={
                     feed.ephemeral
-                      ? "Connect a MyAnimeList profile to generate recommendations"
+                      ? "Personal recommendations require a connected profile; connection is not available in this browser build yet"
                       : undefined
                   }
                   onClick={() => void operation.start("more-recommendations", { count: 5 })}
@@ -287,7 +293,7 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
                   onClick={() => void activity.clear()}>Clear saved activity</button>
                 <p role="status">{activity.notice}</p>
               </details>}
-              {feed.ephemeral ? <p className="sample-note">Sample library. Decisions stay in this preview; connect a MyAnimeList profile in the desktop app to keep them and generate personal picks.</p> : null}
+              {feed.ephemeral ? <p className="sample-note">Sample library. Decisions reset on reload. Personal picks need a connected profile; connection is not available in this browser build yet.</p> : null}
               <p className="feedback-notice" role="status">{feedbackNotice}</p>
               {feedbackError ? <div className="feedback-error" role="alert">
                 <p>{feedbackError.message}</p>
@@ -305,11 +311,11 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
             {visible.length === 0 ? (
               <EmptyPanel
                 filtered={isActive(filters)}
-                onClear={() => setFilters(EMPTY_FILTERS)}
+                onClear={() => { setFilters(EMPTY_FILTERS); setPage(0); }}
               />
             ) : (
               <div className="feed">
-                {visible.map((model) => (
+                {pageItems.map((model) => (
                   <RecommendationCard
                     key={model.mal_id ?? model.display_title}
                     model={model}
@@ -327,6 +333,7 @@ export function DiscoverPage({ surface = "discover" }: { surface?: "discover" | 
                 ))}
               </div>
             )}
+            <PageControls page={currentPage} total={visible.length} onPageChange={changePage} label="Recommendations" />
             </section>
           </>
         ) : state === "loading" ? (

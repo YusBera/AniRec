@@ -46,3 +46,17 @@ export function Scores({ yours, theirs, other = "Community" }: { yours?: number 
 export function Genres({ genres }: { genres: string[] }) {
   return <div className="workspace-genres" aria-label="Genres">{genres.map(genre => <span className="workspace-genre" key={genre}>{genre}</span>)}</div>;
 }
+
+export const PAGE_SIZE = 20;
+
+export function PageControls({ page, total, onPageChange, label }: {
+  page: number; total: number; onPageChange: (page: number) => void; label: string;
+}) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  if (pages <= 1) return null;
+  return <nav className="page-controls" aria-label={`${label} pages`}>
+    <button type="button" className="btn" aria-label={`Previous ${label.toLowerCase()} page`} disabled={page === 0} onClick={() => onPageChange(page - 1)}>Previous page</button>
+    <span role="status">Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total} {label.toLowerCase()} · Page {page + 1} of {pages}</span>
+    <button type="button" className="btn" aria-label={`Next ${label.toLowerCase()} page`} disabled={page >= pages - 1} onClick={() => onPageChange(page + 1)}>Next page</button>
+  </nav>;
+}

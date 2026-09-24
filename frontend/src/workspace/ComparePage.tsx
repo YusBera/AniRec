@@ -21,7 +21,7 @@ export function ComparePage() {
     {sample ? <p className="sample-note">Bundled sample data. This comparison does not use your account.</p> : null}
     <ReadState {...read} />
     {sample && read.result?.reason ? <p role="status">The sample comparison is unavailable ({read.result.reason}).</p> : null}
-    {!sample && read.result?.reason ? <p role="status">{({ "username-required": "Enter a MAL username to compare.", "not-connected": "Connect your profile in the desktop app first.", "client-id-required": "Configure a MAL Client ID in the desktop app first.", "no-local-snapshot": "Sync your completed list in the desktop app first." } as Record<string, string>)[read.result.reason] || "Comparison is unavailable. Reload or check your desktop profile."}</p> : null}
+    {!sample && read.result?.reason ? <p role="status">{({ "username-required": "Enter a MAL username to compare.", "not-connected": "A local profile is not connected. Profile connection is not available in this browser build; you can explore a sample comparison above.", "client-id-required": "A MAL Client ID has not been configured on this device, so live comparison is unavailable.", "no-local-snapshot": "No synchronized completed-list snapshot is available for this profile." } as Record<string, string>)[read.result.reason] || "Comparison is unavailable. Try again or explore a sample comparison."}</p> : null}
     {report ? <>
       <section className="identity-strip"><div><h2>{report.friend.username}</h2><p>{report.friend.match_label}</p></div><dl>
         <div className="compatibility-reading"><dt>Compatibility</dt><dd>{report.friend.match_score == null ? "N/A" : `${number(report.friend.match_score)}%`}</dd></div>

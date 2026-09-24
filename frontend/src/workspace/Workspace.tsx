@@ -45,7 +45,7 @@ export function Workspace() {
     <aside className="workspace-nav"><div className="workspace-brand">ANIREC <small>アニレク</small></div>
       <nav aria-label="Main navigation">{pages.map(([id, label, icon], i) => <a href={`#/${id}`} key={id} aria-current={page === id ? "page" : undefined}>
         <span className="house-icon" aria-hidden="true" style={{ maskImage: `url("${icon}")` }} /><span className="nav-index" aria-hidden="true">0{i + 1}</span>{label}
-      </a>)}</nav><p className="workspace-nav-note">React preview<br />PySide desktop remains available.</p>
+      </a>)}</nav>
     </aside>
     <div className="workspace-content" ref={content} id="workspace-content" tabIndex={-1}>
       <DiscoverPage surface={page === "discover" || page === "library" ? page : "inactive"} />

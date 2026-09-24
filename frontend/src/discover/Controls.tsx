@@ -1,5 +1,5 @@
 /**
- * Filter and sort controls, and the pill row that shows what is active.
+ * Filter and sort controls, with selected terms available for quick removal.
  *
  * Qt equivalents: filter_pills.py (351 lines), discover_filters.py's widget
  * half, typeahead.py (310 lines) and the sort control inside
@@ -13,7 +13,7 @@ import { EMPTY_FILTERS, activeFilterCount, type Filters, type SortMode } from ".
 
 const SORTS: { value: SortMode; label: string }[] = [
   { value: "personal-match", label: "Personal fit" },
-  { value: "mal-score", label: "MAL" },
+  { value: "mal-score", label: "MAL score" },
   { value: "year", label: "Year" },
   { value: "title", label: "Title" },
 ];
@@ -36,12 +36,8 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
   return (
     <>
       <div className="controls">
-        <div className="control-group" role="group" aria-label="Genre filters">
-          <div className="control-head">
-            <span className="lbl">Genre</span>
-            <span className="line" />
-            <span className="lbl">{catalogue.genres.length}</span>
-          </div>
+        <details className="control-group filter-group">
+          <summary>Genre <span>{catalogue.genres.length} options · {filters.genres.length} selected</span></summary>
           <div className="term-row">
             {catalogue.genres.map((genre) => (
               <button
@@ -55,14 +51,10 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
               </button>
             ))}
           </div>
-        </div>
+        </details>
 
-        <div className="control-group" role="group" aria-label="Studio filters">
-          <div className="control-head">
-            <span className="lbl">Studio</span>
-            <span className="line" />
-            <span className="lbl">{catalogue.studios.length}</span>
-          </div>
+        <details className="control-group filter-group">
+          <summary>Studio <span>{catalogue.studios.length} options · {filters.studios.length} selected</span></summary>
           <div className="term-row">
             {catalogue.studios.map((studio) => (
               <button
@@ -76,7 +68,7 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
               </button>
             ))}
           </div>
-        </div>
+        </details>
 
         <div className="control-group">
           <div className="control-head">
@@ -133,12 +125,8 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
         </div>
       </div>
 
-      <div className="pill-row">
+      {count > 0 ? <div className="pill-row">
         <span className="lbl">Active</span>
-        {count === 0 ? (
-          <span className="lbl lbl-strong">none</span>
-        ) : (
-          <>
             {filters.genres.map((genre) => (
               <Pill
                 key={`g-${genre}`}
@@ -168,9 +156,7 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
             <button type="button" className="pill" onClick={() => onFilters(EMPTY_FILTERS)}>
               Clear all
             </button>
-          </>
-        )}
-      </div>
+      </div> : null}
     </>
   );
 }
@@ -185,17 +171,15 @@ function Pill({
   onDismiss: () => void;
 }) {
   return (
-    <span className="pill" data-active="true">
+    <button
+      type="button"
+      className="pill active-filter"
+      aria-label={`Remove ${kind} filter ${value}`}
+      onClick={onDismiss}
+    >
       <span className="kind">{kind}</span>
       {value}
-      <button
-        type="button"
-        className="dismiss"
-        aria-label={`Remove ${kind} filter ${value}`}
-        onClick={onDismiss}
-      >
-        ×
-      </button>
-    </span>
+      <span aria-hidden="true">×</span>
+    </button>
   );
 }

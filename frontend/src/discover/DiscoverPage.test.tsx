@@ -208,6 +208,7 @@ describe("DiscoverPage", () => {
     const callsBefore = fetchMock.mock.calls.length;
 
     await user.click(screen.getByText(/Filters & sort/));
+    await user.click(screen.getByText("Genre"));
     await user.click(screen.getByRole("button", { name: "Comedy" }));
 
     await waitFor(() => expect(screen.queryByText("Death Note")).not.toBeInTheDocument());
@@ -222,7 +223,9 @@ describe("DiscoverPage", () => {
     await screen.findByText("Death Note");
 
     await user.click(screen.getByText(/Filters & sort/));
+    await user.click(screen.getByText("Genre"));
     await user.click(screen.getByRole("button", { name: "Comedy" }));
+    await user.click(screen.getByText("Studio"));
     await user.click(screen.getByRole("button", { name: "Madhouse" }));
 
     expect(await screen.findByText("No titles match these filters")).toBeInTheDocument();
@@ -237,7 +240,7 @@ describe("DiscoverPage", () => {
     await screen.findByText("Death Note");
 
     await user.click(screen.getByText(/Filters & sort/));
-    await user.click(screen.getByRole("button", { name: "MAL" }));
+    await user.click(screen.getByRole("button", { name: "MAL score" }));
     await waitFor(() => {
       const titles = [...container.querySelectorAll(".card-title")].map((n) => n.textContent);
       expect(titles).toEqual(["Steins;Gate", "Death Note"]);
@@ -333,6 +336,23 @@ describe("DiscoverPage", () => {
     await user.click(within(second).getByRole("button", { name: "Save for later" }));
     expect(within(first).getByRole("button", { name: "Saved for later" })).toHaveAttribute("aria-pressed", "true");
     expect(within(second).getByRole("button", { name: "Saved for later" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("paginates a growing feed without mounting every recommendation", async () => {
+    const recommendations = Array.from({ length: 25 }, (_, index) => ({
+      ...FEED.recommendations[0]!, mal_id: 10_000 + index,
+      display_title: `Title ${index + 1}`, rank: index + 1,
+      fit_rank: null, fit_pool_size: null, fit_top_percent: null, ranking_id: null, why: null,
+    }));
+    stubFetch({ ...FEED, recommendations });
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    expect(await screen.findByRole("heading", { name: "Title 1" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Title 21" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next recommendations page" }));
+    expect(screen.getByRole("heading", { name: "Title 21" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Title 1" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Recommendations" })).toHaveFocus();
   });
 
   it("sends attributed sentiment, serializes per title, and rolls back only the failed title", async () => {
@@ -504,4 +524,33 @@ it("loads saved metadata outside the feed and retains honest missing-score state
   expect(screen.getByText("Personal fit unavailable")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Details for Monster" }));
   expect(details).toHaveBeenCalledWith(model);
+});
+
+it("paginates saved titles in Library and resets to the first page when searching", async () => {
+  const recommendations = Array.from({ length: 25 }, (_, index) => ({
+    ...FEED.recommendations[0]!, mal_id: 20_000 + index,
+    display_title: `Saved ${index + 1}`, rank: index + 1,
+    fit_rank: null, fit_pool_size: null, fit_top_percent: null, ranking_id: null, why: null,
+  }));
+  const feed: Feed = { ...FEED, recommendations, state: { ...FEED.state, watch_later_mal_ids: recommendations.map(model => model.mal_id) } };
+  const user = userEvent.setup();
+  render(<LibraryPage feed={feed} pending={false} onVote={vi.fn()} onDetails={vi.fn()} />);
+  expect(screen.getByRole("heading", { name: "Saved 1" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Saved 21" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Next saved titles page" }));
+  expect(screen.getByRole("heading", { name: "Saved 21" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /Saved for later/ })).toHaveFocus();
+  await user.type(screen.getByRole("searchbox", { name: "Find a saved title" }), "Saved 1");
+  expect(screen.getByRole("heading", { name: "Saved 1" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Next saved titles page" })).not.toBeInTheDocument();
+});
+
+it("paginates unresolved saved IDs instead of mounting the whole missing list", async () => {
+  const ids = Array.from({ length: 25 }, (_, index) => 30_000 + index);
+  const feed: Feed = { ...FEED, recommendations: [], state: { ...FEED.state, watch_later_mal_ids: ids } };
+  render(<LibraryPage feed={feed} pending={false} onVote={vi.fn()} onDetails={vi.fn()} />);
+  expect(screen.getByText(/MAL #30000/)).toBeInTheDocument();
+  expect(screen.queryByText(/MAL #30024/)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /Next unresolved saved ids page/i }));
+  expect(screen.getByText(/MAL #30024/)).toBeInTheDocument();
 });
