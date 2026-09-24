@@ -17,7 +17,10 @@ TEXT_SUFFIXES = {
     ".toml",
     ".txt",
 }
-IGNORED_PARTS = {".git", ".venv", ".pytest_cache", "__pycache__", "build", "dist"}
+# node_modules is installed third-party code, ignored by git and never part of
+# the repository; its bundled hashes and test fixtures match the 32-hex rule.
+IGNORED_PARTS = {".git", ".venv", ".pytest_cache", "__pycache__", "build", "dist",
+                 "node_modules"}
 CREDENTIAL_PATTERNS = (
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{30,}"),

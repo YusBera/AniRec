@@ -32,7 +32,7 @@ try:
         select_seeds,
     )
     from ..scoring.selection import SELECTION_POLICY_VERSION, clamp_adventurousness
-    from ..services.recommendation_event_service import RANKING_SNAPSHOT_ARCHIVE
+    from ..infrastructure.paths import RANKING_SNAPSHOT_ARCHIVE
     from ..scoring.explanation import (
         EXPLANATION_COLUMN,
         MODEL_RANK_COLUMN,
@@ -67,7 +67,7 @@ except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
         select_seeds,
     )
     from scoring.selection import SELECTION_POLICY_VERSION, clamp_adventurousness
-    from services.recommendation_event_service import RANKING_SNAPSHOT_ARCHIVE
+    from infrastructure.paths import RANKING_SNAPSHOT_ARCHIVE
     from scoring.explanation import (
         EXPLANATION_COLUMN,
         MODEL_RANK_COLUMN,

@@ -10,6 +10,12 @@ from pathlib import Path
 
 
 APP_DIRECTORY_NAME = "AniRec"
+# Profile-relative directory of immutable ranking snapshots, one CSV per
+# ranking id. The pipeline writes them; the activity service keeps a snapshot
+# alive while a retained event references it. Defined here, in a module with
+# no package-relative imports, so both the package and the legacy sibling
+# import paths can load it.
+RANKING_SNAPSHOT_ARCHIVE = "ranking_snapshots"
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 _PROFILE_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
 

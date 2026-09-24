@@ -77,13 +77,17 @@ class FakeOrchestrator:
     def __init__(self):
         self.calls = []
 
-    def run_full(self, username, settings, *, progress_callback, cancellation_token):
-        self.calls.append(("full", username, settings, cancellation_token))
+    # Signatures mirror PipelineOrchestrator: a fake that rejects an argument
+    # the real orchestrator accepts fails the worker call before recording it.
+    def run_full(self, username, settings, *, progress_callback, cancellation_token,
+                 excluded_mal_ids=None, genre_adjustments=None):
+        self.calls.append(("full", username, settings, cancellation_token, excluded_mal_ids))
         progress_callback(PipelineProgress("genre_importance", "Calculate genres", 4, 6, True))
         return PipelineResult(user_stats={"mode": "full"})
 
-    def run_step(self, step_id, username, settings, *, progress_callback, cancellation_token):
-        self.calls.append((step_id, username, settings, cancellation_token))
+    def run_step(self, step_id, username, settings, *, progress_callback, cancellation_token,
+                 excluded_mal_ids=None, genre_adjustments=None):
+        self.calls.append((step_id, username, settings, cancellation_token, excluded_mal_ids))
         progress_callback(PipelineProgress(step_id, "One step", 1, 1, True))
         return PipelineResult(user_stats={"mode": "step"})
 
@@ -114,6 +118,9 @@ def test_recommendation_worker_supports_full_and_single_step_pipeline():
     assert [call[0] for call in orchestrator.calls] == ["full", "genre_importance"]
     assert [result.user_stats["mode"] for _key, result in results] == ["full", "step"]
     assert all(call[3] is not None for call in orchestrator.calls)
+    # No hidden set was supplied, so the step passes None and the pipeline reads
+    # the profile's saved hidden titles itself, rather than ranking with none.
+    assert orchestrator.calls[1][4] is None
 
 
 class FakeAuthService:

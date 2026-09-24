@@ -7,6 +7,33 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Test suite repaired: two Goal 3 regressions, one audit false positive
+
+The full suite had 5 failures and 4 modules that could not be collected. All of
+them were present before the repository moved.
+
+- **Regression from Goal 3.** `application/pipeline.py` imported
+  `RANKING_SNAPSHOT_ARCHIVE` from the activity service. That service uses
+  `from .. import __version__`, which fails on the legacy sibling-import path.
+  This broke `main.py` run as a script and four CLI and MAL test modules. The
+  constant now lives in `infrastructure/paths.py`, which has no
+  package-relative imports.
+- **Stale test fake from Goal 3.** The GUI worker test's `FakeOrchestrator`
+  rejected `excluded_mal_ids`, which the real `run_step` accepts. It now
+  mirrors the real signature, and the test pins that an unsupplied hidden set
+  reaches the pipeline as `None`.
+- **Audit false positive.** The credential audit walked `frontend/node_modules`
+  and matched hashes in npm packages. It now skips that directory; it is
+  git-ignored, third-party and never repository content.
+
+*Verification:* `pytest -n auto`: 877 passed, 0 failed.
+
+*Open:* `test_api_lifecycle::test_a_graceful_shutdown_ends_the_process` failed
+once in three parallel runs and passes alone. It needs its failure output
+captured before anyone changes its timeout.
+
+---
+
 ## 2026-09-24 - New verified model bundle
 
 The Goal 4 winner, reference `sasrec-typed-d256`, was retrained on split

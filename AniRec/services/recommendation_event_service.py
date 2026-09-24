@@ -12,7 +12,7 @@ from time import monotonic
 from uuid import UUID, uuid4
 
 from .. import __version__
-from ..infrastructure.paths import profile_dir
+from ..infrastructure.paths import RANKING_SNAPSHOT_ARCHIVE, profile_dir
 
 EVENTS = frozenset({"impression", "detail_open", "external_open", "watch_later_add",
                     "watch_later_remove", "dismiss", "restore"})
@@ -28,11 +28,10 @@ MODEL_VERSION = f"legacy-app-{__version__}"
 # engine's rank before selection. Version 1 rows keep NULL in the new columns,
 # and their ``model_rank`` held the feed position instead.
 EVENT_SCHEMA_VERSION = 2
-# Profile-relative directory holding immutable ranking snapshots by ranking id
-# (written by the pipeline). Recording an event refreshes its snapshot's
+# RANKING_SNAPSHOT_ARCHIVE (from infrastructure.paths) holds the pipeline's
+# immutable ranking snapshots. Recording an event refreshes its snapshot's
 # modification time, so a snapshot is kept at least as long as any retained
 # event that references it.
-RANKING_SNAPSHOT_ARCHIVE = "ranking_snapshots"
 _V2_COLUMNS = (
     ("ranking_id", "TEXT"),
     ("catalog_version", "TEXT"),
