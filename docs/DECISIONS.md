@@ -184,7 +184,7 @@ for ranks or tiers.
 the community score printed beside it, with an unreachable ceiling. A local
 application's odd number is a curiosity; a public product's is the thing people
 screenshot. Splitting is the cheapest and can ship first. See
-`docs/design/RECOMMENDER_EVALUATION.md`.
+`docs/RECOMMENDER_EVALUATION.md`.
 
 ---
 

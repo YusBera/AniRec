@@ -74,7 +74,7 @@ counterfactual history removal for the sequence model. The engine's rank
 before selection is persisted as personal fit.
 
 Measured behaviour of both engines is recorded in
-`docs/design/RECOMMENDER_EVALUATION.md`. Read it before changing ranking.
+`docs/RECOMMENDER_EVALUATION.md`. Read it before changing ranking.
 
 ---
 

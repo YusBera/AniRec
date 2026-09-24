@@ -30,24 +30,17 @@ them.
 | [ONNX_MODEL_SERVING.md](ONNX_MODEL_SERVING.md) | Bundle verification, model catalogue, and fallback behavior |
 | [RECOMMENDATION_ACTIVITY.md](RECOMMENDATION_ACTIVITY.md) | Activity events, privacy, retention, and attribution |
 | [ACCOUNT_SCOPE_INVENTORY.md](ACCOUNT_SCOPE_INVENTORY.md) | Current identity and profile-scope entry points; proposed account isolation boundary |
-| [UI_ENGINE_INTEGRATION.md](UI_ENGINE_INTEGRATION.md) | This checkout, launch commands, and last integration evidence |
-| [design/RECOMMENDER_EVALUATION.md](design/RECOMMENDER_EVALUATION.md) | Existing ranker measurements and what they do not prove |
+| [UI_CONTRACT.md](UI_CONTRACT.md) | What the web client may show from the recommendation API, and what it must not |
+| [RECOMMENDER_EVALUATION.md](RECOMMENDER_EVALUATION.md) | Ranker measurements, the Goal 4 model decision, and what they do not prove |
 | [CHANGELOG.md](CHANGELOG.md) | Released desktop-version history |
 
-## UI and historical design records
+## Archive
 
-The files under `design/` preserve earlier UI decisions, measurements, and
-handoffs. Most were written during the desktop-to-web transition. They are
-optional evidence, not current task instructions.
-
-- Use `REACT_PRESERVATION_AUDIT.md` and the workspace specifications when a
-  current UI decision needs historical evidence.
-- Use `ICON_HANDOFF.md` only when changing the icon system.
-- `LATEST_AGENT_HANDOFF.md`, `MIGRATION_HANDOFF.md`, `FRONTEND_HANDOFF.md`, and
-  `BACKEND_HANDOFF.md` contain useful history but have superseded status or
-  desktop-first assumptions. Never treat “latest” in a filename as authority.
-- Git history is the archive. Do not create another session handoff when
-  `CURRENT_TASK.md`, `TASK_HISTORY.md`, or a subject reference can hold the fact.
+[`archive/`](archive/README.md) holds earlier UI decisions, handoffs and
+integration records, mostly from the desktop-to-web transition. They are
+optional evidence, never current instructions; its README says when each one is
+still worth opening. Do not create another session handoff when
+`CURRENT_TASK.md`, `TASK_HISTORY.md`, or a subject reference can hold the fact.
 
 ## Maintenance rule
 

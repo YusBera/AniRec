@@ -90,4 +90,4 @@ Near term, for the web application:
 
 Not yet measurable, and deliberately not claimed: that the recommendations are
 good. The project has a measured baseline table for its rankers
-(`docs/design/RECOMMENDER_EVALUATION.md`) and no user-satisfaction signal at all.
+(`docs/RECOMMENDER_EVALUATION.md`) and no user-satisfaction signal at all.

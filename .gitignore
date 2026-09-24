@@ -21,9 +21,6 @@ logs/
 build/
 dist/
 release/
-# Impeccable's small workflow checkpoint is source handoff data, not build output.
-!.impeccable/build/
-!.impeccable/build/state.json
 # API sidecar build output (PyInstaller). Same reasoning as build/ and dist/:
 # generated locally, ~130 MB, never reviewed.
 build-api/
@@ -47,9 +44,21 @@ htmlcov/
 Thumbs.db
 ACCEPTANCE_STATIC_RESULTS.txt
 
-# Local Impeccable decision-server runtime (portable choices live in mock sidecars)
-.impeccable/questions/
-
-# Disposable isolated API root used only for UI capture
-reports/ui-preservation-2026-09-06/sample-data/
-reports/ui-workspace-sample/
+# Generated artefacts: kept on disk, not versioned. Only the few files that a
+# current document cites stay tracked (DESIGN.md's north-star mock, its review
+# verdict and the concept corrections), plus Impeccable's workflow checkpoint.
+/output/
+/reports/*
+!/reports/ui-tabs-concepts/
+/reports/ui-tabs-concepts/*
+!/reports/ui-tabs-concepts/README.md
+/.impeccable/*
+!/.impeccable/mocks/
+/.impeccable/mocks/*
+!/.impeccable/mocks/decision/
+!/.impeccable/build/
+/.impeccable/build/*
+!/.impeccable/build/state.json
+!/.impeccable/review/
+/.impeccable/review/*
+!/.impeccable/review/finish-verdict.md

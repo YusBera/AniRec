@@ -7,6 +7,44 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Workspace reorganised; this repository moved
+
+- **Moved.** The application moved from `AniRecTrainer/work/anirec-ui` to
+  `projects/AniRec` and now has its own `.venv`.
+- **Old checkout archived.** The older checkout that sat at `projects/AniRec`
+  was zipped, with its `.git`, to
+  `projects/_archive/AniRec-old-checkout-2026-09-24.zip`, then removed. Before
+  that, every branch in it was confirmed present here, and its uncommitted
+  edits were confirmed either preserved in `b1b3007` or superseded (the live
+  MAL candidate overlay replaced by installed-catalogue candidates and D-010).
+- **Design records archived.** `docs/design/` became `docs/archive/` with an
+  index. `RECOMMENDER_EVALUATION.md` moved to `docs/`.
+  `UI_ENGINE_INTEGRATION.md` was split into `UI_CONTRACT.md` and an archived
+  20 September integration record. The launch steps are now in
+  `START_HERE.md`.
+- **Generated files untracked.** `.impeccable/`, `output/` and `reports/`
+  were removed from git but kept on disk. Only the nine files cited by
+  `DESIGN.md` or used as Impeccable's checkpoint remain tracked.
+- **Specs stay at the root.** The PyInstaller specs resolve paths from their
+  own location, so moving them would need an unverified packaging change.
+
+*Verification:* `git fsck` clean after the move; see the completion report
+for tests.
+
+---
+
+## 2026-09-24 - Goal 4 model decision
+
+Chronological evaluation on the 22 September snapshot, under rules fixed
+before any SASRec result existed.
+- **Verdict:** the reference `sasrec-typed-d256` config stays, and patience 6
+  is not adopted.
+- **Figures and limits:** in `RECOMMENDER_EVALUATION.md`.
+- **Full record:** in `AniRecTrainer/reports/GOAL4_DECISION_RECORD_24SEP.md`.
+- **Nothing in this repository changed.**
+
+---
+
 ## 2026-09-23 - Local API request fields cannot choose another profile
 
 Feedback and operation requests now derive their profile from the server-side
@@ -118,7 +156,7 @@ request, without letting votes influence anything yet.
 - Votes feed nothing. The web API passes no taste adjustments, and the
   desktop client no longer re-sorts its displayed feed by votes (it used
   `TasteFeedbackService.personalize`, which also rewrote ranks).
-- The UI contract is in `UI_ENGINE_INTEGRATION.md`; the web client has no
+- The UI contract is in `UI_CONTRACT.md`; the web client has no
   vote buttons yet.
 
 *Verification:*
@@ -245,7 +283,7 @@ that ranked each served row (D-012).
   per profile (`OperationRegistry.start(exclusive_with=...)`, checked under
   one lock), so a concurrent generate and "more" cannot overwrite each other.
 - **Web boundary:** the API sends no percentage or percentage-point breakdown.
-  The UI contract is in `UI_ENGINE_INTEGRATION.md`, and the generated API
+  The UI contract is in `UI_CONTRACT.md`, and the generated API
   types are regenerated.
 
 *Verification:*
@@ -532,7 +570,7 @@ recommendation API) and wrote the agent documentation set: `AGENTS.md`,
 `docs/DECISIONS.md`, `docs/CURRENT_TASK.md`, `docs/CODEMAP.md`, and this file.
 
 Superseded the prior desktop-first framing in `PRODUCT.md`, `DESIGN.md`, and the
-handoff documents under `docs/design/`.
+handoff documents under `docs/archive/`.
 
 *Verification:* documentation only. No code changed.
 
@@ -545,7 +583,7 @@ D-006. No implementation task opened.
 
 Measured every ranking engine on one split through the training harness,
 including the heuristic engine, which had never been evaluated. Recorded in
-`docs/design/RECOMMENDER_EVALUATION.md`.
+`docs/RECOMMENDER_EVALUATION.md`.
 
 *Verification:* the vectorised heuristic was proved equal to the shipped scoring
 functions to within 8.3e-17 before being run.

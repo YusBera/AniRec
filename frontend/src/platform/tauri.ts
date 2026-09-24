@@ -12,7 +12,7 @@
  * This file is groundwork for a Tauri validation stage that has not run, kept
  * here so the seam it defines could be designed and tested against a fake.
  * Do not read it as evidence that desktop packaging works. See
- * docs/design/MIGRATION_HANDOFF.md, "Proven, and not".
+ * docs/archive/MIGRATION_HANDOFF.md, "Proven, and not".
  *
  * The two Tauri entry points in the entire frontend are here:
  *

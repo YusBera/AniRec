@@ -6,7 +6,7 @@ development tool and is not the current visual authority.
 
 New agents start with [the documentation index](../docs/README.md). UI work must
 also read [the current task](../docs/CURRENT_TASK.md) to avoid colliding with
-backend work in another session. Older files under `docs/design/` are evidence
+backend work in another session. Older files under `docs/archive/` are evidence
 and history unless the index names them for a specific task.
 
 ## Run it

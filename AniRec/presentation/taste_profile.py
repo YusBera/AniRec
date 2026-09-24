@@ -36,7 +36,7 @@ per-genre and per-studio summaries, and air-year and season analysis. A later
 sync schema still needs full list-status counts, popularity rank, profile
 metadata, rewatch counts, and rating timestamps before watching habits,
 hidden gems, and taste-through-time can be measured honestly. See
-docs/design/BACKEND_HANDOFF.md.
+docs/archive/BACKEND_HANDOFF.md.
 """
 
 from __future__ import annotations

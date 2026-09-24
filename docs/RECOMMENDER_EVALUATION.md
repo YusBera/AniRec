@@ -25,6 +25,39 @@ retained. The current evidence gate cannot regenerate the rows or the stated
 22,142 missing targets, so both remain historical claims and are not used to
 select an architecture. MAL popularity is not a substitute for score rank.
 
+## Goal 4: chronological model decision (2026-09-24)
+
+The newer, larger evidence, from the 22 September snapshot. The rules were
+fixed before any SASRec result existed. The records are in `AniRecTrainer`:
+- the rules: `reports/GOAL4_DECISION_PROTOCOL_23SEP.md`;
+- the verdict and diagnostics: `reports/GOAL4_DECISION_RECORD_24SEP.md`;
+- the analysis that applied them: `scripts/goal4_analysis.py`.
+
+Split `9c8f337435`: train before 1 August, validation August, test 1-16
+September, 48,668 test users, 30,282 candidate items, pessimistic ties.
+
+| Model | Test R@10 (3 seeds) |
+| --- | ---: |
+| SASRec d256 reference (patience 3) | 0.2685 +/- 0.0029 |
+| SASRec d256 patience 6 | 0.2679 +/- 0.0016 |
+| recent transitions | 0.1358 |
+| EASE (lambda at the edge of its search range) | 0.1111 |
+| popularity | 0.0406 |
+
+- **Decision: the reference config stays.** Patience 6 is statistically
+  indistinguishable. McNemar on paired per-user hits gives p > 0.2 for every
+  matched seed, the seeds disagree on direction, and the mean delta is -0.0007.
+  No cohort, including history length, moves more than 1.4%.
+- The baseline rows were not measured blind; the protocol discloses why. The
+  sequence model's roughly twofold margin over them is not in doubt.
+- About 1 test target in 10 is outside what AniRec's serving rules would show,
+  so offline Recall@10 overstates what a served feed can reach.
+- The model serving AniRec today was trained on the older snapshot, so it was
+  not measured here. Replacing it is separate work: retrain, export, check
+  PyTorch/ONNX agreement, and inspect real recommendations.
+
+The 20 September measurements below remain valid for their own split.
+
 ## What this establishes
 
 **Candidate generation was reported as a binding constraint.** The historical
@@ -81,5 +114,5 @@ later untouched confirmation window.
 ## Related
 
 `docs/DECISIONS.md` D-006, D-007, D-008. `docs/ONNX_MODEL_SERVING.md` for the
-bundle contract. `docs/design/BACKEND_HANDOFF.md` for the open contract items,
+bundle contract. `docs/archive/BACKEND_HANDOFF.md` for the open contract items,
 some of which this evaluation has now answered.

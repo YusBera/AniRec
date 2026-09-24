@@ -49,7 +49,7 @@ OpenAPI export for type generation: `AniRec/api/openapi_export.py`.
 | Heuristic ranked pool (`rank_candidate_pool`) and legacy CSV entry point | `AniRec/recommendation_system.py` |
 | Pipeline tuning defaults | `AniRec/models/domain.py` |
 
-Measured behaviour of both engines: `docs/design/RECOMMENDER_EVALUATION.md`.
+Measured behaviour of both engines: `docs/RECOMMENDER_EVALUATION.md`.
 ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 
 ---
@@ -162,4 +162,4 @@ their layout as authority for web work. See `docs/DECISIONS.md` D-004.
 | --- | --- |
 | Model training, evaluation harness, baselines | `AniRecTrainer` |
 | Scraper, coordinator snapshot, catalogue source | `AniRecDataCollector` |
-| Older branch checkout without the workspace surfaces | `projects/AniRec` |
+| Archived copy of the pre-2026-09-24 checkout | `projects/_archive/AniRec-old-checkout-2026-09-24.zip` |

@@ -89,6 +89,12 @@ profile-isolation, and failure-path tests.
 
 ## Goal 4 - Chronological evaluation and model decision
 
+**Status:** decision complete (2026-09-24). The reference config
+`sasrec-typed-d256` stays, and patience 6 is not adopted; see
+`RECOMMENDER_EVALUATION.md`. Still open inside this goal: retrain the chosen
+config on the newest data, export it to ONNX, check PyTorch/ONNX agreement,
+inspect real recommendations in AniRec, and later a confirmation window.
+
 Before this goal starts, stop and ask the user to pull the latest verified
 collector snapshot. Do not train against an older or assumed snapshot.
 

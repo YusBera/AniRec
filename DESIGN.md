@@ -169,4 +169,4 @@ Existing stepped Discover motion remains governed by the pinned motion rule abov
   findings; the workflow addendum records this clarification without changing UI.
   This is not a pixel pass or certification of the whole surface. Evidence:
   `.impeccable/review/finish-verdict.md`, route desktop/mobile captures (including
-  Library Table), and `docs/design/WORKSPACE_IMPLEMENTATION.md`.
+  Library Table), and `docs/archive/WORKSPACE_IMPLEMENTATION.md`.

@@ -24,16 +24,14 @@ Do not repeatedly rediscover or rewrite information already documented there.
 
 # Repository Identity
 
-**Check which checkout you are in before quoting a line number.**
+This repository, `projects/AniRec`, is the product and the only AniRec
+application checkout. It moved here from `AniRecTrainer/work/anirec-ui` on
+2026-09-24; the older checkout that used to sit at this path was archived and
+removed. Its own virtual environment is `.venv/` in this root.
 
-This repository is the superset tree and the one the running application is
-served from. A sibling checkout at `projects/AniRec` exists on an older branch;
-it has no `frontend/src/workspace/`, no `AniRec/api/workspace.py`, and no
-`AniRec/services/workspace_service.py`. Work targeted at this project belongs
-here unless the user says otherwise.
-
-The training and evaluation project is a separate root (`AniRecTrainer`), and the
-scraper is a third (`AniRecDataCollector`). Neither is modified from this repo.
+The training and evaluation project is a sibling repository (`AniRecTrainer`),
+and the collector is a third (`AniRecDataCollector`). Neither is modified from
+this repo.
 
 ---
 

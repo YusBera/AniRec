@@ -52,9 +52,9 @@ Preserving the feel does not mean reproducing desktop geometry.
 
 ## Evidence on Hand
 
-`docs/design/RECOMMENDER_EVALUATION.md` for measured ranking behaviour.
-`docs/design/REACT_PRESERVATION_AUDIT.md`, `docs/design/FRONTEND_HANDOFF.md` and
-`docs/design/MIGRATION_HANDOFF.md` for the migration record. Shared design tokens
+`docs/RECOMMENDER_EVALUATION.md` for measured ranking behaviour.
+`docs/archive/REACT_PRESERVATION_AUDIT.md`, `docs/archive/FRONTEND_HANDOFF.md` and
+`docs/archive/MIGRATION_HANDOFF.md` for the migration record. Shared design tokens
 and bundled sample payloads in `AniRec/gui/resources/sample`.
 
 ## Product Principles

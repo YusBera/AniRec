@@ -215,24 +215,29 @@ Use the scoped controls in **Settings → Data Management**. Back up anything ne
 
 ```text
 AniRec/
-├── AniRec/                    # Application package
-│   ├── application/           # Pipeline orchestration
-│   ├── core/                  # MAL mapping and shared domain logic
-│   ├── gui/                   # PySide6 pages, dialogs, resources, workers
-│   ├── infrastructure/        # HTTP, storage, paths, callback, logging
+├── AniRec/                    # Python package
+│   ├── api/                   # FastAPI boundary for the web client (loopback only)
+│   ├── application/           # Pipeline orchestration and ranking snapshots
+│   ├── scoring/               # Engines, eligibility, selection, explanations
+│   ├── services/              # UI-independent application services
+│   ├── presentation/          # View models shared by the API and PySide
 │   ├── models/                # Versioned domain and settings models
-│   ├── scoring/               # Taste profile, feature vocabulary, ranking
-│   └── services/              # UI-independent application services
-├── tests/                     # Networkless regression and GUI smoke tests
-├── docs/                      # Changelog, design handoffs, release evidence (start at docs/README.md)
+│   ├── core/                  # MAL mapping and shared domain logic
+│   ├── infrastructure/        # HTTP, storage, paths, logging
+│   └── gui/                   # Deprecated PySide client (development tool)
+├── frontend/                  # React + TypeScript web client (the product)
+│   └── src/                   # api/, discover/, workspace/, platform/, styles/
+├── tests/                     # Networkless Python tests
+├── docs/                      # Start at docs/START_HERE.md; superseded records in docs/archive/
+├── scripts/                   # Build, theme, icon and packaging scripts
 ├── packaging/                 # Windows version resource
-├── scripts/build_windows.ps1  # Clean PyInstaller build
-├── scripts/build_theme.py     # Regenerate the stylesheets from design tokens
-├── scripts/build_icon.py      # Regenerate the Windows icon from the SVG
-├── AniRec.spec                # Tracked onedir package definition
-├── anirec_gui.py              # Desktop launcher
-└── README.md
+├── AniRec.spec, AniRec-api.spec  # PyInstaller package definitions
+├── anirec_gui.py, anirec_api.py  # Desktop and API launchers
+└── AGENTS.md                  # Rules for coding agents working in this repository
 ```
+
+The model trainer and the data collector are separate repositories:
+`AniRecTrainer` and `AniRecDataCollector`.
 
 ## License and attribution
 

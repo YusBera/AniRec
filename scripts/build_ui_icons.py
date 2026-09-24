@@ -13,7 +13,7 @@ Declaring the geometry in one place makes the shared rules - stroke weight, cap
 and join style, the safe area - impossible to apply inconsistently, and makes a
 change to any of them a one-line edit rather than forty.
 
-Geometry rules, from docs/design/ICON_HANDOFF.md
+Geometry rules, from docs/archive/ICON_HANDOFF.md
 -----------------------------------------
 * 24x24 viewBox, transparent, safe area 3..21.
 * stroke 2, ``butt`` caps, ``miter`` joins. Nothing in this interface is round

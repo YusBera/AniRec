@@ -2,16 +2,17 @@
 
 ## Status: Goals 1-3 committed; Goal 4 runs separately
 
-As reported in the 2026-09-23 cross-session handoff, Goal 4's chronological
-training grid is scheduled in `AniRecTrainer`/`AniRecTrainerWork` under another
-owner. Do not alter its frozen trainer source or its scheduled task. The local
+Goal 4's model decision is complete (2026-09-24): the reference SASRec config
+stays; see `RECOMMENDER_EVALUATION.md`. Its remaining step, retraining,
+exporting and parity-checking a new bundle, runs in `AniRecTrainer` and does
+not touch this repository until a bundle is verified. The local
 backend state lock and the local API request-field authority fix are complete.
 D-014 records the accepted hosted database direction; the local single-user
 mode is still undecided, so account/login/migration work remains paused.
 
 Goals 1-3 and vote collection are committed (`4671326`, `fbda46e`, `911fe21`).
 React UI refinement continues in another session and works from the UI
-contract in `UI_ENGINE_INTEGRATION.md`. The Goal 2/3 record below is retained as
+contract in `UI_CONTRACT.md`. The Goal 2/3 record below is retained as
 implementation history.
 
 ## Task: honest personal fit and "why was this recommended to me?"
@@ -44,7 +45,7 @@ and `scoring/engines.py`; the service call site in
 - The API's sync, generate and "more" operations now save their results, so
   the web feed shows them. Before, a web "more" batch was computed but never
   shown. These three feed-writing operations never overlap for one profile.
-- The UI contract is in `UI_ENGINE_INTEGRATION.md`. Generated API types are
+- The UI contract is in `UI_CONTRACT.md`. Generated API types are
   regenerated.
 
 ### Boundaries kept
@@ -77,7 +78,7 @@ presentation model.
 
 Votes are collected with time and attribution, and are not fed into ranking.
 The UI session adds the buttons from the contract in
-`UI_ENGINE_INTEGRATION.md`.
+`UI_CONTRACT.md`.
 
 ## Next task
 
