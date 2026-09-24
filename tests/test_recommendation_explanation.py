@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from AniRec.services.cover_url_service import CoverUrlService
 from AniRec.api.models import Explanation, RecommendationViewModelResponse
 from AniRec.api.serialization import view_model_to_dict
 from AniRec.application.pipeline import PipelineOrchestrator
@@ -847,6 +848,7 @@ def test_web_generate_and_more_are_saved_for_the_feed_to_show(system_temp_dir):
         orchestrator=orchestrator,
         results=ResultService(root_override=root),
         recommendation_state=RecommendationStateService(root_override=root),
+        cover_urls=CoverUrlService(root_override=root),
     )
 
     def run(kind, **payload):
@@ -1004,6 +1006,7 @@ def test_votes_are_collected_but_never_change_what_is_recommended(system_temp_di
             orchestrator=orchestrator,
             results=ResultService(root_override=root / "app-data"),
             recommendation_state=state,
+            cover_urls=CoverUrlService(root_override=root / "app-data"),
         )
         for kind, payload in (("recommendation", {}), ("more-recommendations", {"count": 4})):
             _build_handler(
@@ -1019,3 +1022,302 @@ def test_votes_are_collected_but_never_change_what_is_recommended(system_temp_di
                 for item in items]
 
     assert essence(voted) == essence(plain)
+
+
+# -- automatic refresh (D-018) ---------------------------------------------
+
+
+def _refresh(orchestrator, existing, count=6):
+    return orchestrator.run_refresh(
+        "fixture-user", SETTINGS, existing=existing, count=count
+    )
+
+
+def test_refresh_without_a_feed_generates_one_that_more_can_continue(system_temp_dir):
+    orchestrator = _orchestrator(system_temp_dir)
+    refreshed = _refresh(orchestrator, None, count=5)
+
+    assert refreshed.user_stats["feed_refresh"] == "missing"
+    assert len(refreshed.recommendations) == 5
+    more = _more(orchestrator, refreshed)
+    _assert_one_ranking(more.recommendations)
+
+
+def test_refresh_keeps_a_current_feed_untouched(system_temp_dir):
+    orchestrator = _orchestrator(system_temp_dir)
+    initial = _refresh(orchestrator, None)
+    again = _refresh(orchestrator, initial)
+
+    assert again.user_stats["feed_refresh"] == "current"
+    # No recommendations: saving it keeps the feed and its ranking as they were.
+    assert again.recommendations == ()
+    saved = ResultService(root_override=system_temp_dir / "app-data")
+    profile_id = orchestrator._profiles.resolve_profile("fixture-user").profile_id
+    saved.save(profile_id, initial)
+    merged = saved.save_merged(profile_id, again)
+    assert [item.ranking_id for item in merged.recommendations] == [
+        item.ranking_id for item in initial.recommendations
+    ]
+    _more(orchestrator, merged)   # still continuable
+
+
+def test_refresh_rebuilds_when_the_synced_list_changed(system_temp_dir):
+    completed = {"frame": _completed()}
+    orchestrator = PipelineOrchestrator(
+        anime_data=AnimeDataService(
+            top_fetcher=lambda **_kwargs: _catalogue(),
+            completed_fetcher=lambda *_args, **_kwargs: completed["frame"],
+        ),
+        profiles=ProfileService(root_override=system_temp_dir / "app-data", clock=lambda: NOW),
+        recommendations=RecommendationService(),
+        storage=CsvStorage(),
+        access_token_provider=lambda: "fake-access-token",
+        clock=lambda: NOW,
+    )
+    initial = _refresh(orchestrator, None)
+    newly_completed = _completed().iloc[[0]].assign(
+        **{"Anime ID": 509, "Title": "Catalogue 09", "User Score": 8}
+    )
+    completed["frame"] = pd.concat([_completed(), newly_completed], ignore_index=True)
+
+    refreshed = _refresh(orchestrator, initial)
+    assert refreshed.user_stats["feed_refresh"] == "inputs-changed"
+    assert refreshed.recommendations[0].ranking_id != initial.recommendations[0].ranking_id
+    assert 509 not in {item.anime.mal_id for item in refreshed.recommendations}
+
+
+def test_refresh_rebuilds_when_a_different_engine_would_rank(system_temp_dir):
+    class NewerHeuristic(HeuristicRankingEngine):
+        engine_version = "2"
+
+    initial = _refresh(_orchestrator(system_temp_dir), None)
+    upgraded = _orchestrator(system_temp_dir, RecommendationService(ranker=NewerHeuristic()))
+    refreshed = _refresh(upgraded, initial)
+
+    assert refreshed.user_stats["feed_refresh"] == "engine-changed"
+    _more(upgraded, refreshed)   # the rebuilt feed is the new engine's ranking
+
+
+def test_refresh_rebuilds_a_feed_that_predates_ranking_snapshots(system_temp_dir):
+    from dataclasses import replace
+
+    orchestrator = _orchestrator(system_temp_dir)
+    current = _refresh(orchestrator, None)
+    legacy = replace(current, recommendations=tuple(
+        replace(item, ranking_id=None) for item in current.recommendations
+    ))
+    assert _refresh(orchestrator, legacy).user_stats["feed_refresh"] == "inputs-changed"
+
+
+def test_the_api_accepts_refresh_as_a_feed_writing_operation(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from AniRec.api.app import FEED_WRITING_KINDS, SUPPORTED_KINDS, WEB_FEED_BATCH, create_app
+
+    assert "refresh" in SUPPORTED_KINDS and "refresh" in FEED_WRITING_KINDS
+    assert WEB_FEED_BATCH == 50
+    with TestClient(create_app(root_override=str(tmp_path))) as client:
+        # No active profile: refused as a state conflict, not as an unknown kind.
+        response = client.post("/api/operations/refresh", json={}, headers={"Origin": "http://127.0.0.1:5173"})
+    assert response.status_code == 409
+
+
+def _mutable_orchestrator(root, completed, recommendations=None):
+    return PipelineOrchestrator(
+        anime_data=AnimeDataService(
+            top_fetcher=lambda **_kwargs: _catalogue(),
+            completed_fetcher=lambda *_args, **_kwargs: completed["frame"],
+        ),
+        profiles=ProfileService(root_override=root / "app-data", clock=lambda: NOW),
+        recommendations=recommendations or RecommendationService(),
+        storage=CsvStorage(),
+        access_token_provider=lambda: "fake-access-token",
+        clock=lambda: NOW,
+    )
+
+
+def _with_community_columns(frame, drift=0):
+    # Real MAL rows carry community fields that move every day.
+    return frame.assign(
+        **{
+            "Mean Score": [7.1 + (index % 5) / 10 + drift / 100 for index in range(len(frame))],
+            "Scoring Users": [100_000 + index * 7 + drift for index in range(len(frame))],
+        }
+    )
+
+
+def test_refresh_ignores_daily_community_drift_in_the_list(system_temp_dir):
+    completed = {"frame": _with_community_columns(_completed())}
+    orchestrator = _mutable_orchestrator(system_temp_dir, completed)
+    initial = _refresh(orchestrator, None)
+
+    completed["frame"] = _with_community_columns(_completed(), drift=3)
+    again = _refresh(orchestrator, initial)
+
+    assert again.user_stats["feed_refresh"] == "current"
+    assert again.recommendations == () and again.started_at is None
+
+
+def test_refresh_rebuilds_when_the_reader_rescored_a_title(system_temp_dir):
+    completed = {"frame": _with_community_columns(_completed())}
+    orchestrator = _mutable_orchestrator(system_temp_dir, completed)
+    initial = _refresh(orchestrator, None)
+
+    rescored = _with_community_columns(_completed())
+    rescored.loc[0, "User Score"] = 1 if rescored.loc[0, "User Score"] != 1 else 10
+    completed["frame"] = rescored
+    assert _refresh(orchestrator, initial).user_stats["feed_refresh"] == "inputs-changed"
+
+
+def test_a_refresh_rebuild_ranks_exactly_as_a_full_run(system_temp_dir):
+    """Taste from real ratings, fresh similar-viewer and franchise signals."""
+    rebuilt = _refresh(_graph_orchestrator(system_temp_dir / "refresh"), None, count=6)
+    full = _graph_orchestrator(system_temp_dir / "full").run_full("fixture-user", SETTINGS)
+
+    def ranking(result):
+        return [(item.anime.mal_id, item.model_rank, item.ranked_candidate_count)
+                for item in result.recommendations]
+
+    assert ranking(rebuilt) == ranking(full)
+    assert [(stat.genre, stat.importance_score) for stat in rebuilt.genre_stats] == [
+        (stat.genre, stat.importance_score) for stat in full.genre_stats
+    ]
+
+
+def test_engine_identity_names_the_model_before_it_has_ranked(system_temp_dir):
+    """A restart must not look like a model change (the version was "unloaded")."""
+    engine = OnnxSequenceRankingEngine(_bundle(system_temp_dir, 12), session_factory=lambda _path: None)
+    service = RecommendationService(ranker=FallbackRankingEngine(engine, HeuristicRankingEngine()))
+
+    assert service.engine_identity() == ("sasrec-onnx", "abcdef123456")
+
+
+# -- refresh review (D-018): engine identity and unavailable history --------
+
+class _DecliningPreferred:
+    """A preferred engine that loads, then declines this reader, so the
+    fallback ranks. Mirrors a sequence model with no usable history."""
+
+    engine_id = "declining-model"
+    feature_schema_version = "test"
+
+    def __init__(self, version="v1", requires_history=False):
+        self.engine_version = version
+        self.requires_user_history = requires_history
+
+    def eligibility_context(self):
+        from AniRec.scoring.eligibility import EligibilityContext
+        return EligibilityContext()
+
+    def rank(self, _request):
+        from AniRec.scoring.engines import RankingEngineUnavailable
+        raise RankingEngineUnavailable("This reader has no usable history.")
+
+
+def _declining_service(version="v1", requires_history=False):
+    return RecommendationService(ranker=FallbackRankingEngine(
+        _DecliningPreferred(version, requires_history), HeuristicRankingEngine()
+    ))
+
+
+def test_a_fallback_feed_is_current_while_the_same_preferred_engine_declines(system_temp_dir):
+    """A per-reader fallback must not read as an engine change on every refresh."""
+    orchestrator = _orchestrator(system_temp_dir, _declining_service())
+    initial = _refresh(orchestrator, None)
+    assert initial.user_stats["ranking_fallback_used"] == 1
+
+    again = _refresh(orchestrator, initial)
+    assert again.user_stats["feed_refresh"] == "current"
+    assert again.recommendations == ()
+
+
+def test_a_fallback_feed_rebuilds_when_the_preferred_engine_changes(system_temp_dir):
+    initial = _refresh(_orchestrator(system_temp_dir, _declining_service("v1")), None)
+    upgraded = _orchestrator(system_temp_dir, _declining_service("v2"))
+    assert _refresh(upgraded, initial).user_stats["feed_refresh"] == "engine-changed"
+
+
+def test_a_fallback_feed_rebuilds_once_the_preferred_engine_can_load(system_temp_dir):
+    """D-018: a feed the fallback ranked because the model could not load is
+    rebuilt when it can."""
+    from AniRec.scoring.engines import RankingEngineUnavailable
+
+    class Unloadable(_DecliningPreferred):
+        def eligibility_context(self):
+            raise RankingEngineUnavailable("No bundle installed.")
+
+    unloadable = RecommendationService(ranker=FallbackRankingEngine(Unloadable(), HeuristicRankingEngine()))
+    initial = _refresh(_orchestrator(system_temp_dir, unloadable), None)
+    assert _refresh(_orchestrator(system_temp_dir, unloadable), initial).user_stats["feed_refresh"] == "current"
+    loadable = _orchestrator(system_temp_dir, _declining_service())
+    assert _refresh(loadable, initial).user_stats["feed_refresh"] == "engine-changed"
+
+
+def _refresh_history():
+    return pd.DataFrame([
+        {"Anime ID": mal_id, "Status": "completed", "User Score": score,
+         "Episodes Watched": 12, "Is Rewatching": False,
+         "Updated At": f"2026-09-{day:02d}T10:00:00+00:00"}
+        for day, (mal_id, score) in enumerate([(101, 10), (102, 9), (103, 7)], start=1)
+    ])
+
+
+def test_a_failed_history_fetch_keeps_the_feed_instead_of_rebuilding_without_history(system_temp_dir):
+    """A transient failure is not a changed list: it must not swap the feed
+    for one ranked without the reader's history."""
+    from AniRec.errors import NetworkError
+
+    history = {"fetch": _refresh_history}
+    def fetch_history(*_args, **_kwargs):
+        return history["fetch"]()
+
+    orchestrator = PipelineOrchestrator(
+        anime_data=AnimeDataService(
+            top_fetcher=lambda **_kwargs: _catalogue(),
+            completed_fetcher=lambda *_args, **_kwargs: _completed(),
+            history_fetcher=fetch_history,
+        ),
+        profiles=ProfileService(root_override=system_temp_dir / "app-data", clock=lambda: NOW),
+        recommendations=_declining_service(requires_history=True),
+        storage=CsvStorage(),
+        access_token_provider=lambda: "fake-access-token",
+        clock=lambda: NOW,
+    )
+    initial = _refresh(orchestrator, None)
+    directory = orchestrator._profiles.directory(orchestrator._profiles.resolve_profile("fixture-user").profile_id)
+    saved_history = (directory / "user_history.csv").read_bytes()
+
+    def fail():
+        raise NetworkError("offline")
+    history["fetch"] = fail
+    again = _refresh(orchestrator, initial)
+
+    assert again.user_stats["feed_refresh"] == "current"
+    assert again.recommendations == ()
+    assert (directory / "user_history.csv").read_bytes() == saved_history
+
+
+def test_the_refresh_digest_survives_a_csv_round_trip_of_missing_values(system_temp_dir):
+    """Fetched frames and the same frames read back from CSV digest alike,
+    including missing timestamps (NaT) and nullable integers (<NA>)."""
+    directory = system_temp_dir / "digest"
+    directory.mkdir()
+    for name in ("genre_importance.csv", "recommendation_candidates.csv"):
+        (directory / name).write_text("a\n1\n", encoding="utf-8")
+    history = pd.DataFrame({
+        "Anime ID": pd.array([1, 2], dtype="Int64"),
+        "Status": ["completed", None],
+        "User Score": pd.array([8, pd.NA], dtype="Int64"),
+        "Episodes Watched": [12.0, float("nan")],
+        "Is Rewatching": [False, True],
+        "Updated At": pd.to_datetime(["2026-09-01T10:00:00+00:00", None], utc=True),
+    })
+    completed = history[["Anime ID", "Status", "User Score"]]
+    frames = {"completed_anime.csv": completed, "user_history.csv": history}
+    CsvStorage().write_batch((
+        (completed, directory / "completed_anime.csv"),
+        (history, directory / "user_history.csv"),
+    ))
+    orchestrator = _orchestrator(system_temp_dir)
+
+    assert orchestrator._user_inputs_digest(directory, frames, None) == orchestrator._ranking_inputs_digest(directory, None)

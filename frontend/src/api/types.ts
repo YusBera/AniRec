@@ -51,6 +51,16 @@ export type ErrorEnvelope = Schemas["ErrorEnvelope"];
 export type SystemState = Schemas["SystemStateResponse"];
 export type OperationSnapshot = Schemas["OperationSnapshotResponse"];
 export type OperationStartRequest = Schemas["OperationStartRequest"];
+export type OperationList = Schemas["OperationListResponse"];
+export type MalImport = Schemas["MalImportResponse"];
+/** The signed-in account (D-021); `null` when signed out. */
+export type AccountSummary = Schemas["AccountSummary"];
+export type AccountResult = Schemas["AccountResponse"];
+export type PasswordResetResult = Schemas["PasswordResetResponse"];
+/** The lists an account has imported, and the one shown (D-021). */
+export type AccountImports = Schemas["ImportsResponse"];
+/** The reader's own recommendation preferences (D-021). */
+export type PreferencesWrite = Schemas["PreferencesWriteRequest"];
 
 /** The lifecycle states an operation reports. Drawn from the schema's own union. */
 export type OperationState = OperationSnapshot["state"];

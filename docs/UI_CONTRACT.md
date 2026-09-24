@@ -33,9 +33,29 @@ only so older clients still parse. `personal_match_text` and
   ranking inputs changed since (a MAL sync, different feedback, a changed
   "Include NSFW anime" or minimum MAL score setting, rebuilt candidates or
   taste profile, or a different engine or catalogue), the "more" operation
-  fails with a message containing "Generate a new feed". Offer that action;
-  never mix two rankings in one feed. A new full generation starts a new
-  ranking.
+  fails with a message containing "Generate a new feed". Never mix two
+  rankings in one feed. A new full generation starts a new ranking.
+
+### Refresh and pages (D-018)
+
+- **Refresh:** `POST /api/operations/refresh` with `{count: 50}`.
+  - It syncs the list and regenerates only when needed. The result's
+    `user_stats.feed_refresh` is `"missing"`, `"inputs-changed"`,
+    `"engine-changed"` or `"current"`; `"current"` changed nothing.
+  - Start it once per session for each profile the service reports active,
+    and from the small Refresh button. That includes a profile with no feed
+    yet, which is served the sample library until its first refresh. Never
+    start it when there is no profile.
+  - An `auth_error` is shown by its title and description only. Its
+    suggested fix is to reconnect an account, which the web client cannot do
+    (D-017).
+- **Pages:** show 50 per page. "Next page" on the last loaded page starts
+  `POST /api/operations/more-recommendations` with `{count: 50}`, then lands
+  on the first new page after the feed reloads.
+- **Stale feed:** when "more" fails with "Generate a new feed", start one
+  refresh instead of offering a button.
+- `refresh` is a feed-writing operation: it never overlaps `sync`,
+  `recommendation` or `more-recommendations` for the same profile.
 - Every row carries `ranking_id`, the ranking its `fit_rank` comes from.
   Compare or sort `fit_rank` only between rows that share it.
 - `fit_pool_size` differs by engine. The sequence model ranks thousands of
@@ -115,7 +135,12 @@ mapped to plain text:
 
 Never substitute another engine's explanation.
 
-### Likes and dislikes (D-013)
+### Likes and dislikes (D-013, revised by D-015)
+
+**No vote controls on Discover cards or in the inspector.** D-015 moves
+feedback to the Library, after watching. The Library-side reporting and the
+observed-on-return path are later work. The endpoint below stays, and so do
+the votes already collected under D-013.
 
 The backend collects votes. They do not change recommendations yet, so the UI
 must not say or imply that they do: no "we'll show you more like this".

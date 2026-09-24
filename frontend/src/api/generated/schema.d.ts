@@ -6,6 +6,210 @@
  * Verify in CI with: npm run verify:api-types
  */
 export interface paths {
+    "/api/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Account */
+        get: operations["read_account_api_account_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Account
+         * @description Delete the account and every list it owns (docs/ACCOUNTS.md).
+         */
+        post: operations["delete_account_api_account_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export
+         * @description Everything this account holds, as one JSON file for its reader.
+         */
+        get: operations["export_api_account_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Imports */
+        get: operations["list_imports_api_account_imports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/imports/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Import
+         * @description Show another of this account's lists. Only its own (D-021).
+         */
+        post: operations["choose_import_api_account_imports_active_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Password */
+        post: operations["change_password_api_account_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Password Reset
+         * @description Queue a reset link for the email; the same answer whether or not an
+         *     account uses it (docs/ACCOUNTS.md, "Password reset by email").
+         */
+        post: operations["request_password_reset_api_account_password_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Password Reset
+         * @description Set a new password from an emailed token. Every session of the
+         *     account ends; this browser is not signed in.
+         */
+        post: operations["confirm_password_reset_api_account_password_reset_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register */
+        post: operations["register_api_account_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sign In */
+        post: operations["sign_in_api_account_sign_in_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/sign-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sign Out */
+        post: operations["sign_out_api_account_sign_out_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/discover/activity": {
         parameters: {
             query?: never;
@@ -97,6 +301,23 @@ export interface paths {
         get: operations["health_api_health_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/onboarding/mal-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Mal Profile */
+        post: operations["import_mal_profile_api_onboarding_mal_profile_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -284,6 +505,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Reader Preferences
+         * @description Any account's own preferences; the owner's are the installation's.
+         */
+        post: operations["save_reader_preferences_api_workspace_preferences_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace/profile": {
         parameters: {
             query?: never;
@@ -323,6 +564,49 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountResponse */
+        AccountResponse: {
+            account?: components["schemas"]["AccountSummary"] | null;
+            /**
+             * Moved Imports
+             * @description Lists a guest brought along when signing in to this account.
+             * @default 0
+             */
+            moved_imports: number;
+            /**
+             * Reason
+             * @description invalid-email, weak-password, password-too-long, email-taken, wrong-credentials, too-many-attempts, already-signed-in, busy or unavailable.
+             */
+            reason?: string | null;
+        };
+        /**
+         * AccountSummary
+         * @description The signed-in account, as the reader may see it (D-021).
+         */
+        AccountSummary: {
+            /**
+             * Email
+             * @description Registered accounts only.
+             */
+            email?: string | null;
+            /** Has Import */
+            has_import: boolean;
+            /**
+             * Installation Owner
+             * @description Whether this account may change installation settings.
+             */
+            installation_owner: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "guest" | "registered";
+        };
+        /** ActiveImportRequest */
+        ActiveImportRequest: {
+            /** Profile Id */
+            profile_id: string;
+        };
         /** ActivityEvent */
         ActivityEvent: {
             /**
@@ -530,6 +814,18 @@ export interface components {
             label: string;
             /** Value */
             value: number;
+        };
+        /** Credentials */
+        Credentials: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** DeleteRequest */
+        DeleteRequest: {
+            /** Password */
+            password?: string | null;
         };
         /** EraBucket */
         EraBucket: {
@@ -959,6 +1255,37 @@ export interface components {
              */
             entries: components["schemas"]["TitleVerdict"][];
         };
+        /** ImportSummary */
+        ImportSummary: {
+            /**
+             * Kept On Delete
+             * @description Deleting the account keeps this list for the desktop tool rather than deleting it.
+             * @default false
+             */
+            kept_on_delete: boolean;
+            /** Profile Id */
+            profile_id: string;
+            /** Username */
+            username: string;
+        };
+        /**
+         * ImportsResponse
+         * @description The lists this account has imported, and which one is shown.
+         */
+        ImportsResponse: {
+            /** Active Profile Id */
+            active_profile_id?: string | null;
+            /**
+             * Imports
+             * @default []
+             */
+            imports: components["schemas"]["ImportSummary"][];
+            /**
+             * Reason
+             * @description signed-out, not-owner or unavailable.
+             */
+            reason?: string | null;
+        };
         /** LibraryReadResponse */
         LibraryReadResponse: {
             /** Profile Id */
@@ -988,6 +1315,26 @@ export interface components {
             show_hidden: boolean;
             /** Watch Later Mal Ids */
             watch_later_mal_ids: number[];
+        };
+        /** MalImportRequest */
+        MalImportRequest: {
+            /**
+             * Username
+             * @description A MyAnimeList username or https://myanimelist.net/profile/... URL.
+             */
+            username: string;
+        };
+        /**
+         * MalImportResponse
+         * @description The new active profile, or why there is none.
+         */
+        MalImportResponse: {
+            profile?: components["schemas"]["ProfileSummary"] | null;
+            /**
+             * Reason
+             * @description invalid-username, client-id-required, user-not-found, private-list, installation-refused, rate-limited, network, busy or unavailable.
+             */
+            reason?: string | null;
         };
         /**
          * OperationAcceptedResponse
@@ -1053,6 +1400,45 @@ export interface components {
             target?: string | null;
             /** Username */
             username?: string | null;
+        };
+        /** PasswordChange */
+        PasswordChange: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
+        /** PasswordResetConfirm */
+        PasswordResetConfirm: {
+            /** New Password */
+            new_password: string;
+            /** Token */
+            token: string;
+        };
+        /** PasswordResetRequest */
+        PasswordResetRequest: {
+            /** Email */
+            email: string;
+        };
+        /** PasswordResetResponse */
+        PasswordResetResponse: {
+            /**
+             * Reason
+             * @description Never depends on whether an account uses the email. Asking: reset-unavailable, invalid-email, too-many-attempts or busy. Confirming: invalid-token, weak-password, password-too-long, too-many-attempts, busy or unavailable.
+             */
+            reason?: string | null;
+        };
+        /**
+         * PreferencesWriteRequest
+         * @description The reader's own recommendation preferences (docs/ACCOUNTS.md).
+         */
+        PreferencesWriteRequest: {
+            /** Adventurousness */
+            adventurousness: number;
+            /** Include Nsfw */
+            include_nsfw: boolean;
+            /** Minimum Mal Score */
+            minimum_mal_score: number | null;
         };
         /**
          * ProfileIdentity
@@ -1363,6 +1749,18 @@ export interface components {
             background_sync: boolean;
             /** Batch Size */
             batch_size: number;
+            /**
+             * Can Edit
+             * @description Whether this account owns the installation and may save these settings (D-021).
+             * @default false
+             */
+            can_edit: boolean;
+            /**
+             * Can Edit Preferences
+             * @description Whether this reader may save their own adventurousness, minimum score and NSFW.
+             * @default false
+             */
+            can_edit_preferences: boolean;
             /** Client Id Present */
             client_id_present: boolean;
             /**
@@ -1462,12 +1860,19 @@ export interface components {
         };
         /** SystemStateResponse */
         SystemStateResponse: {
+            account?: components["schemas"]["AccountSummary"] | null;
             /** Active Operations */
             active_operations: components["schemas"]["OperationSnapshotResponse"][];
             /** Mal Client Id Present */
             mal_client_id_present: boolean;
             /** Needs Setup */
             needs_setup: boolean;
+            /**
+             * Password Reset Available
+             * @description Whether this installation can email a password reset link (mail and a public address are set up).
+             * @default false
+             */
+            password_reset_available: boolean;
             profile: components["schemas"]["ProfileSummary"] | null;
         };
         /**
@@ -1598,6 +2003,317 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    read_account_api_account_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+        };
+    };
+    delete_account_api_account_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_api_account_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_imports_api_account_imports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportsResponse"];
+                };
+            };
+        };
+    };
+    choose_import_api_account_imports_active_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActiveImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_api_account_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_password_reset_api_account_password_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_password_reset_api_account_password_reset_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_api_account_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Credentials"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sign_in_api_account_sign_in_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Credentials"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sign_out_api_account_sign_out_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+        };
+    };
     activity_status_api_discover_activity_get: {
         parameters: {
             query?: never;
@@ -1802,6 +2518,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    import_mal_profile_api_onboarding_mal_profile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MalImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MalImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2081,6 +2830,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecommendationViewModelResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_reader_preferences_api_workspace_preferences_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferencesWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsReadResponse"];
                 };
             };
             /** @description Validation Error */

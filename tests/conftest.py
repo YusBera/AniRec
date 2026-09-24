@@ -35,6 +35,13 @@ def isolated_default_appdata(monkeypatch):
         yield root
 
 
+@pytest.fixture(autouse=True)
+def test_client_host(monkeypatch):
+    """TestClient's default Host is ``testserver``; the API only answers
+    loopback names and the ones this variable adds (``request_guard.py``)."""
+    monkeypatch.setenv("ANIREC_ALLOWED_HOSTS", "testserver")
+
+
 @pytest.fixture
 def completed_anime_df() -> pd.DataFrame:
     return pd.DataFrame(

@@ -12,13 +12,22 @@ from .paths import logs_dir
 
 REDACTION_MARKER = "[REDACTED]"
 _REDACTION_PATTERNS = (
+    # A quoted value, whole: a password may contain spaces (D-021).
+    (
+        re.compile(
+            r"(?i)([\"']?(?:password|password_hash|anirec_session|access_token|refresh_token"
+            r"|client_secret|token)[\"']?\s*[:=]\s*\")(?:[^\"\\]|\\.)*\""
+        ),
+        rf'\1{REDACTION_MARKER}"',
+    ),
     (
         re.compile(r"(?i)\b(Bearer)\s+[A-Za-z0-9._~+/=-]+"),
         rf"\1 {REDACTION_MARKER}",
     ),
     (
         re.compile(
-            r"(?i)([\"']?(?:access_token|refresh_token|client_secret|authorization_code|id_token)"
+            r"(?i)([\"']?(?:access_token|refresh_token|client_secret|authorization_code|id_token"
+            r"|password|password_hash|anirec_session|token)"
             r"[\"']?\s*[:=]\s*[\"']?)([^&,\s\"'}]+)"
         ),
         rf"\1{REDACTION_MARKER}",
@@ -27,6 +36,11 @@ _REDACTION_PATTERNS = (
         re.compile(
             r"(?i)([?&](?:code|state|access_token|refresh_token|client_secret|token)=)[^&\s]+"
         ),
+        rf"\1{REDACTION_MARKER}",
+    ),
+    # A whole Cookie or Set-Cookie header: it carries the session (D-021).
+    (
+        re.compile(r"(?i)\b((?:set-)?cookie[\"']?\s*[:=]\s*)[^\n]+"),
         rf"\1{REDACTION_MARKER}",
     ),
 )

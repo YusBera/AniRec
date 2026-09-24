@@ -29,14 +29,15 @@ from AniRec.api.operations import (  # noqa: E402
     OperationState,
 )
 from AniRec.errors import NetworkError  # noqa: E402
+from account_helpers import sign_in_reader  # noqa: E402
 
 
-def _activate_local_profile(app, username="someone"):
-    profiles = app.state.container.profiles
+def _activate_local_profile(client, username="someone"):
+    profiles = client.app.state.container.profiles
     profile = profiles.create_profile(username)
     directory = profiles.directory(profile.profile_id, create=True)
     (directory / "profile.json").write_text(json.dumps(profile.to_dict()), encoding="utf-8")
-    profiles.set_active(profile.profile_id)
+    sign_in_reader(client, profile.profile_id)
     return profile
 
 
@@ -162,18 +163,18 @@ def test_feed_writing_operations_never_overlap_for_one_profile(tmp_path):
     """A generate and a "more" for one profile would race to save the feed."""
     registry = OperationRegistry()
     app = create_app(root_override=str(tmp_path), registry=registry)
-    profile = _activate_local_profile(app)
     release = threading.Event()
 
     def blocking(_token, _report):
         release.wait(5)
         return {"done": True}
 
-    registry.start(
-        f"more-recommendations:{profile.profile_id}",
-        "more-recommendations", profile.profile_id, blocking,
-    )
     with TestClient(app) as client:
+        profile = _activate_local_profile(client)
+        registry.start(
+            f"more-recommendations:{profile.profile_id}",
+            "more-recommendations", profile.profile_id, blocking,
+        )
         for kind in ("recommendation", "sync"):
             response = client.post(
                 f"/api/operations/{kind}",
@@ -273,11 +274,14 @@ def test_events_are_sequenced_so_a_reconnect_can_be_reconciled():
 
 def test_the_sse_route_emits_named_events(client, tmp_path):
     """A GET on a finished operation must still stream its whole history."""
+    # The stream is only for the account that owns the operation's import.
+    profile = _activate_local_profile(client)
+    key = f"api-test:{profile.profile_id}"
     registry: OperationRegistry = client.app.state.operations
-    registry.start("api-test:someone", "api-test", "someone", lambda _t, _r: {"ok": True})
+    registry.start(key, "api-test", profile.profile_id, lambda _t, _r: {"ok": True})
     registry.shutdown()
 
-    with client.stream("GET", "/api/operations/api-test:someone/events") as response:
+    with client.stream("GET", f"/api/operations/{key}/events") as response:
         assert response.status_code == 200
         assert response.headers["content-type"].startswith("text/event-stream")
         body = "".join(response.iter_text())
@@ -348,7 +352,7 @@ def test_every_error_uses_one_envelope_shape(client):
 
 
 def test_a_vote_round_trips_through_the_real_state_service(client):
-    profile = _activate_local_profile(client.app)
+    profile = _activate_local_profile(client)
     payload = {
         "profile_id": profile.profile_id,
         "mal_id": 1535,
@@ -364,7 +368,7 @@ def test_a_vote_round_trips_through_the_real_state_service(client):
 
 
 def test_sentiment_is_mutually_exclusive_at_the_boundary(client):
-    profile = _activate_local_profile(client.app)
+    profile = _activate_local_profile(client)
     def vote(sentiment):
         return client.post(
             "/api/discover/feedback",

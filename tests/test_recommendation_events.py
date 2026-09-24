@@ -116,13 +116,30 @@ def test_retention_is_bounded(tmp_path, monkeypatch):
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 3
 
 
+def _as_reader(monkeypatch, services, profile):
+    """Sign a reader in whose account owns ``profile`` (D-021); return the cookie."""
+    from AniRec.services.account_service import SESSION_COOKIE
+
+    real = services.profiles.get_profile
+
+    def get_profile(profile_id):
+        if profile_id == profile.profile_id:
+            return profile
+        return real(profile_id)
+
+    monkeypatch.setattr(services.profiles, "get_profile", get_profile)
+    signed = services.accounts.register("reader@example.com", "a long password")
+    services.accounts.add_import(signed.account.account_id, profile.profile_id)
+    return {SESSION_COOKIE: signed.token}
+
+
 def test_api_activity_is_opt_in_and_rejects_stale_or_unknown_items(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from AniRec.api import create_app
     from AniRec.api.container import build_container
     services = build_container(tmp_path)
     profile = SimpleNamespace(profile_id="profile", username="PRIVACY_BAIT")
-    monkeypatch.setattr(services.profiles, "active_profile", lambda: profile)
+    cookies = _as_reader(monkeypatch, services, profile)
     sample = services.samples.load()
     services.results.save(
         "profile",
@@ -135,7 +152,7 @@ def test_api_activity_is_opt_in_and_rejects_stale_or_unknown_items(tmp_path, mon
             },
         ),
     )
-    with TestClient(create_app(container=services)) as client:
+    with TestClient(create_app(container=services), cookies=cookies) as client:
         feed = client.get("/api/discover/feed").json()
         first = feed["recommendations"][0]
         payload = event()
@@ -257,12 +274,9 @@ def test_api_event_is_attributed_to_engine_rank_feed_position_and_selection(tmp_
     from AniRec.api.container import build_container
 
     services = build_container(tmp_path)
-    monkeypatch.setattr(
-        services.profiles, "active_profile",
-        lambda: SimpleNamespace(profile_id="profile", username="someone"),
-    )
+    cookies = _as_reader(monkeypatch, services, SimpleNamespace(profile_id="profile", username="someone"))
     services.results.save("profile", _attributed_result(services.samples.load()))
-    with TestClient(create_app(container=services)) as client:
+    with TestClient(create_app(container=services), cookies=cookies) as client:
         client.post("/api/discover/activity/settings", json={"enabled": True})
         feed = client.get("/api/discover/feed").json()
         second = feed["recommendations"][1]
@@ -347,12 +361,9 @@ def test_a_vote_is_stored_with_when_and_what_was_shown(tmp_path, monkeypatch):
     from AniRec.api.container import build_container
 
     services = build_container(tmp_path)
-    monkeypatch.setattr(
-        services.profiles, "active_profile",
-        lambda: SimpleNamespace(profile_id="profile", username="someone"),
-    )
+    cookies = _as_reader(monkeypatch, services, SimpleNamespace(profile_id="profile", username="someone"))
     services.results.save("profile", _attributed_result(services.samples.load()))
-    with TestClient(create_app(container=services)) as client:
+    with TestClient(create_app(container=services), cookies=cookies) as client:
         feed = client.get("/api/discover/feed").json()
         second = feed["recommendations"][1]
         other = feed["recommendations"][0]
@@ -410,13 +421,10 @@ def test_a_vote_from_a_stale_feed_is_kept_but_not_attributed(tmp_path, monkeypat
     from AniRec.api.container import build_container
 
     services = build_container(tmp_path)
-    monkeypatch.setattr(
-        services.profiles, "active_profile",
-        lambda: SimpleNamespace(profile_id="profile", username="someone"),
-    )
+    cookies = _as_reader(monkeypatch, services, SimpleNamespace(profile_id="profile", username="someone"))
     older = _attributed_result(services.samples.load())
     services.results.save("profile", older)
-    with TestClient(create_app(container=services)) as client:
+    with TestClient(create_app(container=services), cookies=cookies) as client:
         shown = client.get("/api/discover/feed").json()
         target = shown["recommendations"][1]
         # Another client regenerates: the saved feed is now a different ranking.

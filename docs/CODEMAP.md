@@ -16,14 +16,26 @@ file updates the matching row in the same change.
 | `GET|POST|DELETE /api/discover/activity`, `POST /api/discover/activity/settings` | `AniRec/api/app.py` |
 | `GET /api/operations`, `GET|DELETE /api/operations/{id}`, `GET /api/operations/{id}/events` | `AniRec/api/app.py` |
 | `POST /api/operations/{kind}` | `AniRec/api/app.py`, handlers in `_build_handler` |
+| Feed refresh (`refresh` kind: sync, then rebuild only if missing, stale or a different engine; D-018) | `PipelineOrchestrator.run_refresh` / `_refresh_reason` in `AniRec/application/pipeline.py`; `RecommendationService.engine_identity` |
 | `GET /api/workspace/library`, `POST /api/workspace/library/resolve` | `AniRec/api/workspace.py` |
 | `GET /api/workspace/profile` | `AniRec/api/workspace.py` |
 | `GET /api/workspace/compare` | `AniRec/api/workspace.py` |
 | `GET|POST /api/workspace/settings` | `AniRec/api/workspace.py` |
+| `POST /api/onboarding/mal-profile` (username in, the account's new import or a `reason` out; creates a guest account when there is none, D-021) | `AniRec/api/onboarding.py` |
+| `GET /api/account`, `POST /api/account/{register,sign-in,sign-out}` (D-021) | `AniRec/api/accounts.py` |
+| `GET /api/account/imports`, `POST /api/account/imports/active` (switch between an account's own lists) | `AniRec/api/accounts.py` |
+| `POST /api/account/password`, `POST /api/account/delete`, `GET /api/account/export` (account management) | `AniRec/api/accounts.py` |
+| `POST /api/account/password-reset`, `POST /api/account/password-reset/confirm` (reset by email, phase 5); `password_reset_available` in `/api/system/state` | `AniRec/api/accounts.py`, `AniRec/services/password_reset_service.py` |
+| Account deletion on disk, the hourly sweep (pending deletions, stray web lists, guest pruning) | `AniRec/api/account_maintenance.py` |
+| `POST /api/workspace/preferences` (the reader's own adventurousness, minimum score, NSFW); `reader_pipeline` merges them for every operation | `AniRec/api/workspace.py`, `AniRec/api/accounts.py` |
+| Per-visitor limits (new accounts, sign-in failures, MyAnimeList budget) and trusted proxies (`ANIREC_TRUSTED_PROXIES`) | `AniRec/api/limits.py` |
+| Reader scope: session cookie to account to owned import, used by every reader route (D-021) | `resolve_scope` in `AniRec/api/accounts.py` |
+| Operator console: `python -m AniRec.api.accounts owner <email>` names the installation owner and hands over unowned imports | `AniRec/api/accounts.py` |
 
 Request and response models: `AniRec/api/models.py`. Error envelopes and
-exception handlers: `AniRec/api/app.py`. Token and origin enforcement:
-`AniRec/api/security.py`. Dependency wiring: `AniRec/api/container.py`.
+exception handlers: `AniRec/api/app.py`. Token enforcement:
+`AniRec/api/security.py`. Host and Origin checks on every `/api/` request:
+`AniRec/api/request_guard.py`. Dependency wiring: `AniRec/api/container.py`.
 OpenAPI export for type generation: `AniRec/api/openapi_export.py`.
 
 ---
@@ -71,8 +83,11 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Explicit taste feedback | `AniRec/services/taste_feedback_service.py` |
 | Result persistence | `AniRec/services/result_service.py` |
 | Sample library and demonstration payloads | `AniRec/services/sample_data_service.py` |
-| First-run flow | `AniRec/services/onboarding_service.py` |
+| First-run flow; public MyAnimeList import by username into an account (D-020, D-021) | `AniRec/services/onboarding_service.py` |
+| Accounts, sessions, password hashing, import ownership, installation owner, reset tokens (D-021) | `AniRec/services/account_service.py` |
+| Password reset: queues the mail work, builds the link from `ANIREC_PUBLIC_URL` | `AniRec/services/password_reset_service.py` |
 | Cover image fetch and cache | `AniRec/services/cover_image_service.py` |
+| Cover addresses for picks the installed catalogue has none for; cached in `cache/cover_urls.json` (shared, public metadata), filled when an operation saves a feed | `AniRec/services/cover_url_service.py` |
 | Folder and cache management | `AniRec/services/data_management_service.py` |
 | Connection test | `AniRec/services/api_connection_service.py` |
 
@@ -86,6 +101,7 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | CSV read/write and batch transactions | `AniRec/infrastructure/csv_storage.py` |
 | JSON read/write | `AniRec/infrastructure/json_storage.py` |
 | Log redaction set | `AniRec/infrastructure/logging_config.py` |
+| Sending email: SMTP settings from `ANIREC_SMTP_*`, the background mail outbox | `AniRec/infrastructure/mailer.py` |
 | Data root and resource paths | `AniRec/infrastructure/paths.py` |
 | Single-instance lock | `AniRec/infrastructure/single_instance.py` |
 | OAuth redirect handling | `AniRec/infrastructure/oauth_callback.py` |
@@ -99,15 +115,24 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Concern | File |
 | --- | --- |
 | Entry point and provider wiring | `frontend/src/main.tsx` |
-| Workspace shell, hash routing, nav | `frontend/src/workspace/Workspace.tsx` |
+| Workspace shell, hash routing, sample banner | `frontend/src/workspace/Workspace.tsx` |
+| Top bar: tabs, notifications bell, account menu (D-019) | `frontend/src/workspace/TopBar.tsx` |
+| Service polling and notifications (polls `/api/system/state`, `/api/operations`) | `frontend/src/workspace/Shell.tsx` |
+| First-time setup pop-up: MyAnimeList username, AniList/AniDB coming soon, newcomer path, look around (D-020) | `frontend/src/workspace/FirstRun.tsx` |
+| Create account / sign in / ask for a reset link dialog (D-021) | `frontend/src/workspace/AccountDialog.tsx` |
+| Settings → ACCOUNT: change password, reset link by email, download my data, delete account (D-021) | `frontend/src/workspace/AccountSection.tsx` |
+| `#/reset-password` page reached from the emailed link; takes the token out of the address | `frontend/src/workspace/ResetPasswordPage.tsx` |
 | My Library | `frontend/src/workspace/LibraryPage.tsx` |
-| Profile | `frontend/src/workspace/ProfilePage.tsx`, `ProfileSections.tsx` |
+| Profile (reader block, THE READING, fact board, instrument) | `frontend/src/workspace/ProfilePage.tsx`, `ProfileSections.tsx`, `profileFacts.ts` |
 | Compare | `frontend/src/workspace/ComparePage.tsx` |
 | Settings | `frontend/src/workspace/SettingsPage.tsx` |
-| Shared workspace pieces (read state, poster, scores) | `frontend/src/workspace/common.tsx` |
-| Discover feed, votes, operations | `frontend/src/discover/DiscoverPage.tsx` |
-| Recommendation card | `frontend/src/discover/RecommendationCard.tsx` |
-| Inspector dialog | `frontend/src/discover/RecommendationDetails.tsx` |
+| Shared workspace pieces (read state, poster, channel heading, paging) | `frontend/src/workspace/common.tsx` |
+| Discover feed, decisions, operations | `frontend/src/discover/DiscoverPage.tsx` |
+| Discover header (channel and STATE; D-017 lists what is not ported) | `frontend/src/discover/DiscoverHeader.tsx` |
+| Recommendation card, poster art, MAL link | `frontend/src/discover/RecommendationCard.tsx` |
+| Cards / List / Table views and toggle | `frontend/src/discover/FeedViews.tsx` |
+| Score Inspector | `frontend/src/discover/ScoreInspector.tsx` |
+| Interface icons (copies of `AniRec/gui/resources/icons/ui`) | `frontend/src/assets/Icon.tsx`, `assets/icons/`, `assets/shell/` |
 | Score rail and breakdown | `frontend/src/discover/ScoreRail.tsx` |
 | Filters and sort controls | `frontend/src/discover/Controls.tsx`, `filtering.ts` |
 | Empty, error, loading states | `frontend/src/discover/states.tsx` |
@@ -143,7 +168,13 @@ Per-account directory under the data root:
 | activity database | `recommendation_event_service.py` | Opt-in local activity events |
 
 Application-wide settings, including credentials, live in `config/settings.json`
-under the data root. No CSV carries a schema version; changing a column layout
+under the data root. Accounts, sessions (SHA-256 digests only), import
+ownership, reader preferences, pending deletions, password reset tokens
+(SHA-256 digests only) and the installation owner live in
+`config/accounts.sqlite3`
+(`account_service.py`, D-021). The per-import directories above are named
+`imp_<hex>` for web imports; `profile_state.json` (the machine-wide active
+profile) is used only by the deprecated desktop tool. No CSV carries a schema version; changing a column layout
 has no migration path today.
 
 ---
@@ -151,8 +182,9 @@ has no migration path today.
 ## Deprecated
 
 `AniRec/gui/` and `AniRec/gui_main.py` are the retired PySide application. They
-still call the same service layer. Do not add surfaces there, and do not treat
-their layout as authority for web work. See `docs/DECISIONS.md` D-004.
+still call the same service layer. Do not add surfaces there (D-004). Their
+design is the reference for web surfaces (D-016). For wording, see
+`AniRec/gui/texts.py`.
 
 ---
 

@@ -47,16 +47,36 @@ export function Genres({ genres }: { genres: string[] }) {
   return <div className="workspace-genres" aria-label="Genres">{genres.map(genre => <span className="workspace-genre" key={genre}>{genre}</span>)}</div>;
 }
 
-export const PAGE_SIZE = 20;
+/** A page's name, as any site titles a page (D-019): no "X // Y" legend. */
+export function PageHeading({ name }: { name: string }) {
+  return <h1 className="page-heading" tabIndex={-1}>{name}</h1>;
+}
 
-export function PageControls({ page, total, onPageChange, label }: {
+/** 50 per page, the same batch a web refresh generates (D-018). */
+export const PAGE_SIZE = 50;
+
+/**
+ * Previous / next over what is loaded. With `onLoadMore`, "Next page" on the
+ * last loaded page continues the same ranking with the next batch instead of
+ * stopping; that replaced the "Recommend 5 more" button (D-018).
+ */
+export function PageControls({ page, total, onPageChange, label, onLoadMore, loadMoreUnavailable = null, loadingMore = false }: {
   page: number; total: number; onPageChange: (page: number) => void; label: string;
+  onLoadMore?: () => void; loadMoreUnavailable?: string | null; loadingMore?: boolean;
 }) {
-  const pages = Math.ceil(total / PAGE_SIZE);
-  if (pages <= 1) return null;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const last = page >= pages - 1;
+  const continues = last && !!onLoadMore;
+  // Nothing shown: the empty state carries the action instead.
+  if (total === 0 || (pages <= 1 && !onLoadMore)) return null;
   return <nav className="page-controls" aria-label={`${label} pages`}>
     <button type="button" className="btn" aria-label={`Previous ${label.toLowerCase()} page`} disabled={page === 0} onClick={() => onPageChange(page - 1)}>Previous page</button>
-    <span role="status">Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total} {label.toLowerCase()} · Page {page + 1} of {pages}</span>
-    <button type="button" className="btn" aria-label={`Next ${label.toLowerCase()} page`} disabled={page >= pages - 1} onClick={() => onPageChange(page + 1)}>Next page</button>
+    <span role="status">{loadingMore ? `Loading the next ${PAGE_SIZE} ${label.toLowerCase()}…`
+      : `Showing ${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total} ${label.toLowerCase()} · Page ${page + 1} of ${pages}`}</span>
+    {/* The accessible name starts with the visible text (WCAG 2.5.3). */}
+    <button type="button" className="btn" aria-label={continues ? `Next page, load the next ${PAGE_SIZE} ${label.toLowerCase()}` : `Next ${label.toLowerCase()} page`}
+      title={continues ? loadMoreUnavailable ?? `Continue the same ranking with the next ${PAGE_SIZE}.` : undefined}
+      disabled={loadingMore || (continues ? !!loadMoreUnavailable : last)}
+      onClick={() => (continues ? onLoadMore!() : onPageChange(page + 1))}>Next page</button>
   </nav>;
 }

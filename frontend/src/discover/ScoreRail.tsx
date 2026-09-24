@@ -22,26 +22,17 @@ export function rankingEngineLabel(engineId: string | null): string {
   return engineId.replaceAll("-", " ");
 }
 
-export function personalFitText(model: RecommendationViewModel, engineId: string | null): string {
+/**
+ * The card's personal-fit line, worded as the desktop words it
+ * (`RecommendationViewModel.personal_match_text`): a rank inside the engine's
+ * ordering, never a percentage. Both numbers come from the API; a missing one
+ * is stated in words.
+ */
+export function fitRankText(model: RecommendationViewModel): string {
   if (model.fit_rank === null || model.fit_rank === undefined || model.fit_pool_size === null || model.fit_pool_size === undefined) {
-    return "Personal fit unavailable";
+    return "Personal match unavailable";
   }
-  return `#${integer.format(model.fit_rank)} of ${integer.format(model.fit_pool_size)} · ${rankingEngineLabel(engineId)}`;
-}
-
-export function FitIndicator({ model, engineId, onOpen }: {
-  model: RecommendationViewModel;
-  engineId: string | null;
-  onOpen: () => void;
-}) {
-  const fit = personalFitText(model, engineId);
-  return (
-    <button type="button" className="fit-indicator" onClick={onOpen} aria-label={`Why this pick. ${fit}`}>
-      <span className="lbl">Personal fit</span>
-      <strong>{fit}</strong>
-      <span className="fit-action">Why this pick</span>
-    </button>
-  );
+  return `Ranked #${integer.format(model.fit_rank)} of ${integer.format(model.fit_pool_size)} for you`;
 }
 
 export function WhyExplanation({ why }: { why: Explanation | null | undefined }) {

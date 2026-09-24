@@ -38,6 +38,9 @@ MAL login remains optional for public-list imports.
    would reuse the single-user application but incur a runtime and deployment
    cost for every reader.
 
+**Settled by D-021 (2026-09-24):** the local product runs the same account
+schema as a hosted one. The text below records the question as it stood.
+
 **Open before login or migration code:** decide whether the current local
 loopback product stays a file-backed single-user mode, or runs the same database
 schema as a one-account hosted deployment. This choice changes the migration
@@ -102,6 +105,238 @@ costs nothing. A hosting platform's users have no MyAnimeList account, so a
 scorer that assumes one cannot serve them. Everything else partner-facing
 (multi-tenancy, owned catalogue, stateless scoring) is already required by
 web-first.
+
+---
+
+## D-021 - AniRec accounts own every import; the same accounts everywhere
+**2026-09-24 - Accepted (user decision). Settles D-014's local-mode question; revises D-020's "active profile".**
+
+Anyone could import any public MyAnimeList username and then see and change
+the saved decisions of whoever had imported it before, because one
+machine-wide active profile served every request. Now:
+
+- **An AniRec account, with an ID the server assigns, owns every import.** A
+  MyAnimeList username only names a public list to read into that account;
+  two accounts importing one list get two separate imports. Every reader
+  route derives its scope from the session cookie; a request field is only
+  checked against it.
+- **Sign-in:** email and password now; Google as an optional quick way to
+  register, and passkeys added after registering, in later phases.
+- **Try first, then register:** a visitor who imports a list gets a guest
+  account; registering upgrades that same account, so nothing is lost; a
+  gentle, dismissible prompt says so.
+- **The same accounts everywhere,** local as well as hosted (D-014's open
+  question): local mode runs the same schema with one or more accounts.
+- **Installation settings** change every account's ranking, so only the
+  installation owner may save them, and the owner is named from the
+  operator's console, never through open web registration. The same command
+  hands over pre-account profiles.
+
+The design, the early review's 13 findings, the known limits and the phase
+plan (account management, Google, passkeys, email) are in `docs/ACCOUNTS.md`.
+A hosted deployment must not launch before phase 2.
+
+*Why:* D-002 already chose AniRec-owned accounts; the user reported the
+cross-reader exposure as a launch blocker.
+
+---
+
+## D-020 - First-time setup starts from a MyAnimeList username
+**2026-09-24 - Accepted (user decision). Revises the first bullet of D-017.**
+
+The first-time setup pop-up asks how to start:
+- **MyAnimeList:** the visitor types a username (or profile URL). AniRec
+  reads the public list with this installation's own Client ID, makes it the
+  active profile and ends setup. The visitor never enters a Client ID and is
+  never sent to a MyAnimeList login; those parts of D-017 stand. A private
+  list, an unknown user or an unreachable service is answered in plain words
+  (`reason`), and nothing is created. Without a configured Client ID the
+  field says the import is not set up here.
+- **AniList, AniDB:** named and marked "Coming soon", not interactive.
+- **I'm new to anime:** shown, not active yet. It will be a short poster
+  picker ("tap a few that look interesting", with Skip). Open before it is
+  built: a local profile that is not a MyAnimeList list (profiles are keyed
+  by MAL username today), how picks enter the history the model reads, and
+  a check that the model ranks sensibly from picked-but-unwatched titles.
+- **Just look around:** the labelled sample library; nothing is saved.
+
+This is the local, single-reader product. A hosted deployment still needs
+D-014's accounts, so that one reader's import can never select another's data.
+
+*Why:* a username is all a newcomer has to hand; asking for API credentials or
+a login first is the control-panel experience D-019 rules out.
+
+---
+
+## D-019 - A newcomer's expectations decide where things go
+**2026-09-24 - Accepted (user decision). Revises D-016 for the shell.**
+
+Design questions are asked from a newcomer's side: "where would someone new
+look for their settings?", never "we built a panel, they should read it".
+Reading is the last thing a newcomer wants to do; they want to try things,
+and the site should feel safe to try, not like a developer's control panel.
+
+For the shell this means the layout people know from YouTube, Reddit,
+Google and GitHub:
+- a **top bar**: the name on the left (home), the pages as tabs
+  (Discover, My Library, Compare), and on the right the **notifications**
+  bell and the **account picture**;
+- the picture opens a menu with **Your profile** and **Settings**;
+- on a phone the tabs move to a bar along the bottom.
+
+The desktop's SYSTEM readout, ACTIVITY console and BUILD line leave the
+page. The real events they reported reach the bell in plain words (a refresh
+finished, failed or was stopped; the service stopped answering), and the
+version moves to Settings. Sample data stays visibly labelled on the page.
+
+D-016 still governs the surfaces inside the shell (the card, the views, the
+Score Inspector), subject to this principle.
+
+*Why:* familiar placement costs a newcomer nothing to learn, and a page full
+of machine state tells them the site is not for them.
+
+---
+
+## D-018 - Feeds refresh automatically; pages continue the ranking
+**2026-09-24 - Accepted (user decision). Replaces "Recommend 5 more".**
+
+**Refresh.** The web client never asks the reader to generate a feed. The
+`refresh` operation runs:
+- automatically, once per browser session, when a profile's feed opens;
+- from a small **Refresh** button.
+
+It fetches what a full run fetches, once, then rebuilds the feed only when
+one of these holds:
+- there is no feed, including a profile whose feed has never been built
+  (it is shown the sample library until then);
+- **the reader's own list data** changed: titles, statuses, scores, episodes
+  watched, rewatching or update times. The same holds for feedback,
+  eligibility filters, or the generated candidates and taste profile. "More"
+  uses the same digest. Daily drift in community columns (mean score,
+  scorer counts, pictures) deliberately does not count;
+- a different engine would rank now (`engine_identity`, read from the bundle
+  manifest, so a restart is not a change). This includes a feed ranked by
+  the fallback once the preferred model loads again.
+
+**What a rebuild runs:** the full run's own generation (`_generate_feed`),
+so a rebuilt feed ranks exactly as a full run does:
+- taste learned from real ratings;
+- fresh similar-viewer and franchise signals;
+- one snapshot.
+
+**What a refresh costs:** the reader's list and history, usually two paged
+MyAnimeList requests with a model bundle. A rebuild also refreshes the
+similar-viewer signal, which fetches only seeds not yet in the profile's
+graph cache. Otherwise the list data is saved as a sync saves it, and the
+feed, its ranking and its timestamps stay exactly as they were.
+
+**Pages.** A refresh generates 50 titles, and the web client shows 50 per
+page. "Next page" on the last loaded page continues the same ranking with
+the next 50 (the existing `more-recommendations` operation), and the reader
+lands on the first new page. If "more" refuses a stale feed, the client
+starts one refresh by itself instead of showing a button.
+
+The Settings "Batch size" applies to the desktop app.
+
+*Clarified in review (2026-09-24):* a feed the fallback ranked stays current
+while the same preferred engine would decline it again; it is rebuilt when
+the preferred engine can load, or is a different version. A history fetch
+that fails is not a changed list: the feed is kept.
+
+*Why:* a batch button was an artefact of small, randomly sampled heuristic
+feeds. The sequence model ranks tens of thousands of titles
+deterministically, so the next picks are simply the next page of one
+ranking. Refreshing on open, and only when something changed, removes the
+stale-feed dead end and keeps every page on one ranking.
+
+---
+
+## D-017 - What the web client does not port
+**2026-09-24 - Accepted (user decisions, made while reviewing PR #5).**
+
+Following the desktop (D-016) does not mean porting every desktop control.
+The web client leaves out:
+- **Connecting a MyAnimeList account.** No Client ID entry and no OAuth step,
+  and no copy that offers or promises a connection. A later username-only
+  import (D-014) would be a separate decision.
+- **RUN ANALYSIS.** Feeds are not generated from a Discover button. They
+  refresh automatically (D-018).
+- **The Discover taste vector.** The feed is ranked by a sequence model that
+  never sees genres, so "You tend to enjoy ..." above it would read as the
+  feed's reason (D-012). The reader's taste is described on Profile. The API
+  field built for it was removed.
+- **The filter functions the desktop never made work.** The web keeps its own
+  working filters.
+- **Decorative Japanese text** (the brand subtitle and the channel marks),
+  in both clients.
+
+*Why:* each of these either promises something the product cannot do, or
+implies something the ranking does not do.
+
+---
+
+## D-016 - The desktop design is the reference for the web client
+**2026-09-24 - Accepted (user decision). Revises the visual-authority clause of D-004.**
+
+The user designed the PySide client deliberately, and the React port lost
+much of it:
+- the card's shape and structure;
+- the Discover instrument header;
+- the Cards, List and Table views;
+- the Score Inspector;
+- the Profile's voice;
+- the Settings structure;
+- controls the desktop had retired.
+
+From now on, the latest PySide client (`AniRec/gui/` at HEAD, not only the
+1.3.0 package) is the design reference for web surfaces:
+- **Structure:** how each surface is built, for example `recommendation_card.py`
+  and `discover_page.py`.
+- **Controls:** which controls exist, and which are retired.
+- **Wording:** the strings in `AniRec/gui/texts.py`.
+- **Intent:** the reasoning in its docstrings and change comments.
+
+A port must understand why an element exists, not only copy how it looks.
+
+The rest of D-004 stands:
+- The web client is the product.
+- `AniRec/gui/` gets no new features.
+- Domain rules outrank both clients. For example, an uncalibrated percentage
+  the desktop once showed is still not shown.
+
+*Why:* the first React port copied surface styling without the design's
+reasons. Calling the port its own authority let that drift become policy.
+
+---
+
+## D-015 - Feedback is given after watching, in the Library
+**2026-09-24 - Accepted (user decision). Revises D-013.**
+
+A recommendation cannot be liked or disliked before it is watched, which is
+why the desktop client retired those buttons. Feedback therefore belongs to
+the Library, after the title has been watched, not to the Discover card.
+
+Two ways feedback reaches AniRec:
+- **Reported by the reader.** In the Library, a recommended title the reader
+  saved can be marked as watched, then liked, disliked, or given a score.
+- **Observed on return.** When the reader comes back, AniRec re-reads their
+  list. A title AniRec recommended, which the reader saved for later and which
+  now appears on the list as watched, and possibly scored, is recorded as
+  watched after that recommendation.
+
+The observed path is an inference, not proof: the reader may have watched the
+title for other reasons, and MAL update times only approximate when it was
+watched. So it is recorded as what it is. It keeps the recommendation's
+ranking identity, the time it was saved, and the list entry's status, score
+and update time, labelled as observed rather than reported. Like other
+activity, it is opt-in and stays local.
+
+The like and dislike buttons on Discover cards are retired from the web
+client. Votes already collected under D-013 stay stored with their
+attribution. Nothing feeds ranking until a later decision, as under D-013.
+
+*Why:* an opinion recorded after watching is evidence about the
+recommendation; one recorded before watching is a guess about a poster.
 
 ---
 
@@ -229,6 +464,7 @@ writing one. This is cheap now and not later.
 
 ## D-004 - PySide is deprecated
 **2026-09-20 - Accepted. Supersedes prior "PySide holds visual authority".**
+**Its "own visual authority" clause is revised by D-016 (2026-09-24).**
 
 `AniRec/gui/` becomes a development and power-user tool. No new surfaces. The web
 client is the product and its own visual authority.

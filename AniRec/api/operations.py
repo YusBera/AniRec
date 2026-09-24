@@ -39,6 +39,10 @@ from ..errors import CancelledError, presentable_error
 from ..models import PipelineProgress
 
 
+class ProfileClosedError(RuntimeError):
+    """The list is being deleted; nothing may start on it (D-021)."""
+
+
 class OperationAlreadyRunningError(RuntimeError):
     """Raised when a key that is still running is started again."""
 
@@ -129,6 +133,8 @@ class OperationRegistry:
         self._threads: dict[str, threading.Thread] = {}
         self._lock = threading.Lock()
         self._retention = retention_seconds
+        # Lists being deleted: no operation may start on them (D-021).
+        self._closed: set[str] = set()
 
     # -- inspection -------------------------------------------------------
 
@@ -170,6 +176,8 @@ class OperationRegistry:
             raise ValueError("operation_key is required.")
         with self._lock:
             self._evict_expired_locked()
+            if profile_id in self._closed:
+                raise ProfileClosedError("This list is being deleted.")
             for candidate in (key, *exclusive_with):
                 existing = self._records.get(candidate)
                 if existing is not None and existing.is_running:
@@ -214,6 +222,25 @@ class OperationRegistry:
             self._threads[key] = thread
         thread.start()
         return record
+
+    def close(self, profile_ids) -> bool:
+        """Close these lists to new operations, unless one is running now.
+
+        Checked and closed under the start lock, so no operation can begin
+        between the check and the deletion that follows. ``False`` (nothing
+        closed) when any of them has a running operation.
+        """
+        ids = set(profile_ids)
+        with self._lock:
+            if any(r.is_running and r.profile_id in ids for r in self._records.values()):
+                return False
+            self._closed |= ids
+            return True
+
+    def reopen(self, profile_ids) -> None:
+        """Undo ``close`` when the deletion it guarded did not happen."""
+        with self._lock:
+            self._closed -= set(profile_ids)
 
     def cancel(self, key: str) -> bool:
         record = self.get(key)

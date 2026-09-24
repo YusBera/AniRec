@@ -15,7 +15,7 @@
  * `api.feed()` either way.
  */
 
-import type { ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, OperationSnapshot, SystemState } from "./types";
+import type { AccountImports, AccountResult, PasswordResetResult, PreferencesWrite, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
 import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
@@ -98,6 +98,38 @@ export const api = {
   health: () => request<{ status: string; version: string }>("/api/health"),
 
   systemState: () => request<SystemState>("/api/system/state"),
+
+  /** First-time setup: start with a public MyAnimeList list (D-020). */
+  importMalProfile: (username: string) => request<MalImport>("/api/onboarding/mal-profile", { method: "POST", body: JSON.stringify({ username }) }),
+
+  // Accounts (D-021). The session is an HttpOnly cookie the browser keeps;
+  // no token is ever handled here.
+  account: () => request<AccountResult>("/api/account"),
+  register: (email: string, password: string) => request<AccountResult>("/api/account/register", { method: "POST", body: JSON.stringify({ email, password }) }),
+  signIn: (email: string, password: string) => request<AccountResult>("/api/account/sign-in", { method: "POST", body: JSON.stringify({ email, password }) }),
+  signOut: () => request<AccountResult>("/api/account/sign-out", { method: "POST" }),
+  imports: () => request<AccountImports>("/api/account/imports"),
+  changePassword: (currentPassword: string, newPassword: string) => request<AccountResult>("/api/account/password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
+  /** Always the same answer whether or not an account uses the email. */
+  requestPasswordReset: (email: string) => request<PasswordResetResult>("/api/account/password-reset", { method: "POST", body: JSON.stringify({ email }) }),
+  confirmPasswordReset: (token: string, newPassword: string) => request<PasswordResetResult>("/api/account/password-reset/confirm", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
+  deleteAccount: (password: string | null) => request<AccountResult>("/api/account/delete", { method: "POST", body: JSON.stringify({ password }) }),
+  /** The account's data as a file, or an ApiError-shaped refusal. */
+  exportAccount: async (): Promise<Blob> => {
+    let response: Response;
+    try {
+      response = await fetch(apiUrl("/api/account/export"), { headers: headers() });
+    } catch {
+      throw new AniRecApiError(OFFLINE, 0);
+    }
+    if (!response.ok) throw new AniRecApiError({ ...OFFLINE, title: `Request failed (${response.status})` }, response.status);
+    return response.blob();
+  },
+  savePreferences: (values: PreferencesWrite) => request<SettingsRead>("/api/workspace/preferences", { method: "POST", body: JSON.stringify(values) }),
+  chooseImport: (profileId: string) => request<AccountImports>("/api/account/imports/active", { method: "POST", body: JSON.stringify({ profile_id: profileId }) }),
+
+  operations: () => request<OperationList>("/api/operations"),
+  operation: (id: string) => request<OperationSnapshot>(`/api/operations/${encodeURIComponent(id)}`),
 
   feed: (includeHidden = false) =>
     request<Feed>(`/api/discover/feed?include_hidden=${includeHidden ? "true" : "false"}`),

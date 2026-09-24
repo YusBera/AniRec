@@ -22,7 +22,11 @@ from pathlib import Path
 from ..application.pipeline import PipelineOrchestrator
 from ..errors import AuthError
 from ..infrastructure.csv_storage import CsvStorage
+from ..infrastructure.mailer import Mailer, SmtpMailer
 from ..infrastructure.mal_client import MALClient
+from ..services.account_service import AccountService
+from ..services.cover_url_service import CoverUrlService
+from ..services.password_reset_service import PasswordResetService, public_url_from_environment
 from ..services import (
     AnimeDataService,
     AnimeGraphService,
@@ -63,18 +67,16 @@ class ApiContainer:
     samples: SampleDataService
     bundles: BundleContextService
     statistics: ProfileStatisticsService
-
-    def active_profile_id(self) -> str | None:
-        profile = self.profiles.active_profile()
-        return None if profile is None else profile.profile_id
-
-    def active_username(self) -> str | None:
-        profile = self.profiles.active_profile()
-        return None if profile is None else profile.username
+    accounts: AccountService
+    password_resets: PasswordResetService
+    cover_urls: CoverUrlService
 
 
-def build_container(root_override: str | Path | None = None) -> ApiContainer:
-    """Construct the service graph. Mirrors ``gui_main.main()``."""
+def build_container(root_override: str | Path | None = None, *, mailer: Mailer | None = None) -> ApiContainer:
+    """Construct the service graph. Mirrors ``gui_main.main()``.
+
+    ``mailer`` replaces the SMTP mailer the environment describes (tests).
+    """
     settings = SettingsService(root_override=root_override)
     tokens = TokenStore(root_override=root_override)
     profiles = ProfileService(
@@ -83,12 +85,12 @@ def build_container(root_override: str | Path | None = None) -> ApiContainer:
         token_store=tokens,
     )
     auth = AuthService(token_store=tokens)
+    accounts = AccountService(root_override=root_override)
 
     def access_token_provider() -> str:
-        profile = profiles.active_profile()
-        if profile is None:
-            raise AuthError("No active profile is available.")
-        return auth.get_access_token(profile.profile_id, settings.load())
+        # Never the machine-wide active profile: every API call passes a
+        # provider bound to the requesting account's own import (D-021).
+        raise AuthError("No profile was bound to this request.")
 
     orchestrator = PipelineOrchestrator(
         anime_data=AnimeDataService(),
@@ -114,10 +116,15 @@ def build_container(root_override: str | Path | None = None) -> ApiContainer:
         results=ResultService(root_override=root_override),
         recommendation_state=RecommendationStateService(root_override=root_override),
         data_management=DataManagementService(root_override=root_override),
-        mal_sync=MalSyncService(),
+        mal_sync=MalSyncService(root_override=root_override),
         taste_feedback=TasteFeedbackService(),
         covers=CoverImageService(root_override=root_override),
         samples=SampleDataService(),
         bundles=BundleContextService(),
         statistics=ProfileStatisticsService(profiles),
+        accounts=accounts,
+        cover_urls=CoverUrlService(root_override=root_override),
+        password_resets=PasswordResetService(
+            accounts, mailer or SmtpMailer.from_environment(), public_url_from_environment()
+        ),
     )
