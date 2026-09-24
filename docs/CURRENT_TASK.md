@@ -417,6 +417,26 @@ limits and later phases: `docs/ACCOUNTS.md`.
   then Google (needs an OAuth client the owner creates), passkeys (needs
   `localhost`, not `127.0.0.1`), email (needs a sender).
 
+**Accounts, hosted-launch gates (2026-09-24, D-021).** The items the phase-1
+final review listed:
+- **Switching lists:** `GET /api/account/imports`,
+  `POST /api/account/imports/active` (own lists only); "Your lists" and
+  "Add another list" in the account menu. A guest's list moved into an
+  account is reachable this way.
+- **Per-visitor limits** (`api/limits.py`) replace the process-wide caps:
+  new accounts, sign-in failures across emails, and one MyAnimeList budget
+  for imports, `profile-lookup`, live Compare and Library title look-ups.
+- **Trusted proxies:** `ANIREC_TRUSTED_PROXIES` decides who the visitor is
+  and whether the cookie is `Secure`; forwarded headers from anyone else
+  are ignored.
+- **Shutdown:** only the launcher's token or the installation owner.
+- Tests: `tests/test_account_phase2.py` (10), the lifecycle and onboarding
+  tests updated; frontend `Shell.test.tsx`. pytest 586 passed (the same 7
+  failures and 39 Qt collection errors as before); `npm run ci` 129.
+  Chromium at 375×812: the switcher works, no control under 44px.
+- Still before a hosted launch: change password, delete account, export,
+  reader preferences split from installation settings, guest pruning.
+
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in
 a container without `libEGL`; two `test_api_lifecycle` tests fail on Linux

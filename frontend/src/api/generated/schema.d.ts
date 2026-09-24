@@ -23,6 +23,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/account/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Imports */
+        get: operations["list_imports_api_account_imports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/imports/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Import
+         * @description Show another of this account's lists. Only its own (D-021).
+         */
+        post: operations["choose_import_api_account_imports_active_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/account/register": {
         parameters: {
             query?: never;
@@ -445,6 +482,11 @@ export interface components {
              * @enum {string}
              */
             kind: "guest" | "registered";
+        };
+        /** ActiveImportRequest */
+        ActiveImportRequest: {
+            /** Profile Id */
+            profile_id: string;
         };
         /** ActivityEvent */
         ActivityEvent: {
@@ -1088,6 +1130,31 @@ export interface components {
              * @default []
              */
             entries: components["schemas"]["TitleVerdict"][];
+        };
+        /** ImportSummary */
+        ImportSummary: {
+            /** Profile Id */
+            profile_id: string;
+            /** Username */
+            username: string;
+        };
+        /**
+         * ImportsResponse
+         * @description The lists this account has imported, and which one is shown.
+         */
+        ImportsResponse: {
+            /** Active Profile Id */
+            active_profile_id?: string | null;
+            /**
+             * Imports
+             * @default []
+             */
+            imports: components["schemas"]["ImportSummary"][];
+            /**
+             * Reason
+             * @description signed-out, not-owner or unavailable.
+             */
+            reason?: string | null;
         };
         /** LibraryReadResponse */
         LibraryReadResponse: {
@@ -1771,6 +1838,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+        };
+    };
+    list_imports_api_account_imports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportsResponse"];
+                };
+            };
+        };
+    };
+    choose_import_api_account_imports_active_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActiveImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

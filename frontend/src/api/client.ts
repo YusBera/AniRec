@@ -15,7 +15,7 @@
  * `api.feed()` either way.
  */
 
-import type { AccountResult, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
+import type { AccountImports, AccountResult, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
 import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
@@ -108,6 +108,8 @@ export const api = {
   register: (email: string, password: string) => request<AccountResult>("/api/account/register", { method: "POST", body: JSON.stringify({ email, password }) }),
   signIn: (email: string, password: string) => request<AccountResult>("/api/account/sign-in", { method: "POST", body: JSON.stringify({ email, password }) }),
   signOut: () => request<AccountResult>("/api/account/sign-out", { method: "POST" }),
+  imports: () => request<AccountImports>("/api/account/imports"),
+  chooseImport: (profileId: string) => request<AccountImports>("/api/account/imports/active", { method: "POST", body: JSON.stringify({ profile_id: profileId }) }),
 
   operations: () => request<OperationList>("/api/operations"),
   operation: (id: string) => request<OperationSnapshot>(`/api/operations/${encodeURIComponent(id)}`),

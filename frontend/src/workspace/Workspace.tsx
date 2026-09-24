@@ -78,12 +78,19 @@ export function Workspace() {
     shell.reset();
   }, [shell.reset]);
   const onAccount = useCallback((action: AccountAction) => {
+    if (action === "list-changed") {
+      // Same reader, another of their lists: reload the pages, keep the bell.
+      setFeed(null);
+      setGeneration((value) => value + 1);
+      shell.nudge();
+      return;
+    }
     if (action !== "sign-out") { setAccountDialog(action); return; }
     api.signOut().then(() => {
       accountChanged();
       shell.notify({ tone: "info", title: "Signed out", detail: "Sign in again to see your list." });
     }).catch(() => shell.notify({ tone: "problem", title: "Signing out didn't finish", detail: "Try again in a moment." }));
-  }, [accountChanged, shell.notify]);
+  }, [accountChanged, shell.notify, shell.nudge]);
   const account = shell.system?.account ?? null;
   // "Try first, then register": a guest with something saved is reminded,
   // gently and dismissibly, that it lives only in this browser (D-021).
@@ -127,8 +134,9 @@ export function Workspace() {
     {firstRun ? <FirstRun clientIdPresent={!!shell.system?.mal_client_id_present}
       onImported={(profile) => {
         shell.notify({ tone: "done", title: `Added ${profile.username}'s MyAnimeList list`, detail: "AniRec is reading it now." });
-        // The new active profile starts the automatic refresh (D-018).
-        shell.nudge();
+        // The new list is now the one shown: reload the pages for it; its
+        // automatic refresh (D-018) builds the first feed.
+        onAccount("list-changed");
       }}
       onClose={() => setFirstRun(null)}
       onSignIn={() => setAccountDialog("sign-in")} /> : null}
@@ -138,7 +146,7 @@ export function Workspace() {
         shell.notify(mode === "register"
           ? { tone: "done", title: "Account created", detail: signed.has_import ? "Your list and Watch Later are saved to it." : "Add your MyAnimeList list from the account menu." }
           : { tone: "done", title: "Signed in", detail: moved
-            ? "The list you added before signing in is kept with your account. Switching between lists comes in a later update."
+            ? "The list you added before signing in is saved to your account. Switch to it from the account menu, under Your lists."
             : signed.email ?? "" });
         // The menu item that opened the dialog is gone; start from the page.
         content.current?.focus();

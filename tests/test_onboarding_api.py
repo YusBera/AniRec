@@ -222,11 +222,16 @@ def test_a_failed_read_creates_no_guest_account(tmp_path):
     assert client.cookies.get("anirec_session") is None
 
 
-def test_imports_are_capped_process_wide(tmp_path, monkeypatch):
-    import AniRec.api.onboarding as onboarding
+def test_imports_are_capped_per_visitor(tmp_path):
+    # Per visitor since phase 2 (limits.py); tests/test_account_phase2.py
+    # covers the budget it shares with lookups, Compare and title details.
+    from AniRec.api.limits import ClientLimits, KeyedRateWindow
 
-    monkeypatch.setattr(onboarding, "IMPORTS_PER_HOUR", 1)
-    app, _services, mal = _client(tmp_path)
+    app = create_app(root_override=str(tmp_path), limits=ClientLimits(mal_calls=KeyedRateWindow(1, 3600)))
+    services = app.state.container
+    services.settings.save(replace(services.settings.load(), client_id="installation-client-id"))
+    mal = FakeMal()
+    services.profiles._mal_client = mal
     with TestClient(app) as client:
         assert _import(client, "reader_01").json()["reason"] is None
         assert _import(client, "reader_02").json() == {"profile": None, "reason": "busy"}

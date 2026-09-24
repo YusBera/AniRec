@@ -56,10 +56,29 @@ A guest session that is never registered expires. Its data is kept, unreachable,
 until a later phase prunes it; nothing is deleted in phase 1. **Pruning is a
 launch gate for any hosted deployment** (phase 2).
 
-New accounts (guest or registered) and imports are each capped process-wide
-at 30 per hour; past the cap the reason is `busy`. Each import costs a
-MyAnimeList call made with the installation's Client ID, so an unbounded
-stream of them would spend the installation's rate limit.
+## Per-visitor limits (`AniRec/api/limits.py`)
+
+Limits are kept per visitor, so one visitor exhausting theirs blocks nobody
+else. Past a limit the reason is `busy` (or `too-many-attempts`, or HTTP 429
+for a route without a reason field).
+
+| Limit | Per visitor | Counts |
+| --- | --- | --- |
+| New accounts | 10 an hour | a guest created by an import, a registration that is not a guest upgrade |
+| Sign-in failures | 20 a minute | wrong passwords, across every email (password spraying) |
+| MyAnimeList budget | 60 an hour | imports, `profile-lookup`, live Compare, Library title look-ups: each spends the installation's Client ID |
+
+The per-email lockout below stays in the account service. At most 10,000
+visitors are tracked; the least recently seen is forgotten first.
+
+**Who the visitor is.** AniRec binds to loopback, so a hosted deployment sits
+behind a reverse proxy and every request would come from the proxy's address.
+`ANIREC_TRUSTED_PROXIES` (comma-separated addresses) names the proxies whose
+`X-Forwarded-For` and `X-Forwarded-Proto` are believed. The visitor is the
+right-most `X-Forwarded-For` address that is not a trusted proxy (anything to
+its left was written by the client), and the cookie is `Secure` when the
+trusted proxy reports `https`. From any other peer those headers are
+ignored.
 
 ## Storage
 
@@ -96,8 +115,8 @@ imports get `profile_id = "imp_" + 32 hex characters`, never a MAL-derived ID.
   `BEGIN IMMEDIATE` transaction, so parallel guesses cannot all see a low
   count; success clears the count. After 5 failures for one email (known or
   not, so the lockout reveals nothing), attempts are refused for 15 minutes
-  with `too-many-attempts`. Across all emails, more than 60 failures a minute
-  refuses further sign-ins for that minute (password spraying).
+  with `too-many-attempts`. Across all emails, one visitor's failures are
+  limited per minute (see "Per-visitor limits").
 - Registration with an email that already has an account says so ("An
   account with this email already exists. Sign in instead."). This reveals
   that the email is registered; avoiding that needs email verification, which
@@ -213,6 +232,9 @@ settings is phase 2, and **a hosted deployment must not launch before it.**
 | `POST /api/account/register` | Email and password. Upgrades the current guest account, or creates a new registered account. Sets the cookie. |
 | `POST /api/account/sign-in` | Email and password. Moves a guest's imports to the account (see above). Sets the cookie. |
 | `POST /api/account/sign-out` | Deletes the session. |
+| `GET /api/account/imports` | The account's own lists and which one is shown. |
+| `POST /api/account/imports/active` | `{profile_id}`: show another of the account's lists; any other is `not-owner`. |
+| `POST /api/system/shutdown` | Only the launcher (per-launch token) or the installation owner; anyone else 403. |
 | `POST /api/onboarding/mal-profile` | As before, but the import belongs to the session's account; a guest account is created when there is none. The known-username reuse applies only within the same account. |
 
 Failures return a `reason` string, as the onboarding route does, never a
@@ -231,7 +253,7 @@ server error.
 - Settings: read-only, with the reason, for anyone but the owner.
 - 375px, keyboard and screen reader, as every surface.
 
-## Known limits (phase 1)
+## Known limits
 
 - Any other process on this machine receives cookies for `127.0.0.1`,
   because cookies ignore the port.
@@ -239,30 +261,25 @@ server error.
   has one, and share that guest account until the reader registers or signs
   in (which then ends every other session).
 - Registering reveals whether an email already has an account.
-- `Secure` is set only when the request itself arrived over HTTPS; behind a
-  reverse proxy that needs trusted proxy headers (a hosted-launch gate).
-- The per-hour caps and the per-minute sign-in failure window are
-  process-wide, so a stream of junk registrations or wrong passwords can
-  block everyone for that window. Acceptable locally; a hosted launch needs
-  per-client limits (phase 2).
-- `POST /api/system/shutdown` is origin-checked but open to any visitor, and
-  `profile-lookup` and live Compare spend the installation's Client ID with
-  no cap. Both are hosted-launch gates (phase 2).
-- Imports a guest brings to an account that already has an active one are
-  kept but not reachable until import switching exists (phase 2); the
-  sign-in notice says so.
+- Limits are per visitor address. Many visitors behind one address (a
+  school, a carrier NAT) share one allowance; an attacker with many
+  addresses gets many. The MyAnimeList budget has no installation-wide
+  ceiling yet.
+- The limit tables live in the process: a restart clears them, and several
+  worker processes would each keep their own.
 - The desktop shell (Tauri) does not exist yet. Its webview origin is
   cross-site to the API, so a `SameSite=Lax` cookie would not reach it; it
   will need the session in a header, decided when that shell is built.
 
 ## Later phases
 
-2. **Account management:** change password (revokes other sessions), delete
-   account (and its imports), export, switching between an account's
-   imports, reader preferences split from installation settings, pruning of
-   expired guest accounts' data, trusted proxy headers, per-client rate
-   limits, an owner-only shutdown route, caps on lookup and Compare. Required
-   before any hosted launch.
+2. **Account management.** Done (2026-09-24): switching between an
+   account's lists, per-visitor limits, trusted proxy headers, an owner-only
+   shutdown route, the MyAnimeList budget on lookup, Compare and title
+   look-ups. Still required before any hosted launch: change password
+   (revokes other sessions), delete account (and its imports), export,
+   reader preferences split from installation settings, pruning of expired
+   guest accounts' data.
 3. **Google:** OpenID Connect authorization code flow with PKCE and `state`
    and `nonce`; the ID token is verified against Google's published keys. It
    needs a Google Cloud OAuth client that the owner creates; the code reads

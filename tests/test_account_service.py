@@ -14,7 +14,6 @@ from AniRec.services.account_service import (
     AccountError,
     AccountService,
     FAILURE_LIMIT,
-    RateWindow,
     SESSION_LIFETIME,
     hash_password,
     verify_password,
@@ -185,15 +184,6 @@ def test_an_unknown_email_is_throttled_like_a_known_one(tmp_path):
     with pytest.raises(AccountError) as locked:
         accounts.sign_in("nobody@example.com", "wrong password")
     assert locked.value.reason == "too-many-attempts"
-
-
-def test_new_accounts_are_capped_process_wide(tmp_path):
-    accounts = AccountService(root_override=tmp_path, clock=Clock(), new_accounts=RateWindow(2, 3600))
-    accounts.create_guest()
-    accounts.create_guest()
-    with pytest.raises(AccountError) as refused:
-        accounts.create_guest()
-    assert refused.value.reason == "busy"
 
 
 def test_an_import_for_a_guest_that_signed_in_elsewhere_is_refused(tmp_path):

@@ -23,6 +23,8 @@ file updates the matching row in the same change.
 | `GET|POST /api/workspace/settings` | `AniRec/api/workspace.py` |
 | `POST /api/onboarding/mal-profile` (username in, the account's new import or a `reason` out; creates a guest account when there is none, D-021) | `AniRec/api/onboarding.py` |
 | `GET /api/account`, `POST /api/account/{register,sign-in,sign-out}` (D-021) | `AniRec/api/accounts.py` |
+| `GET /api/account/imports`, `POST /api/account/imports/active` (switch between an account's own lists) | `AniRec/api/accounts.py` |
+| Per-visitor limits (new accounts, sign-in failures, MyAnimeList budget) and trusted proxies (`ANIREC_TRUSTED_PROXIES`) | `AniRec/api/limits.py` |
 | Reader scope: session cookie to account to owned import, used by every reader route (D-021) | `resolve_scope` in `AniRec/api/accounts.py` |
 | Operator console: `python -m AniRec.api.accounts owner <email>` names the installation owner and hands over unowned imports | `AniRec/api/accounts.py` |
 

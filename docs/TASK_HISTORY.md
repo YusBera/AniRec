@@ -7,6 +7,23 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Accounts: hosted-launch gates (D-021)
+
+Switching between an account's own lists; per-visitor limits for new
+accounts, sign-in failures and one MyAnimeList budget (imports, lookups, live
+Compare, title look-ups) instead of process-wide caps; trusted proxies
+(`ANIREC_TRUSTED_PROXIES`) for the visitor's address and the `Secure`
+cookie; shutdown only for the launcher's token or the installation owner.
+
+*Verification:* `tests/test_account_phase2.py` written first (10, all failing
+before the change); pytest 586 passed with the same pre-existing failures;
+`npm run ci` 129; Chromium at 375×812 for the list switcher.
+
+*Left open:* change password, delete account, export, reader preferences
+split from installation settings, guest pruning.
+
+---
+
 ## 2026-09-24 - Accounts, phase 1: every import belongs to an account (D-021)
 
 The user reported that anyone could import any MyAnimeList username and then

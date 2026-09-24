@@ -287,6 +287,10 @@
 .account-submit { min-height: 44px; margin-top: var(--space-sm); }
 .account-switch { margin: var(--space-md) 0 0; color: var(--text-muted); }
 .link-button { min-height: 44px; padding: 0; color: var(--focus); text-decoration: underline; text-underline-offset: 3px; }
+.list-switcher { margin-top: var(--space-sm); padding-top: var(--space-sm); border-top: 1px solid var(--border); }
+.list-switcher-title { margin: 0 var(--space-sm) var(--space-xs); color: var(--text-muted); font-size: calc(var(--type-sm) * 1rem); font-weight: var(--weight-bold); }
+.list-switcher button[aria-pressed="true"] { color: var(--text-strong); font-weight: var(--weight-bold); }
+.list-check { display: inline-block; width: 18px; color: var(--accent); text-align: center; }
 .save-prompt { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-sm) var(--space-md); margin: var(--space-md) var(--space-xl) 0; padding: var(--space-sm) var(--space-md); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .save-prompt p { margin: 0; flex: 1 1 16em; color: var(--text-strong); }
 .save-prompt .btn { min-height: 44px; }

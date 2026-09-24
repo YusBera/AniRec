@@ -51,7 +51,8 @@ from ..services.recommendation_event_service import (
     feed_fingerprint,
 )
 from ..services.account_service import AccountError
-from .accounts import ReaderScope, account_summary, accounts_router, resolve_scope
+from .accounts import ReaderScope, account_summary, accounts_router, is_installation_owner, resolve_scope
+from .limits import ClientLimits
 from .container import ApiContainer, build_container
 from .request_guard import RequestGuardMiddleware, allowed_hosts_from_environment
 from .workspace import workspace_router
@@ -158,6 +159,7 @@ def create_app(
     allow_origins: tuple[str, ...] | None = None,
     token: str | None = None,
     on_shutdown_requested: Callable[[], None] | None = None,
+    limits: ClientLimits | None = None,
 ) -> FastAPI:
     """Build the app.
 
@@ -173,6 +175,7 @@ def create_app(
     operations = registry or OperationRegistry()
     resolved_token = token if token is not None else token_from_environment()
     origins = allow_origins if allow_origins is not None else _default_origins()
+    client_limits = limits or ClientLimits.from_environment()
 
     app = FastAPI(
         title="AniRec",
@@ -185,9 +188,10 @@ def create_app(
     app.state.container = services
     app.state.operations = operations
     app.state.token_required = bool(resolved_token)
-    app.include_router(workspace_router(services))
-    app.include_router(onboarding_router(services))
-    app.include_router(accounts_router(services))
+    app.state.limits = client_limits
+    app.include_router(workspace_router(services, client_limits))
+    app.include_router(onboarding_router(services, client_limits))
+    app.include_router(accounts_router(services, client_limits))
 
     if resolved_token:
         app.add_middleware(TokenAuthMiddleware, token=resolved_token)
@@ -304,7 +308,7 @@ def create_app(
         )
 
     @app.post("/api/system/shutdown", status_code=202)
-    def request_shutdown() -> dict[str, bool]:
+    def request_shutdown(scope: ReaderScope = Depends(reader)) -> dict[str, bool]:
         """Ask the process to stop serving. The launcher owns the actual exit.
 
         This flips ``uvicorn.Server.should_exit`` when ``__main__.py`` wired
@@ -320,6 +324,11 @@ def create_app(
         it if this does not result in exit within its own timeout - this
         route is the graceful path, not the only path.
         """
+        # Only whoever may stop this service: the launcher, which holds the
+        # per-launch token (checked by TokenAuthMiddleware before this runs),
+        # or the installation owner. Any other visitor is refused (D-021).
+        if not resolved_token and not is_installation_owner(services, scope):
+            raise HTTPException(status_code=403, detail="Only the owner of this AniRec installation can stop it.")
         if on_shutdown_requested is not None:
             on_shutdown_requested()
         return {"accepted": True}
@@ -532,6 +541,7 @@ def create_app(
     )
     def start_operation(
         kind: str,
+        request: Request,
         payload: OperationStartRequest = Body(default=OperationStartRequest()),
         scope: ReaderScope = Depends(reader),
     ) -> OperationAcceptedResponse:
@@ -552,6 +562,13 @@ def create_app(
             raise HTTPException(status_code=409, detail="Active profile changed. Reload this view.")
         profile_id = profile.profile_id
         username = profile.username
+        # A lookup reads anyone's public list with this installation's Client
+        # ID; it shares the visitor's MyAnimeList budget (limits.py).
+        if kind == "profile-lookup" and not client_limits.mal_calls.take(client_limits.client(request)):
+            raise HTTPException(
+                status_code=429,
+                detail="AniRec is limiting MyAnimeList look-ups for a while. Try again later.",
+            )
         try:
             key = operation_key(kind, profile_id)
         except ValueError as error:

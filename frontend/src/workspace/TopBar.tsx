@@ -11,7 +11,7 @@
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
-import type { Feed, SystemState } from "../api/types";
+import type { AccountImports, Feed, SystemState } from "../api/types";
 import { Icon, type IconName } from "../assets/Icon";
 import type { Notice } from "./Shell";
 
@@ -101,7 +101,49 @@ export function useAvatar(system: SystemState | null): string | null {
 }
 
 /** What the account menu can ask the workspace to do (D-021). */
-export type AccountAction = "register" | "sign-in" | "sign-out";
+export type AccountAction = "register" | "sign-in" | "sign-out" | "list-changed";
+
+/**
+ * The account's imported lists, when it has more than one: pick which one
+ * Discover, My Library and Profile show. Only the account's own lists are
+ * listed, and the server refuses any other (D-021).
+ */
+function ListSwitcher({ onChanged, onClose }: { onChanged: () => void; onClose: () => void }) {
+  const [lists, setLists] = useState<AccountImports | null>(null);
+  const [problem, setProblem] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    api.imports().then((read) => { if (!cancelled) setLists(read); }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  const imports = lists?.imports ?? [];
+  if (imports.length < 2) return null;
+  const choose = async (profileId: string) => {
+    setProblem("");
+    try {
+      const result = await api.chooseImport(profileId);
+      if (result.reason) { setProblem("That list couldn't be opened. Try again."); return; }
+      onClose();
+      onChanged();
+    } catch {
+      setProblem("That list couldn't be opened. Try again.");
+    }
+  };
+  return <div className="list-switcher">
+    <h3 className="list-switcher-title">Your lists</h3>
+    <ul className="account-links">
+      {imports.map((item) => {
+        const current = item.profile_id === lists?.active_profile_id;
+        return <li key={item.profile_id}>
+          <button type="button" aria-pressed={current} onClick={() => { if (!current) void choose(item.profile_id); }}>
+            <span className="list-check" aria-hidden="true">{current ? "✓" : ""}</span>{item.username}
+          </button>
+        </li>;
+      })}
+    </ul>
+    {problem ? <p className="notice-detail" role="alert">{problem}</p> : null}
+  </div>;
+}
 
 export function Account({ system, feed, avatarUrl, onSetUp, onAccount }: {
   system: SystemState | null; feed: Feed | null; avatarUrl: string | null;
@@ -126,12 +168,14 @@ export function Account({ system, feed, avatarUrl, onSetUp, onAccount }: {
         <span className="avatar-large" aria-hidden="true">{picture}</span>
         <div><p className="account-name">{name ?? (registered ? "Your account" : "Guest")}</p><p className="account-context">{context}</p></div>
       </div>
+      {account && onAccount ? <ListSwitcher onClose={close} onChanged={() => onAccount("list-changed")} /> : null}
       <ul className="account-links">
         {!registered && onAccount ? <>
           <li><button type="button" onClick={() => { close(); onAccount("register"); }}><Icon name="profile" />Create account</button></li>
           <li><button type="button" onClick={() => { close(); onAccount("sign-in"); }}><Icon name="profile" />Sign in</button></li>
         </> : null}
         {!name && onSetUp ? <li><button type="button" onClick={() => { close(); onSetUp(); }}><Icon name="nav-library" />Set up your profile</button></li> : null}
+        {name && account && onSetUp ? <li><button type="button" onClick={() => { close(); onSetUp(); }}><Icon name="nav-library" />Add another list</button></li> : null}
         <li><a href="#/profile" onClick={close}><Icon name="profile" />Your profile</a></li>
         <li><a href="#/settings" onClick={close}><Icon name="nav-settings" />Settings</a></li>
         {registered && onAccount ? <li><button type="button" onClick={() => { close(); onAccount("sign-out"); }}>Sign out</button></li> : null}

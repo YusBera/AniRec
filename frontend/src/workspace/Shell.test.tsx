@@ -518,5 +518,56 @@ it("says where a guest's list went when they sign in to an account that already 
   await user.keyboard("{Enter}");
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   await user.click(screen.getByRole("button", { name: /^Notifications/ }));
-  expect(screen.getByText(/The list you added before signing in is kept with your account/)).toBeInTheDocument();
+  expect(screen.getByText(/The list you added before signing in is saved to your account. Switch to it from the account menu/)).toBeInTheDocument();
+});
+
+describe("switching lists (D-021)", () => {
+  const READER_STATE: SystemState = { ...SYSTEM, needs_setup: false, profile: { profile_id: "imp_1", username: "reader_01" },
+    account: { kind: "registered", email: "reader@example.com", has_import: true, installation_owner: false } };
+  function stub() {
+    vi.spyOn(api, "health").mockResolvedValue({ status: "ok", version: "1.3.0" });
+    vi.spyOn(api, "systemState").mockResolvedValue(READER_STATE);
+    vi.spyOn(api, "operations").mockResolvedValue({ operations: [] });
+    vi.spyOn(api, "feed").mockResolvedValue(SAMPLE_FEED);
+    vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  }
+
+  it("lists an account's own lists, marks the one shown, and switches", async () => {
+    stub();
+    vi.spyOn(api, "imports").mockResolvedValue({ imports: [
+      { profile_id: "imp_1", username: "reader_01" }, { profile_id: "imp_2", username: "guest_list" },
+    ], active_profile_id: "imp_1", reason: null });
+    const choose = vi.spyOn(api, "chooseImport").mockResolvedValue({ imports: [], active_profile_id: "imp_2", reason: null });
+    const user = userEvent.setup();
+    render(<Workspace />);
+    const feedCalls = (api.feed as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+    await user.click(await screen.findByRole("button", { name: "Account menu for reader_01" }));
+    const panel = screen.getByRole("region", { name: "Account" });
+    expect(await within(panel).findByRole("heading", { name: "Your lists" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "reader_01" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(panel).getByRole("button", { name: "Add another list" })).toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "guest_list" }));
+    expect(choose).toHaveBeenCalledWith("imp_2");
+    await waitFor(() => expect((api.feed as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(feedCalls));
+  });
+
+  it("shows no switcher for an account with one list", async () => {
+    stub();
+    vi.spyOn(api, "imports").mockResolvedValue({ imports: [{ profile_id: "imp_1", username: "reader_01" }], active_profile_id: "imp_1", reason: null });
+    const user = userEvent.setup();
+    render(<Workspace />);
+    await user.click(await screen.findByRole("button", { name: "Account menu for reader_01" }));
+    await waitFor(() => expect(api.imports).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: "Your lists" })).not.toBeInTheDocument();
+  });
+});
+
+it("says in words when Compare's MyAnimeList lookups are limited", async () => {
+  vi.spyOn(api, "compare").mockResolvedValue({ report: null, reason: "busy", sample_names: [] });
+  render(<ComparePage />);
+  const user = userEvent.setup();
+  await user.type(screen.getByRole("textbox", { name: /MAL username/ }), "friend");
+  await user.click(screen.getByRole("button", { name: "Compare your anime list with this profile" }));
+  expect(await screen.findByText("Too many lookups for now")).toBeInTheDocument();
 });

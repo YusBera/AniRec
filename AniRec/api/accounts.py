@@ -32,6 +32,7 @@ from ..services.account_service import (
     SignedIn,
 )
 from .container import ApiContainer
+from .limits import ClientLimits
 from .models import AccountSummary, ApiModel
 
 
@@ -72,7 +73,7 @@ def resolve_scope(services: ApiContainer, request: Request) -> ReaderScope:
     return ReaderScope(account, profile, token)
 
 
-def set_session_cookie(request: Request, response: Response, token: str) -> None:
+def set_session_cookie(request: Request, response: Response, token: str, limits: ClientLimits) -> None:
     response.set_cookie(
         SESSION_COOKIE,
         token,
@@ -80,15 +81,27 @@ def set_session_cookie(request: Request, response: Response, token: str) -> None
         path="/",
         httponly=True,
         samesite="lax",
-        secure=request.url.scheme == "https",
+        # Behind a trusted proxy, HTTPS is what the proxy reports (limits.py).
+        secure=limits.is_https(request),
     )
 
 
-def clear_session_cookie(request: Request, response: Response) -> None:
+def clear_session_cookie(request: Request, response: Response, limits: ClientLimits) -> None:
     response.delete_cookie(
         SESSION_COOKIE, path="/", httponly=True, samesite="lax",
-        secure=request.url.scheme == "https",
+        secure=limits.is_https(request),
     )
+
+
+def is_installation_owner(services: ApiContainer, scope: ReaderScope) -> bool:
+    """Whether this reader is the owner the operator named from the console."""
+    account = scope.account
+    if account is None or not account.registered:
+        return False
+    try:
+        return services.accounts.owner_account_id() == account.account_id
+    except AccountError:
+        return False
 
 
 class AccountResponse(ApiModel):
@@ -105,6 +118,23 @@ class AccountResponse(ApiModel):
     )
 
 
+class ImportSummary(ApiModel):
+    profile_id: str
+    username: str
+
+
+class ImportsResponse(ApiModel):
+    """The lists this account has imported, and which one is shown."""
+
+    imports: tuple[ImportSummary, ...] = ()
+    active_profile_id: str | None = None
+    reason: str | None = Field(default=None, description="signed-out, not-owner or unavailable.")
+
+
+class ActiveImportRequest(ApiModel):
+    profile_id: str = Field(max_length=128)
+
+
 class Credentials(ApiModel):
     email: str = Field(max_length=254)
     # Capped here, before any hashing happens (docs/ACCOUNTS.md, "Passwords").
@@ -115,23 +145,19 @@ def account_summary(services: ApiContainer, scope: ReaderScope) -> AccountSummar
     account = scope.account
     if account is None:
         return None
-    try:
-        owner = services.accounts.owner_account_id()
-    except AccountError:
-        owner = None
     return AccountSummary(
         kind=account.kind,
         email=account.email if account.registered else None,
         has_import=scope.profile is not None,
-        installation_owner=account.registered and owner == account.account_id,
+        installation_owner=is_installation_owner(services, scope),
     )
 
 
-def accounts_router(services: ApiContainer) -> APIRouter:
+def accounts_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
     router = APIRouter(prefix="/api/account")
 
     def signed_in(request: Request, response: Response, signed: SignedIn) -> AccountResponse:
-        set_session_cookie(request, response, signed.token)
+        set_session_cookie(request, response, signed.token, limits)
         # A fresh scope from the new token, not the request's old cookie.
         profile = None
         if signed.account.active_profile_id:
@@ -150,6 +176,10 @@ def accounts_router(services: ApiContainer) -> APIRouter:
 
     @router.post("/register", response_model=AccountResponse)
     def register(payload: Credentials, request: Request, response: Response) -> AccountResponse:
+        # Upgrading this visitor's guest account is not a new account; any
+        # other registration counts against this visitor's hourly limit.
+        if resolve_scope(services, request).account is None and not limits.new_accounts.take(limits.client(request)):
+            return AccountResponse(reason="busy")
         try:
             signed = services.accounts.register(payload.email, payload.password, current_token=session_token(request))
         except AccountError as error:
@@ -160,9 +190,16 @@ def accounts_router(services: ApiContainer) -> APIRouter:
 
     @router.post("/sign-in", response_model=AccountResponse)
     def sign_in(payload: Credentials, request: Request, response: Response) -> AccountResponse:
+        # Per visitor, across every email: one visitor guessing passwords
+        # never locks anyone else out (the per-email limit is in the service).
+        client = limits.client(request)
+        if limits.sign_in_failures.full(client):
+            return AccountResponse(reason="too-many-attempts")
         try:
             signed = services.accounts.sign_in(payload.email, payload.password, current_token=session_token(request))
         except AccountError as error:
+            if error.reason == "wrong-credentials":
+                limits.sign_in_failures.take(client)
             return AccountResponse(reason=error.reason)
         except OSError:
             return AccountResponse(reason="unavailable")
@@ -171,8 +208,42 @@ def accounts_router(services: ApiContainer) -> APIRouter:
     @router.post("/sign-out", response_model=AccountResponse)
     def sign_out(request: Request, response: Response) -> AccountResponse:
         services.accounts.sign_out(session_token(request))
-        clear_session_cookie(request, response)
+        clear_session_cookie(request, response, limits)
         return AccountResponse()
+
+    def imports_of(scope: ReaderScope, reason: str | None = None) -> ImportsResponse:
+        account = scope.account
+        if account is None:
+            return ImportsResponse(reason=reason)
+        items = []
+        try:
+            owned = services.accounts.owned_profile_ids(account.account_id)
+            current = services.accounts.account_for_session(scope.token)
+        except AccountError:
+            return ImportsResponse(reason="unavailable")
+        for profile_id in owned:
+            try:
+                items.append(ImportSummary(profile_id=profile_id, username=services.profiles.get_profile(profile_id).username))
+            except (AniRecError, OSError, TypeError, ValueError):
+                continue   # an unreadable import is not offered
+        active = None if current is None else current.active_profile_id
+        return ImportsResponse(imports=tuple(items), active_profile_id=active, reason=reason)
+
+    @router.get("/imports", response_model=ImportsResponse)
+    def list_imports(request: Request) -> ImportsResponse:
+        return imports_of(resolve_scope(services, request))
+
+    @router.post("/imports/active", response_model=ImportsResponse)
+    def choose_import(payload: ActiveImportRequest, request: Request) -> ImportsResponse:
+        """Show another of this account's lists. Only its own (D-021)."""
+        scope = resolve_scope(services, request)
+        if scope.account is None:
+            return ImportsResponse(reason="signed-out")
+        try:
+            services.accounts.set_active(scope.account.account_id, payload.profile_id)
+        except AccountError as error:
+            return imports_of(scope, error.reason)
+        return imports_of(scope)
 
     return router
 

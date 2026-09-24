@@ -21,9 +21,7 @@ import re
 import secrets
 import sqlite3
 import threading
-import time
 import unicodedata
-from collections import deque
 from collections.abc import Callable, Iterable
 from contextlib import closing
 from dataclasses import dataclass
@@ -44,10 +42,8 @@ PASSWORD_MAX = 256
 EMAIL_MAX = 254
 FAILURE_LIMIT = 5
 FAILURE_WINDOW = timedelta(minutes=15)
-# Process-wide caps (docs/ACCOUNTS.md): failures across all emails per minute,
-# new accounts (guest or registered) per hour.
-GLOBAL_FAILURES_PER_MINUTE = 60
-NEW_ACCOUNTS_PER_HOUR = 30
+# Per-visitor limits (new accounts, sign-in failures) live in the API, which
+# knows who the visitor is: ``AniRec/api/limits.py``.
 
 # scrypt cost: N = 2**15, r = 8, p = 1 needs 32 MiB, which is exactly the
 # default ceiling; maxmem leaves headroom for OpenSSL's own overhead.
@@ -178,36 +174,6 @@ def new_import_id() -> str:
     return "imp_" + secrets.token_hex(16)
 
 
-class RateWindow:
-    """At most ``limit`` events per ``seconds``, process-wide."""
-
-    def __init__(self, limit: int, seconds: float, clock: Callable[[], float] = time.monotonic) -> None:
-        self._limit = limit
-        self._seconds = seconds
-        self._clock = clock
-        self._events: deque[float] = deque()
-        self._lock = threading.Lock()
-
-    def _trim(self, now: float) -> None:
-        while self._events and now - self._events[0] >= self._seconds:
-            self._events.popleft()
-
-    def full(self) -> bool:
-        with self._lock:
-            self._trim(self._clock())
-            return len(self._events) >= self._limit
-
-    def take(self) -> bool:
-        """Record one event; ``False`` (and nothing recorded) when full."""
-        with self._lock:
-            now = self._clock()
-            self._trim(now)
-            if len(self._events) >= self._limit:
-                return False
-            self._events.append(now)
-            return True
-
-
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (
     account_id TEXT PRIMARY KEY,
@@ -250,13 +216,9 @@ class AccountService:
         *,
         root_override: str | Path | None = None,
         clock: Callable[[], datetime] = _utc_now,
-        new_accounts: RateWindow | None = None,
-        failures: RateWindow | None = None,
     ) -> None:
         self._path = config_dir(root_override) / "accounts.sqlite3"
         self._clock = clock
-        self._new_accounts = new_accounts or RateWindow(NEW_ACCOUNTS_PER_HOUR, 3600)
-        self._failures = failures or RateWindow(GLOBAL_FAILURES_PER_MINUTE, 60)
         self._ready = False
         self._ready_lock = threading.Lock()
 
@@ -369,8 +331,6 @@ class AccountService:
             conn.execute("DELETE FROM sessions WHERE token_hash=?", (_token_hash(token),))
 
     def create_guest(self) -> SignedIn:
-        if not self._new_accounts.take():
-            raise AccountError("busy")
         with self._transaction() as conn:
             account_id = self._insert_account(conn, "guest")
             token = self._new_session(conn, account_id)
@@ -393,8 +353,6 @@ class AccountService:
                 raise AccountError("already-signed-in")
             if conn.execute("SELECT 1 FROM accounts WHERE email=?", (email,)).fetchone():
                 raise AccountError("email-taken")
-        if current is None and not self._new_accounts.take():
-            raise AccountError("busy")
         password_hash = hash_password(password)   # slow: outside the write lock
         with self._transaction() as conn:
             # Re-checked under the lock: another request may have taken the
@@ -426,8 +384,6 @@ class AccountService:
             email = normalize_email(email)
         except AccountError:
             raise AccountError("wrong-credentials") from None
-        if self._failures.full():
-            raise AccountError("too-many-attempts")
         dummy = _dummy_hash()   # computed once, before a slot is held
         # The hashing slot is taken before the attempt is counted: a "busy"
         # refusal must never count as a wrong password (final review).
@@ -457,7 +413,6 @@ class AccountService:
         # unknown email is checked against a dummy hash to take the same time.
         valid = verify_password(password, account[1] if account else dummy, slot_held=True) and account is not None
         if not valid:
-            self._failures.take()
             raise AccountError("wrong-credentials")
         with self._transaction() as conn:
             conn.execute("DELETE FROM login_failures WHERE email=?", (email,))

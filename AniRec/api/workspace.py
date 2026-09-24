@@ -27,9 +27,9 @@ from ..presentation.taste_profile import (
 from ..presentation.compatibility import (
     CompatibilityReport, CompatibilityUnavailable, SampleCompatibilityProvider,
 )
-from ..services.account_service import AccountError
-from .accounts import ReaderScope, resolve_scope
+from .accounts import ReaderScope, is_installation_owner, resolve_scope
 from .container import ApiContainer
+from .limits import ClientLimits
 from .models import ApiModel, RecommendationViewModelResponse
 from .serialization import view_model_to_dict
 
@@ -91,7 +91,7 @@ class LibraryResolveRequest(ApiModel):
     mal_id: int = Field(gt=0)
 
 
-def workspace_router(services: ApiContainer) -> APIRouter:
+def workspace_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
     router = APIRouter(prefix="/api/workspace")
     settings_lock = Lock()
 
@@ -142,6 +142,8 @@ def workspace_router(services: ApiContainer) -> APIRouter:
         client_id = services.settings.load().client_id
         if not client_id:
             raise HTTPException(409, "Configure a MAL Client ID in the desktop app first.")
+        if not limits.mal_calls.take(limits.client(request)):
+            raise HTTPException(429, "AniRec is limiting MyAnimeList look-ups for a while. Try again later.")
         node = MALClient().get_json(f"https://api.myanimelist.net/v2/anime/{payload.mal_id}",
                                     params={"fields": ANIME_FIELDS}, client_id=client_id)
         anime = anime_from_node(node)
@@ -178,6 +180,8 @@ def workspace_router(services: ApiContainer) -> APIRouter:
             path = directory / "completed_anime.csv"
             if not path.is_file():
                 return CompareReadResponse(reason="no-local-snapshot")
+            if not limits.mal_calls.take(limits.client(request)):
+                return CompareReadResponse(reason="busy")
             yours = CsvStorage().read(path, required_columns=("Anime ID", "Title", "User Score"))
             theirs = AnimeDataService(client=ComparisonClient()).fetch_completed_anime(name, client_id=client_id,
                 include_nsfw=services.settings.load().pipeline.include_nsfw)
@@ -195,13 +199,7 @@ def workspace_router(services: ApiContainer) -> APIRouter:
             return CompareReadResponse(reason=error.reason.value)
 
     def is_owner(scope: ReaderScope) -> bool:
-        account = scope.account
-        if account is None or not account.registered:
-            return False
-        try:
-            return services.accounts.owner_account_id() == account.account_id
-        except AccountError:
-            return False
+        return is_installation_owner(services, scope)
 
     @router.get("/settings", response_model=SettingsReadResponse)
     def settings(scope: ReaderScope = Depends(reader)) -> SettingsReadResponse:

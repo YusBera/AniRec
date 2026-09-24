@@ -25,9 +25,10 @@ from ..errors import (
     ServerError,
     UnexpectedStatusError,
 )
-from ..services.account_service import AccountError, RateWindow
+from ..services.account_service import AccountError
 from .accounts import resolve_scope, set_session_cookie
 from .container import ApiContainer
+from .limits import ClientLimits
 from .models import ApiModel, ProfileSummary
 
 
@@ -79,26 +80,25 @@ def _reason(error: AniRecError) -> str:
     return "unavailable"
 
 
-# Every import is a MyAnimeList call made with this installation's Client ID;
-# a stream of them would spend its rate limit (docs/ACCOUNTS.md).
-IMPORTS_PER_HOUR = 30
-
-
-def onboarding_router(services: ApiContainer, *, imports: RateWindow | None = None) -> APIRouter:
+def onboarding_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
     router = APIRouter(prefix="/api/onboarding")
-    window = imports or RateWindow(IMPORTS_PER_HOUR, 3600)
 
     @router.post("/mal-profile", response_model=MalImportResponse)
     def import_mal_profile(payload: MalImportRequest, request: Request, response: Response) -> MalImportResponse:
         try:
-            if not window.take():
+            # Every import reads MyAnimeList with this installation's Client
+            # ID: it counts against this visitor's shared budget (limits.py).
+            client = limits.client(request)
+            if not limits.mal_calls.take(client):
                 raise AccountError("busy")
             username = services.onboarding.read_public_mal_list(payload.username)
             scope = resolve_scope(services, request)
             account = scope.account
             if account is None:
+                if not limits.new_accounts.take(client):
+                    raise AccountError("busy")
                 guest = services.accounts.create_guest()
-                set_session_cookie(request, response, guest.token)
+                set_session_cookie(request, response, guest.token, limits)
                 account = guest.account
             profile = services.onboarding.import_for_account(services.accounts, account.account_id, username)
         except AniRecError as error:

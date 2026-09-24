@@ -56,6 +56,8 @@ export type MalImport = Schemas["MalImportResponse"];
 /** The signed-in account (D-021); `null` when signed out. */
 export type AccountSummary = Schemas["AccountSummary"];
 export type AccountResult = Schemas["AccountResponse"];
+/** The lists an account has imported, and the one shown (D-021). */
+export type AccountImports = Schemas["ImportsResponse"];
 
 /** The lifecycle states an operation reports. Drawn from the schema's own union. */
 export type OperationState = OperationSnapshot["state"];
