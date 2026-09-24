@@ -17,6 +17,9 @@ scales (divisive), calendar (era), snowflake / sprout / sun / leaf (seasons),
 people (community sync), star (rating bias), opposite arrows (contrarian),
 checked circle (completion), trending line (mainstream), question mark
 (unknown). File names are unchanged; `npm run ci` workspace tests pass.
+Follow-up: one design language throughout, straight strokes and mitred
+corners with no circles or curves (the repeat loop, angular heart, shield,
+checked square, octagon sun, square-headed people, angular leaves).
 
 ---
 

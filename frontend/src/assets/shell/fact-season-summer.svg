@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter">
   <metadata>Original AniRec interface icon, created for this GPL-3.0 project.</metadata>
-  <circle cx="12" cy="12" r="4"/>
-  <path d="M12 1v4M12 19v4M1 12h4M19 12h4M4.2 4.2 7 7M17 17l2.8 2.8M4.2 19.8 7 17M17 7l2.8-2.8"/>
+  <path d="M10 7h4l3 3v4l-3 3h-4l-3-3v-4z"/>
+  <path d="M12 1v3M12 20v3M1 12h3M20 12h3M4 4l2 2M18 18l2 2M4 20l2-2M18 6l2-2"/>
 </svg>
