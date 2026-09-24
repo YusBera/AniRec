@@ -169,6 +169,10 @@ class ProfileService:
             client_id,
             cancellation=cancellation,
         )
+        return self.save_and_activate(profile)
+
+    def save_and_activate(self, profile: UserProfile) -> UserProfile:
+        """Write a validated profile and make it the active one."""
         directory = self.directory(profile.profile_id, create=True)
         self._store.write(profile.to_dict(), directory / "profile.json")
         self.set_active(profile.profile_id)

@@ -148,6 +148,29 @@ describe("the shell", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("does not open setup on its own for a reader who already has a profile", async () => {
+    stubShell({ ...SYSTEM, mal_client_id_present: true, profile: { profile_id: "p", username: "reader" } });
+    vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
+    render(<Workspace />);
+    await screen.findByRole("button", { name: "Account menu for reader" });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("tells the reader the list is being read, without promising what follows", async () => {
+    stubShell({ ...SYSTEM, mal_client_id_present: true });
+    vi.spyOn(api, "importMalProfile").mockResolvedValue({ profile: { profile_id: "p", username: "reader_01" }, reason: null });
+    const user = userEvent.setup();
+    render(<Workspace />);
+    const dialog = await screen.findByRole("dialog", { name: "Welcome to AniRec" });
+    await user.type(within(dialog).getByRole("textbox", { name: "MyAnimeList" }), "reader_01");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /^Notifications/ }));
+    expect(screen.getByText("Added reader_01's MyAnimeList list")).toBeInTheDocument();
+    expect(screen.getByText("AniRec is reading it now.")).toBeInTheDocument();
+  });
+
   it("lets a guest reopen setup from the account menu", async () => {
     stubShell({ ...SYSTEM, needs_setup: false, mal_client_id_present: true });
     const user = userEvent.setup();
@@ -265,10 +288,28 @@ describe("first-time setup (D-020)", () => {
     const field = within(dialog).getByRole("textbox", { name: "MyAnimeList" });
     await user.type(field, "shy_reader");
     await user.keyboard("{Enter}");
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent("shy_reader's anime list isn't public, so AniRec can't read it.");
+    const live = within(dialog).getByRole("status");
+    await waitFor(() => expect(live).toHaveTextContent("shy_reader's anime list isn't public, so AniRec can't read it."));
+    // One live region throughout, so the announcement is not lost to a role swap.
+    expect(within(dialog).getByRole("status")).toBe(live);
     expect(field).toHaveFocus();
     expect(field).toHaveAttribute("aria-invalid", "true");
     expect(onImported).not.toHaveBeenCalled();
+  });
+
+  it("keeps the button's visible words inside its accessible name while it works", async () => {
+    let finish!: (value: { profile: null; reason: string }) => void;
+    vi.spyOn(api, "importMalProfile").mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const { dialog } = renderSetup();
+    const user = userEvent.setup();
+    await user.type(within(dialog).getByRole("textbox", { name: "MyAnimeList" }), "reader_01");
+    await user.keyboard("{Enter}");
+    const button = within(dialog).getByRole("button", { name: /with MyAnimeList/ });
+    const visible = [...button.childNodes].filter((node) => !(node instanceof HTMLElement && node.classList.contains("visually-hidden")))
+      .map((node) => node.textContent).join("").trim();
+    expect(visible).toBe("Reading…");
+    expect(button).toHaveAccessibleName(expect.stringContaining(visible));
+    await act(async () => finish({ profile: null, reason: "network" }));
   });
 
   it("does nothing when the newcomer path is pressed before it exists", async () => {
@@ -286,9 +327,12 @@ describe("first-time setup (D-020)", () => {
   });
 
   it("words every reason the service can give", () => {
-    for (const reason of ["invalid-username", "client-id-required", "user-not-found", "private-list", "rate-limited", "network", "unavailable"]) {
+    for (const reason of ["invalid-username", "client-id-required", "user-not-found", "private-list", "installation-refused", "rate-limited", "network", "unavailable"]) {
       expect(importProblem(reason, "x")).not.toMatch(/undefined|reason|HTTP/);
     }
+    // MyAnimeList refusing the installation is not the reader's list or connection.
+    expect(importProblem("installation-refused", "x")).not.toBe(importProblem("unavailable", "x"));
+    expect(importProblem("installation-refused", "x")).not.toMatch(/public|connection|spelling/i);
     expect(importProblem("user-not-found", "nobody_here")).toContain("nobody_here");
   });
 });

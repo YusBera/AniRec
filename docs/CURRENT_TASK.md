@@ -344,6 +344,22 @@ right a MyAnimeList username field with Continue, AniList and AniDB marked
   menu ("Set up your profile"). A successful import notifies and nudges the
   shell, so the automatic refresh (D-018) builds the first feed. Tests in
   `Shell.test.tsx`; `npm run ci` 112.
+- **Final adversarial review, fixed with a failing test first:**
+  - MyAnimeList refusing the installation (401) read as a private list; it
+    is now `installation-refused`, with its own wording.
+  - MyAnimeList outages and unexpected statuses read as the reader's
+    connection; they are now `unavailable` (`UnexpectedStatusError` for
+    other 4xx).
+  - Importing a reader who already had a profile overwrote it, and a
+    desktop `mal-<id>` profile got a second, username-keyed one. A known
+    username (case-insensitive) now reactivates the saved profile untouched.
+  - A disk error while saving returned a 500; it is now `unavailable`, with
+    setup still needed.
+  - The pop-up no longer opens by itself when a profile is already active.
+  - One stable live region for progress and problems; the button's
+    accessible name keeps its visible words; the notice no longer promises
+    what follows ("AniRec is reading it now.").
+  - Tests: `tests/test_onboarding_api.py` 25; `npm run ci` 115.
 - **Next: the newcomer poster picker.** Needs decisions first (see D-020):
   a non-MAL local profile, how picks become history, and a model check with
   a real bundle.

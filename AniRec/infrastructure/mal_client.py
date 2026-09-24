@@ -17,6 +17,7 @@ try:
         NotFoundError,
         RateLimitError,
         ServerError,
+        UnexpectedStatusError,
     )
 except ImportError:  # Compatibility with the S01 top-level import path.
     from errors import (
@@ -28,6 +29,7 @@ except ImportError:  # Compatibility with the S01 top-level import path.
         NotFoundError,
         RateLimitError,
         ServerError,
+        UnexpectedStatusError,
     )
 
 
@@ -138,7 +140,7 @@ class MALClient:
             )
         if status >= 500:
             raise ServerError(f"MyAnimeList returned HTTP {status}.")
-        raise NetworkError(f"MyAnimeList returned HTTP {status}.")
+        raise UnexpectedStatusError(f"MyAnimeList returned HTTP {status}.")
 
 
 def _safe_retry_after(value: object) -> int | None:

@@ -80,14 +80,27 @@ class OnboardingService:
         The Client ID is this installation's own setting; the visitor never
         supplies one. The list is validated before anything is written, the
         profile becomes the active one, and setup is marked complete. A
-        failure leaves no profile and no completion flag behind.
+        failure to read the list leaves no profile and no completion flag.
         """
         client_id = (self.settings.load().client_id or "").strip()
         if not client_id:
             raise ConfigError("MyAnimeList import is not set up for this installation.")
-        profile = self.profiles.add_public_profile(reference, client_id, cancellation=cancellation)
+        profile = self.profiles.validate_public_profile(reference, client_id, cancellation=cancellation)
+        # A reader AniRec already knows keeps their saved profile, whether
+        # the desktop connected it (mal-<id>) or an earlier import made it:
+        # nothing is rewritten and no second profile is created.
+        known = next(
+            (saved for saved in self.profiles.list_profiles()
+             if saved.username.casefold() == profile.username.casefold()),
+            None,
+        )
+        # The flag first: if it cannot be written, no profile is left behind;
+        # if the profile then cannot be written, no profile is active, so
+        # setup is still needed.
         self.mark_complete()
-        return profile
+        if known is not None:
+            return self.profiles.set_active(known.profile_id)
+        return self.profiles.save_and_activate(profile)
 
     def mark_complete(self) -> Path:
         payload = {

@@ -36,6 +36,7 @@ export function importProblem(reason: string, username: string): string {
     case "client-id-required": return "MyAnimeList import isn't set up for this AniRec installation yet.";
     case "user-not-found": return `MyAnimeList has no user called ${username}. Check the spelling and try again.`;
     case "private-list": return `${username}'s anime list isn't public, so AniRec can't read it. Make it public on MyAnimeList, then try again.`;
+    case "installation-refused": return "MyAnimeList turned down this AniRec installation right now. Nothing about your list needs to change.";
     case "rate-limited": return "MyAnimeList is busy right now. Try again in a minute.";
     case "network": return "AniRec couldn't reach MyAnimeList. Check your connection and try again.";
     default: return "Something went wrong while reading that list. Try again.";
@@ -114,10 +115,12 @@ export function FirstRun({ clientIdPresent, onImported, onClose }: {
             aria-describedby={statusId} aria-invalid={problem ? true : undefined}
             onChange={(event) => { setUsername(event.target.value); setProblem(""); }} />
           <button type="submit" className="btn primary source-go" disabled={!clientIdPresent || busy || !username.trim()}
-            aria-label="Continue with MyAnimeList">{busy ? "Reading…" : "Continue"}</button>
+          >{busy ? "Reading…" : "Continue"}<span className="visually-hidden"> with MyAnimeList</span></button>
         </div>
       </form>
-      <p id={statusId} className={problem ? "onboarding-problem" : "onboarding-status"} role={problem ? "alert" : "status"}>
+      {/* One live region for progress and problems alike: swapping its role
+          would drop the announcement in some screen readers. */}
+      <p id={statusId} className={problem ? "onboarding-problem" : "onboarding-status"} role="status">
         {!clientIdPresent ? importProblem("client-id-required", "")
           : busy ? "Reading your MyAnimeList list…"
             : problem}

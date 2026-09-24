@@ -1022,7 +1022,7 @@ export interface components {
             profile?: components["schemas"]["ProfileSummary"] | null;
             /**
              * Reason
-             * @description invalid-username, client-id-required, user-not-found, private-list, rate-limited, network or unavailable.
+             * @description invalid-username, client-id-required, user-not-found, private-list, installation-refused, rate-limited, network or unavailable.
              */
             reason?: string | null;
         };

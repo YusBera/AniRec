@@ -20,6 +20,8 @@ from ..errors import (
     NotFoundError,
     ProfileError,
     RateLimitError,
+    ServerError,
+    UnexpectedStatusError,
 )
 from .container import ApiContainer
 from .models import ApiModel, ProfileSummary
@@ -37,23 +39,33 @@ class MalImportResponse(ApiModel):
         default=None,
         description=(
             "invalid-username, client-id-required, user-not-found, private-list, "
-            "rate-limited, network or unavailable."
+            "installation-refused, rate-limited, network or unavailable."
         ),
     )
 
 
 def _reason(error: AniRecError) -> str:
-    # Order matters: RateLimitError is a NetworkError, AccessDeniedError an AuthError.
+    """What went wrong, from the reader's side of the screen.
+
+    Order matters: AccessDeniedError is an AuthError; RateLimitError,
+    ServerError and UnexpectedStatusError are NetworkErrors.
+    """
     if isinstance(error, ProfileError):
         return "invalid-username"
     if isinstance(error, ConfigError):
         return "client-id-required"
     if isinstance(error, NotFoundError):
         return "user-not-found"
-    if isinstance(error, (AccessDeniedError, AuthError)):
+    if isinstance(error, AccessDeniedError):
         return "private-list"
+    if isinstance(error, AuthError):
+        # 401: the only credential sent is this installation's Client ID, so
+        # nothing about the reader's list needs to change.
+        return "installation-refused"
     if isinstance(error, RateLimitError):
         return "rate-limited"
+    if isinstance(error, (ServerError, UnexpectedStatusError)):
+        return "unavailable"
     if isinstance(error, NetworkError):
         return "network"
     return "unavailable"
@@ -68,6 +80,9 @@ def onboarding_router(services: ApiContainer) -> APIRouter:
             profile = services.onboarding.import_public_mal_profile(payload.username)
         except AniRecError as error:
             return MalImportResponse(reason=_reason(error))
+        except OSError:
+            # A local write failed (disk full, permissions): not a server crash.
+            return MalImportResponse(reason="unavailable")
         return MalImportResponse(
             profile=ProfileSummary(profile_id=profile.profile_id, username=profile.username)
         )

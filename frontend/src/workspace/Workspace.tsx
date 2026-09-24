@@ -56,8 +56,9 @@ export function Workspace() {
   }, [page]);
   // First run: when the service says setup is needed, once per session.
   useEffect(() => {
-    if (shell.system?.needs_setup && !firstRunDismissed()) setFirstRun((current) => current ?? "welcome");
-  }, [shell.system?.needs_setup]);
+    // A reader who already has a profile is never interrupted by it.
+    if (shell.system?.needs_setup && !shell.system.profile && !firstRunDismissed()) setFirstRun((current) => current ?? "welcome");
+  }, [shell.system?.needs_setup, shell.system?.profile]);
 
   const onFeedChange = useCallback((next: Feed | null) => setFeed(next), []);
   const sample = feed?.source === "sample";
@@ -89,7 +90,7 @@ export function Workspace() {
     </div>
     {firstRun ? <FirstRun clientIdPresent={!!shell.system?.mal_client_id_present}
       onImported={(profile) => {
-        shell.notify({ tone: "done", title: `Added ${profile.username}'s MyAnimeList list`, detail: "AniRec is reading it now; your recommendations follow." });
+        shell.notify({ tone: "done", title: `Added ${profile.username}'s MyAnimeList list`, detail: "AniRec is reading it now." });
         // The new active profile starts the automatic refresh (D-018).
         shell.nudge();
       }}

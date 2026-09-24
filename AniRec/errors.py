@@ -93,6 +93,16 @@ class ServerError(NetworkError):
     suggested_solution = "Try again later."
 
 
+class UnexpectedStatusError(NetworkError):
+    """MyAnimeList answered, with a status AniRec has no specific meaning for.
+
+    A ``NetworkError`` for every existing caller; separate so a caller can
+    tell "MyAnimeList said something odd" from "MyAnimeList was unreachable".
+    """
+
+    code = "unexpected_status"
+
+
 class ProfileError(AniRecError):
     code = "profile_error"
     user_title = "Profile problem"

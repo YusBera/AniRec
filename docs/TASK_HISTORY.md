@@ -20,6 +20,14 @@ passed (the two Linux-only `test_api_lifecycle` failures predate this);
 scroll, every control at least 44px. The import was not run against the real
 MyAnimeList API from this environment.
 
+*Final review (same day):* a 401 no longer reads as a private list, an
+outage no longer reads as the reader's connection, a known reader's profile
+is reactivated rather than overwritten or duplicated, a disk error is a
+reason rather than a 500, and the pop-up stays closed for a reader with a
+profile. `tests/test_onboarding_api.py` 25 passed; `npm run ci` 115 passed;
+the full pytest run's 7 failures and 39 collection errors (Qt without
+`libEGL`, Linux-only lifecycle) are identical without this change.
+
 *Left open:* the newcomer poster picker and its profile and model questions.
 
 ---
