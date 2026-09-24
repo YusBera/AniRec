@@ -105,6 +105,32 @@ web-first.
 
 ---
 
+## D-017 - What the web client does not port
+**2026-09-24 - Accepted (user decisions, made while reviewing PR #5).**
+
+Following the desktop (D-016) does not mean porting every desktop control.
+The web client leaves out:
+- **Connecting a MyAnimeList account.** No Client ID entry and no OAuth step,
+  and no copy that offers or promises a connection. A later username-only
+  import (D-014) would be a separate decision.
+- **RUN ANALYSIS.** Feeds are not generated from a Discover button. The only
+  way to start a full generation is the recovery action shown when "more"
+  refuses a stale feed. How feeds are produced is open (NEXT_GOALS, "Before
+  a public launch").
+- **The Discover taste vector.** The feed is ranked by a sequence model that
+  never sees genres, so "You tend to enjoy ..." above it would read as the
+  feed's reason (D-012). The reader's taste is described on Profile. The API
+  field built for it was removed.
+- **The filter functions the desktop never made work.** The web keeps its own
+  working filters.
+- **Decorative Japanese text** (the brand subtitle and the channel marks),
+  in both clients.
+
+*Why:* each of these either promises something the product cannot do, or
+implies something the ranking does not do.
+
+---
+
 ## D-016 - The desktop design is the reference for the web client
 **2026-09-24 - Accepted (user decision). Revises the visual-authority clause of D-004.**
 

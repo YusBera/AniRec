@@ -100,6 +100,7 @@ export const api = {
   systemState: () => request<SystemState>("/api/system/state"),
 
   operations: () => request<OperationList>("/api/operations"),
+  operation: (id: string) => request<OperationSnapshot>(`/api/operations/${encodeURIComponent(id)}`),
 
   feed: (includeHidden = false) =>
     request<Feed>(`/api/discover/feed?include_hidden=${includeHidden ? "true" : "false"}`),

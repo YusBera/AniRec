@@ -21,8 +21,8 @@ type Entry = NonNullable<Report["sections"]>[number]["entries"] extends readonly
 
 const REASONS: Record<string, [string, string]> = {
   "username-required": ["Compare your taste", "Type any MyAnimeList username to see where your ratings agree and where they do not."],
-  "not-connected": ["Connect your account first", "Comparing needs your own synchronized list. Connecting an account is not available in the web client yet. You can still inspect the bundled sample comparison."],
-  "client-id-required": ["Connect your account first", "A MyAnimeList Client ID has not been configured on this device, so live comparison is unavailable. You can still inspect the bundled sample comparison."],
+  "not-connected": ["Compatibility is not built yet", "Comparing needs your own synchronized list, which is not available here. You can still inspect the bundled sample comparison."],
+  "client-id-required": ["Compatibility is not built yet", "Live comparison is not available here. You can still inspect the bundled sample comparison."],
   "no-local-snapshot": ["Nothing to compare yet", "No synchronized completed-list snapshot is available for this profile."],
   "backend-missing": ["Compatibility is not built yet", "Live compatibility is not available in this build. You can still inspect the bundled sample comparison."],
   "user-not-found": ["No such profile", "MyAnimeList has no user by that name. Check the spelling and try again."],
@@ -73,7 +73,7 @@ export function ComparePage() {
 
   return <main className="workspace-page">
     <section className="compare-selector panel">
-      <ChannelHeading name="Compare" mark="相性" />
+      <ChannelHeading name="Compare" mark="COMPATIBILITY" />
       <p className="workspace-intro">Enter a MyAnimeList username to see how your taste lines up with theirs.</p>
       {!sample ? <form className="compare-form" onSubmit={event => { event.preventDefault(); if (draft.trim() === liveName) read.retry(); else setLiveName(draft.trim()); }}>
         <label>MAL username<input required value={draft} maxLength={64} placeholder="MyAnimeList username" onChange={event => setDraft(event.target.value)} /></label>

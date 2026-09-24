@@ -21,8 +21,9 @@ it("does not substitute sample evidence for a failed local read and supports ret
   expect(await screen.findByRole("alert")).toHaveTextContent("could not be loaded");
   expect(screen.queryByRole("heading", { name: "anirec_sample" })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-  expect(await screen.findByRole("heading", { name: "Connect your account first" })).toBeInTheDocument();
-  expect(screen.getByText(/Connecting an account is not available in the web client yet/)).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Your taste profile is not built yet" })).toBeInTheDocument();
+  expect(screen.getByText(/which is not available here/)).toBeInTheDocument();
+  expect(screen.queryByText(/connect/i)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Show a sample profile" })).toBeInTheDocument();
   expect(read.mock.calls).toEqual([[false], [false]]);
 });
@@ -37,7 +38,7 @@ it("ignores a late local response after the reader explicitly selects sample", a
   expect(await screen.findByRole("heading", { name: "anirec_sample" })).toBeInTheDocument();
   await act(async () => resolveLocal({ profile: null, reason: "not-connected" }));
   expect(screen.getByRole("heading", { name: "anirec_sample" })).toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "Connect your account first" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Your taste profile is not built yet" })).not.toBeInTheDocument();
 });
 
 it("replaces a failed cover with an honest fallback and tries a new cover URL", () => {

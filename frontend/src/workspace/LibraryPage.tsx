@@ -106,7 +106,7 @@ export function LibraryPage({ feed, pending, disabledReason, notice = "", error 
         <ViewToggle view={view} onChange={setView} />
       </div>
     </div>
-    <h2 ref={heading} tabIndex={-1} className="collection-heading">{active.heading} <small>{shown.length} matching</small></h2>
+    <h2 ref={heading} tabIndex={-1} className="collection-heading" data-inspector-return="">{active.heading} <small>{shown.length} matching</small></h2>
     {ids.length === 0 ? (collection === "watch_later"
       ? <EmptyPanel icon="folder-watch-later" title="Your Watch Later list is empty" message="Save an anime from any card and it will appear in this collection.">
           <a className="btn" href="#/discover">Explore Discover</a>
@@ -115,7 +115,7 @@ export function LibraryPage({ feed, pending, disabledReason, notice = "", error 
       : !shown.length && !missing.length ? <EmptyPanel icon="search" title="No matches found" message="No saved title matches this search.">
           <button className="btn" onClick={() => setQuery("")}>Clear search</button>
         </EmptyPanel> : null}
-    {pageItems.length ? <FeedView view={view} models={pageItems} caption={`${active.heading} — ${shown.length} saved titles`}
+    {pageItems.length ? <FeedView view={view} models={pageItems} rankOffset={currentPage * PAGE_SIZE} caption={`${active.heading} — ${shown.length} saved titles`}
       watchLater={inSet(state?.watch_later_mal_ids)} hidden={inSet(state?.hidden_mal_ids)} pending={pending} disabledReason={disabledReason}
       onDetails={model => onDetails(model, shown)} onExternal={onExternal} onVote={onVote} /> : null}
     <PageControls page={currentPage} total={shown.length} onPageChange={changePage} label="Saved titles" />

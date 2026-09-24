@@ -71,7 +71,12 @@ export function ScoreInspector({
       const target = id === null ? undefined
         : [...document.querySelectorAll<HTMLElement>(`[data-card-id="${id}"] .card-title button, [data-card-id="${id}"] .row-title button, [data-card-id="${id}"] .table-title`)]
           .find((node) => !node.closest("[hidden]"));
-      target?.focus();
+      // The title may have no visible card any more: stepped to another page,
+      // or just marked Not interested. Then the list itself takes focus, not
+      // the page body.
+      const fallback = [...document.querySelectorAll<HTMLElement>("[data-inspector-return]")]
+        .find((node) => !node.closest("[hidden]"));
+      (target ?? fallback)?.focus();
     });
   };
 

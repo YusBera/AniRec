@@ -1,6 +1,6 @@
 # Current Task
 
-## Status: PySide design port — implemented, awaiting the user's review
+## Status: PySide design port — implemented, reviewed, review fixes applied
 
 Handoff written 2026-09-24 on branch `feat/pyside-design-port`. It branches
 from `codex/ui-v3-engine`.
@@ -18,7 +18,8 @@ Domain rules still outrank both clients.
 
 ### Done on this branch
 
-- **Taste vector.** `FeedResponse.taste_vector` serves the desktop Discover
+- **Taste vector** (removed again in the review round, D-017).
+  `FeedResponse.taste_vector` served the desktop Discover
   header's taste line, built by `AniRec/presentation/taste_vector.py`: up to 4
   liked and 2 avoided terms, each typed `genre` or `studio`. Tests:
   `tests/test_taste_vector.py`. Generated API types are regenerated.
@@ -226,6 +227,34 @@ model or persisted format changed; the generated types still verify.
 set, and Chromium captures at 1440×900 and 375×812 against a sample-only API
 (5 cards per row at 1440, poster 202×303; no horizontal overflow at 375; no
 visible control under 44px at 375).
+
+**Review round (2026-09-24).** The user's decisions (D-017) and the review
+findings were applied on this branch.
+- **Removed:**
+  - RUN ANALYSIS;
+  - the Discover taste vector, together with its API field
+    (`FeedResponse.taste_vector`), `presentation/taste_vector.py` and its
+    tests;
+  - every "Connect my account" prompt and the first-run connect step;
+  - the status line's "CONNECT TO KEEP";
+  - the decorative Japanese text in both clients.
+- **Fixed:**
+  - The Table's Rank column shows the position in the reader's order
+    (CHANGE [RANK]).
+  - A progress stream that closes early now reads the operation's own state
+    instead of staying "running".
+  - SYSTEM shows unknown values after a failed poll.
+  - Card tags past the reservation collapse into a "+n" that names the rest
+    (`metadata_tags.py`).
+  - "You're all caught up" appears when every title is hidden.
+  - The inspector's focus falls back to the list.
+  - Buttons are sentence case.
+- **Still open from the review:**
+  - A decision can visibly revert during an overlapping reload.
+  - Library title details go stale after a new generation.
+  - Icon-only buttons lose their glyph in Windows High Contrast.
+  - Some off-scale pixel values remain in component CSS.
+  - Each card has three tab stops for one action.
 
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in

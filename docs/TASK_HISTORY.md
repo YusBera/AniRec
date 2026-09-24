@@ -7,6 +7,35 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Review of the PySide design port (PR #5)
+
+Applied the user's decisions (D-017) and the review's findings; details are in
+`CURRENT_TASK.md`, "Review round".
+- **Removed:**
+  - RUN ANALYSIS;
+  - the Discover taste vector and its API field;
+  - the connect-account prompts;
+  - the decorative Japanese text.
+- **Fixed:**
+  - the Table rank;
+  - early stream loss;
+  - stale SYSTEM values;
+  - silently hidden tags;
+  - the all-caught-up state;
+  - inspector focus;
+  - uppercase buttons.
+
+The taste vector was also mislabelled. It called eras and sources "genres",
+with a zero count, and its test used a fixture production never produces.
+
+*Verification:*
+- `npm run ci`.
+- Full `pytest`.
+- The stream-loss tests were run against the old hook, where they failed,
+  before being run against the fix.
+
+---
+
 ## 2026-09-24 - PySide design port of the web client (D-016)
 
 Implemented both work packages from `CURRENT_TASK.md`. Discover, My Library

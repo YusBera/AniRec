@@ -52,8 +52,6 @@ export type SystemState = Schemas["SystemStateResponse"];
 export type OperationSnapshot = Schemas["OperationSnapshotResponse"];
 export type OperationStartRequest = Schemas["OperationStartRequest"];
 export type OperationList = Schemas["OperationListResponse"];
-export type TasteVector = Schemas["TasteVector"];
-export type TasteTerm = Schemas["TasteTerm"];
 
 /** The lifecycle states an operation reports. Drawn from the schema's own union. */
 export type OperationState = OperationSnapshot["state"];

@@ -91,7 +91,6 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | OAuth redirect handling | `AniRec/infrastructure/oauth_callback.py` |
 | MAL payload to domain mapping, CSV columns | `AniRec/core/mal_mapping.py` |
 | View models shared by both clients | `AniRec/presentation/` |
-| Discover taste vector (desktop header rules, typed genre/studio terms) | `AniRec/presentation/taste_vector.py`, served as `FeedResponse.taste_vector` |
 
 ---
 
@@ -109,7 +108,7 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Settings | `frontend/src/workspace/SettingsPage.tsx` |
 | Shared workspace pieces (read state, poster, channel heading, paging) | `frontend/src/workspace/common.tsx` |
 | Discover feed, decisions, operations | `frontend/src/discover/DiscoverPage.tsx` |
-| Discover header (STATE, RUN ANALYSIS, TASTE VECTOR) | `frontend/src/discover/DiscoverHeader.tsx` |
+| Discover header (channel and STATE; D-017 lists what is not ported) | `frontend/src/discover/DiscoverHeader.tsx` |
 | Recommendation card, poster art, MAL link | `frontend/src/discover/RecommendationCard.tsx` |
 | Cards / List / Table views and toggle | `frontend/src/discover/FeedViews.tsx` |
 | Score Inspector | `frontend/src/discover/ScoreInspector.tsx` |

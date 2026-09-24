@@ -14,7 +14,7 @@ const SAMPLE_FEED = {
   source: "sample", ephemeral: true, profile: null, state_profile_id: null, recommendations: [], hidden_count: 0,
   catalogue: { genres: [], studios: [], years: [], statuses: [] },
   state: { hidden_mal_ids: [], watch_later_mal_ids: [], liked_mal_ids: [], disliked_mal_ids: [], show_hidden: false },
-  user_stats: {}, activity_feed_id: "", taste_vector: null,
+  user_stats: {}, activity_feed_id: "",
 } as Feed;
 
 beforeEach(() => {
@@ -90,7 +90,7 @@ describe("the shell", () => {
     render(<Workspace />);
     const nav = screen.getByRole("navigation", { name: "Main navigation" });
     expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual(["01Discover", "02My Library", "03Profile", "04Compare", "05Settings"]);
-    expect(await screen.findByText("Sample data. Connect MyAnimeList to see your own picks.")).toBeInTheDocument();
+    expect(await screen.findByText("Sample data. These are bundled demonstration picks, not your own.")).toBeInTheDocument();
     expect(await screen.findByText("BUILD 1.3.0")).toBeInTheDocument();
     expect(screen.getByText("Source sample")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -102,10 +102,9 @@ describe("the shell", () => {
     const { unmount } = render(<Workspace />);
     const dialog = await screen.findByRole("dialog", { name: "Welcome" });
     expect(within(dialog).getByText("No account needed. Nothing is saved.")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Next" }));
-    expect(within(dialog).getByRole("heading", { name: "MyAnimeList Setup" })).toBeInTheDocument();
-    expect(dialog).toHaveTextContent("Connecting a MyAnimeList account is not available in the web client yet.");
-    expect(dialog).not.toHaveTextContent(/desktop|install|download/i);
+    // Connecting an account from the web is not possible: no step offers it.
+    expect(within(dialog).queryByRole("button", { name: "Next" })).not.toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent(/connect|desktop|install|download/i);
     await user.click(within(dialog).getByRole("button", { name: "Look around with sample data" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     unmount();
@@ -114,12 +113,14 @@ describe("the shell", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("opens the honest connect step from the sample banner", async () => {
+  it("labels the sample library without offering to connect an account, and shows no Japanese marks", async () => {
     stubShell({ ...SYSTEM, needs_setup: false });
-    const user = userEvent.setup();
-    render(<Workspace />);
-    await user.click(await screen.findByRole("button", { name: "Connect my account" }));
-    expect(await screen.findByRole("dialog", { name: "MyAnimeList Setup" })).toBeInTheDocument();
+    const { container } = render(<Workspace />);
+    const banner = await screen.findByRole("note");
+    expect(banner).toHaveTextContent("Sample data. These are bundled demonstration picks, not your own.");
+    expect(within(banner).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /connect/i })).not.toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/[぀-ヿ一-鿿]/);
   });
 });
 
@@ -175,5 +176,15 @@ describe("Compare", () => {
     expect(screen.queryByText(/78/)).not.toBeInTheDocument();
     expect(screen.queryByText(/MATCH SCORE/)).not.toBeInTheDocument();
     await act(async () => undefined);
+  });
+});
+
+describe("SYSTEM after a failed poll", () => {
+  it("shows unknown values, not the last good READY, once a later poll fails", () => {
+    const ready: SystemState = { profile: { profile_id: "p", username: "reader" }, needs_setup: false, mal_client_id_present: true, active_operations: [] };
+    const good = Object.fromEntries(readoutRows(ready, false, null).map(([key, value]) => [key, value]));
+    expect(good).toMatchObject({ ENGINE: "READY", PROFILE: "reader", MAL: "CLIENT ID" });
+    const failed = Object.fromEntries(readoutRows(ready, true, null).map(([key, value]) => [key, value]));
+    expect(failed).toMatchObject({ ENGINE: "OFFLINE", PROFILE: "--", MAL: "--" });
   });
 });

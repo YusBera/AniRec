@@ -57,6 +57,15 @@ export interface OperationProgress {
 
 const IDLE: OperationProgress = { id: null, kind: null, state: "idle", progress: null, error: null };
 
+/** The progress stream closed before the operation reported an outcome. */
+const LOST_STREAM: ApiError = {
+  code: "stream_lost",
+  title: "Lost contact with the running operation",
+  description: "The progress stream closed before the operation finished, so its outcome is unknown.",
+  solution: "Reload the page to see the current recommendations.",
+  retryable: true,
+};
+
 /**
  * `OperationAlreadyRunningError` arrives as a 409 whose description starts
  * "Operation is already running". It is not a failed request, so it is worded
@@ -126,12 +135,28 @@ export function useOperation(onFinished?: (state: OperationState) => void) {
       source.addEventListener("error", (event) => {
         // Named "error" by the server's event contract, not the transport's.
         const raw = (event as MessageEvent).data;
-        if (!raw) return;
-        setStatus((current) => ({
-          ...current,
-          state: "failed",
-          error: JSON.parse(raw) as ApiError,
-        }));
+        if (raw) {
+          setStatus((current) => ({
+            ...current,
+            state: "failed",
+            error: JSON.parse(raw) as ApiError,
+          }));
+          return;
+        }
+        // A transport error. While the browser is reconnecting, wait. Once it
+        // has given up (a restarted service, or a 404 for an operation the
+        // service no longer knows), the stream will never say "finished", so
+        // ask for the operation's own state instead of staying "running".
+        if (source.readyState !== EventSource.CLOSED || sourceRef.current !== source) return;
+        close();
+        void api.operation(snapshot.id).then(
+          (latest) => {
+            setStatus((current) => ({ ...current, state: latest.state === "running" ? "failed" : latest.state,
+              error: latest.state === "running" ? LOST_STREAM : current.error }));
+            if (latest.state !== "running") finishedRef.current?.(latest.state);
+          },
+          () => setStatus((current) => ({ ...current, state: "failed", error: LOST_STREAM })),
+        );
       });
       source.addEventListener("finished", (event) => {
         const data = JSON.parse((event as MessageEvent).data) as { state: OperationState };

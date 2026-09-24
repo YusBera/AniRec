@@ -13,9 +13,9 @@ import { ChannelHeading, number, ReadState, useRead } from "./common";
 import { boardFacts, scoreText } from "./profileFacts";
 import { ProfileSections } from "./ProfileSections";
 
-/** `STATE_FOR_REASON`, worded for a client that cannot connect an account yet. */
+/** `STATE_FOR_REASON`, worded for a client that cannot connect an account. */
 const UNAVAILABLE: Record<string, [string, string, boolean]> = {
-  "not-connected": ["Connect your account first", "A taste profile is read from your MyAnimeList history. Connecting an account is not available in the web client yet. You can still inspect the bundled sample profile.", false],
+  "not-connected": ["Your taste profile is not built yet", "A taste profile is read from your MyAnimeList history, which is not available here. You can still inspect the bundled sample profile.", false],
   "backend-missing": ["Your taste profile is not built yet", "Live profile statistics are not available in this build. You can still inspect the bundled sample profile.", false],
   "private-list": ["Your list is private", "AniRec can only read a public list. Make yours public on MyAnimeList, then try again.", false],
   network: ["MyAnimeList is unreachable", "AniRec could not reach MyAnimeList. Check your connection and try again.", true],

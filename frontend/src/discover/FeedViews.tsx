@@ -35,6 +35,8 @@ export function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (view
 export interface FeedViewProps {
   view: ViewMode;
   models: RecommendationViewModel[];
+  /** How many titles precede `models` in the current ordering (earlier pages). */
+  rankOffset?: number;
   caption: string;
   watchLater: (malId: number | null) => boolean;
   hidden: (malId: number | null) => boolean;
@@ -121,9 +123,12 @@ function TableView(props: FeedViewProps) {
         <th scope="col">Rank</th><th scope="col">Title</th><th scope="col">Personal match</th><th scope="col">MAL score</th>
         <th scope="col">Genres</th><th scope="col">Year</th><th scope="col">Status</th><th scope="col">Episodes</th><th scope="col">Actions</th>
       </tr></thead>
-      <tbody>{props.models.map((model) => <tr key={model.mal_id ?? model.display_title} data-card-id={model.mal_id ?? undefined}
+      {/* Rank is the position in the order the reader chose, not model.rank:
+          the desktop's CHANGE [RANK] (recommendation_page.py) fixed exactly
+          this - sorted by MAL score the column read 7, 1, 2, 6 down the page. */}
+      <tbody>{props.models.map((model, index) => <tr key={model.mal_id ?? model.display_title} data-card-id={model.mal_id ?? undefined}
         data-hidden={props.hidden(model.mal_id)}>
-        <td>{model.rank ?? "N/A"}</td>
+        <td>{(props.rankOffset ?? 0) + index + 1}</td>
         <th scope="row"><button type="button" className="table-title" onClick={() => props.onDetails(model)}>
           <span className="table-thumb" aria-hidden="true"><PosterArt model={model} /></span><span>{model.display_title}</span>
         </button></th>

@@ -19,6 +19,8 @@ import { Icon } from "../assets/Icon";
 import { usePlatform } from "../platform/PlatformContext";
 import { fitRankText } from "./ScoreRail";
 
+
+const CARD_TAG_SLOTS = 5;
 export type Decision = "watch_later" | "hidden";
 
 interface Props {
@@ -99,6 +101,12 @@ function RecommendationCardInner({
   const labels = verdictLabels(watchLater, hidden);
   const locked = malId === null || pending || !!disabledReason;
   const studio = model.studios[0];
+  // Five slots fill the three-row reservation even with long names; when
+  // the tags do not fit, the last slot becomes the "+n" that names the rest.
+  const available = CARD_TAG_SLOTS - (studio ? 1 : 0);
+  const overflowing = model.studios.length > 1 || model.genres.length > available;
+  const shownGenres = Math.min(model.genres.length, overflowing ? available - 1 : available);
+  const moreTags = [...model.studios.slice(1), ...model.genres.slice(shownGenres)];
   const meta = metaLine(model);
 
   return (
@@ -124,9 +132,15 @@ function RecommendationCardInner({
         </button>
       </div>
 
+      {/* gui/metadata_tags.py: the tags keep a fixed-height reservation, and
+          anything past it collapses into one "+n" naming the rest, so a card
+          never hides a genre without saying so. */}
       <div className="card-tags" title={[...model.studios, ...model.genres].join(" · ")}>
         {studio ? <span className="card-tag studio"><span className="visually-hidden">Studio: </span>{studio}</span> : null}
-        {model.genres.map((genre) => <span className="card-tag" key={genre}><span className="visually-hidden">Genre: </span>{genre}</span>)}
+        {model.genres.slice(0, shownGenres).map((genre) => <span className="card-tag" key={genre}><span className="visually-hidden">Genre: </span>{genre}</span>)}
+        {moreTags.length ? <span className="card-tag more" title={moreTags.join(" · ")}>
+          +{moreTags.length}<span className="visually-hidden"> more: {moreTags.join(", ")}</span>
+        </span> : null}
       </div>
       <div className="card-meta">{meta}</div>
       <div className="card-mal">{malScoreText(model)}</div>

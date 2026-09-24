@@ -46,6 +46,7 @@ export function useShellState() {
   const busy = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const kick = useRef<() => void>(() => undefined);
+  const failedBefore = useRef(false);
 
   const log = useCallback((tag: LogLine["tag"], message: string, stamped = true) => {
     setLines((current) => [...current, { id: nextId.current++, time: stamped ? clock() : null, tag, message }].slice(-MAX_LINES));
@@ -84,7 +85,17 @@ export function useShellState() {
   }, []);
   const poll = async () => {
     const [state, operations] = await Promise.allSettled([api.systemState(), api.operations()]);
-    if (state.status === "fulfilled") { setSystem(state.value); setSystemFailed(false); } else setSystemFailed(true);
+    if (state.status === "fulfilled") {
+      setSystem(state.value);
+      setSystemFailed(false);
+      if (failedBefore.current) log("BOOT", "local service reachable again");
+      failedBefore.current = false;
+    } else {
+      setSystemFailed(true);
+      // One line per outage, not one per poll.
+      if (!failedBefore.current) log("ERROR", "local service unreachable; status unknown");
+      failedBefore.current = true;
+    }
     if (operations.status !== "fulfilled") return;
     const records = operations.value.operations ?? [];
     const first = seen.current === null;
@@ -149,7 +160,9 @@ export function useShellState() {
 type Tone = "ok" | "warn" | "busy" | "idle" | "error";
 
 export function readoutRows(system: SystemState | null, systemFailed: boolean, feed: Feed | null): [string, string, Tone, string][] {
-  const unknown = !system;
+  // A failed poll makes every service value unknown: an earlier READY is not
+  // evidence the service is still ready.
+  const unknown = !system || systemFailed;
   const engine: [string, Tone] = unknown ? [systemFailed ? "OFFLINE" : "--", systemFailed ? "error" : "idle"]
     : system.active_operations?.length ? ["BUSY", "busy"] : ["READY", "ok"];
   const source: [string, Tone] = !feed ? ["--", "idle"] : feed.source === "sample" ? ["SAMPLE", "warn"] : feed.source === "profile" ? ["LIVE", "ok"] : ["NONE", "idle"];
@@ -158,7 +171,7 @@ export function readoutRows(system: SystemState | null, systemFailed: boolean, f
   return [
     ["ENGINE", engine[0], engine[1], unknown ? "Engine state unknown" : `Engine ${engine[0].toLocaleLowerCase()}`],
     ["SOURCE", source[0], source[1], feed ? `Source ${source[0].toLocaleLowerCase()}` : "Source unknown"],
-    ["PROFILE", unknown ? "--" : profile ?? "NONE", profile ? "ok" : "idle", unknown ? "Profile unknown" : profile ? `Profile ${profile}` : "No active profile"],
+    ["PROFILE", unknown ? "--" : profile ?? "NONE", !unknown && profile ? "ok" : "idle", unknown ? "Profile unknown" : profile ? `Profile ${profile}` : "No active profile"],
     ["MAL", mal[0], mal[1], unknown ? "MyAnimeList state unknown" : system.mal_client_id_present ? "MyAnimeList Client ID configured" : "No MyAnimeList Client ID configured"],
   ];
 }

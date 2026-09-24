@@ -37,8 +37,10 @@ import { LibraryPage } from "../workspace/LibraryPage";
 import { PAGE_SIZE, PageControls } from "../workspace/common";
 import { useRecommendationActivity } from "./useRecommendationActivity";
 
-export const NO_PROFILE_REASON = "Connect or select a profile to manage local recommendation lists.";
-export const RUN_UNAVAILABLE = "Personal analysis needs a connected profile. Connecting an account is not available in the web client yet.";
+export const NO_PROFILE_REASON = "Recommendation lists need a profile.";
+// Connecting an account from the web client is not possible (user decision,
+// 2026-09-24), so no copy here offers or promises one.
+export const RUN_UNAVAILABLE = "Not available for the sample library.";
 
 interface Inspecting {
   malId: number | null;
@@ -50,7 +52,7 @@ interface Inspecting {
 export function feedbackSummary(feed: Feed): string {
   const saved = feed.state.watch_later_mal_ids.length;
   const setAside = feed.state.hidden_mal_ids.length;
-  if (feed.ephemeral) return `SAMPLE · ${saved} SAVED · ${setAside} SET ASIDE · CONNECT TO KEEP`;
+  if (feed.ephemeral) return `SAMPLE · ${saved} SAVED · ${setAside} SET ASIDE`;
   if (!feed.state_profile_id) return "NO PROFILE · LISTS DISABLED";
   if (!saved && !setAside) return "PROFILE READY · SAVE OR SET ASIDE TO SHAPE THE FEED";
   return `LISTS SAVED · ${saved} SAVED · ${setAside} SET ASIDE`;
@@ -186,16 +188,18 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
   const progress = operation.status.progress;
   const opError = operation.status.error;
   const staleFeed = opError ? [opError.title, opError.description, opError.solution].join(" ").includes("Generate a new feed") : false;
-  const running = busy && operation.status.kind === "recommendation";
   const headerState: HeaderState = busy ? "busy" : operation.status.state === "failed" ? "fault" : "ready";
   const headerMessage = busy ? progress?.message ?? "Working…"
     : opError ? [opError.title, opError.description].filter(Boolean).join(". ")
-      : runUnavailable ?? "";
+      : "";
   const start = (kind: string, payload: Record<string, unknown> = {}) => {
     void operation.start(kind, payload).then(() => onOperationStarted?.());
   };
   const hiddenInFeed = feed ? feed.recommendations.some((m) => has(feed.state.hidden_mal_ids, m.mal_id)) : false;
-  const exhausted = !!feed && !visible.length && !isActive(filters) && feed.recommendations.length > 0 && !showHidden;
+  // Also exhausted when a reload returns no titles because every one is
+  // marked Not interested (the server then reports them only in hidden_count).
+  const exhausted = !!feed && !visible.length && !isActive(filters)
+    && (feed.recommendations.length > 0 || feed.hidden_count > 0) && !showHidden;
 
   // The inspector walks the list it was opened from.
   const inspectedIndex = inspecting ? inspecting.list.findIndex((m) => m.mal_id === inspecting.malId && m.display_title === inspecting.title) : -1;
@@ -213,9 +217,7 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
       <div hidden={surface !== "discover"}>
       <a className="skip-link" href="#recommendations">Skip to recommendations</a>
       <main className="shell discover">
-        <DiscoverHeader state={headerState} message={headerMessage} running={running}
-          runDisabledReason={busy ? null : runUnavailable} taste={feed?.taste_vector}
-          onRun={() => start("recommendation")} />
+        <DiscoverHeader state={headerState} message={headerMessage} />
 
         {state === "error" && error ? <ErrorPanel error={error} onRetry={() => void reload()} /> : null}
 
@@ -298,7 +300,7 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
               </div> : null}
             </div>
 
-            <section id="recommendations" tabIndex={-1} aria-label="Recommendations">
+            <section id="recommendations" tabIndex={-1} aria-label="Recommendations" data-inspector-return="">
               {visible.length === 0 ? (
                 exhausted ? (
                   <EmptyPanel icon="folder-watch-later" title="You’re all caught up"
@@ -313,11 +315,11 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
                     <button type="button" className="btn" onClick={() => { setFilters(EMPTY_FILTERS); setPage(0); }}>Clear filters</button>
                   </EmptyPanel>
                 ) : (
-                  <EmptyPanel icon="view-grid" title="Build your first feed"
-                    message={runUnavailable ? "No recommendations are available yet. A personal feed needs a connected profile." : "Choose RUN ANALYSIS to create a personal anime feed."} />
+                  <EmptyPanel icon="view-grid" title="No recommendations yet"
+                    message="No recommendations are available for this profile yet." />
                 )
               ) : (
-                <FeedView view={view} models={pageItems} caption={`Recommendations — ${visible.length} in feed`}
+                <FeedView view={view} models={pageItems} rankOffset={currentPage * PAGE_SIZE} caption={`Recommendations — ${visible.length} in feed`}
                   watchLater={isSaved} hidden={isHidden} pending={pending} disabledReason={decisionsUnavailable}
                   trackActivity={surface === "discover" && view === "cards"}
                   onDetails={(model) => inspect(model, visible)} onExternal={external} onVote={vote} />

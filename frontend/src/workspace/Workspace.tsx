@@ -33,7 +33,7 @@ export function Workspace() {
   const [page, setPage] = useState<Page>(route);
   const [visited, setVisited] = useState<Set<Page>>(() => new Set([route()]));
   const [feed, setFeed] = useState<Feed | null>(null);
-  const [firstRun, setFirstRun] = useState<null | "welcome" | "connect">(null);
+  const [firstRun, setFirstRun] = useState<null | "welcome">(null);
   const shell = useShellState();
   const content = useRef<HTMLDivElement>(null);
   const positions = useRef<Partial<Record<Page, number>>>({});
@@ -69,7 +69,7 @@ export function Workspace() {
   return <div className="workspace">
     <a className="skip-link" href="#workspace-content">Skip to content</a>
     <aside className="workspace-nav">
-      <div className="workspace-brand"><span>ANIREC</span><small lang="ja" aria-hidden="true">アニレク</small></div>
+      <div className="workspace-brand"><span>ANIREC</span></div>
       <nav aria-label="Main navigation">{pages.map(([id, label, icon, description], i) => <a href={`#/${id}`} key={id}
         aria-current={page === id ? "page" : undefined} title={description}>
         <Icon name={icon} className="nav-icon" /><span className="nav-index" aria-hidden="true">0{i + 1}</span><span className="nav-label">{label}</span>
@@ -81,9 +81,10 @@ export function Workspace() {
       </div>
     </aside>
     <div className="workspace-content" ref={content} id="workspace-content" tabIndex={-1}>
+      {/* No "Connect my account" here: connecting an account from the web
+          client is not possible (user decision, 2026-09-24). */}
       {sample ? <div className="sample-banner" role="note">
-        <p>Sample data. Connect MyAnimeList to see your own picks.</p>
-        <button type="button" className="btn" onClick={() => setFirstRun("connect")}>Connect my account</button>
+        <p>Sample data. These are bundled demonstration picks, not your own.</p>
       </div> : null}
       <DiscoverPage surface={page === "discover" || page === "library" ? page : "inactive"}
         onFeedChange={onFeedChange} onOperationStarted={shell.nudge} />
@@ -91,6 +92,6 @@ export function Workspace() {
       <div hidden={page !== "compare"}>{visited.has("compare") ? <ComparePage /> : null}</div>
       <div hidden={page !== "settings"}>{visited.has("settings") ? <SettingsPage /> : null}</div>
     </div>
-    {firstRun ? <FirstRun step={firstRun} onClose={() => setFirstRun(null)} /> : null}
+    {firstRun ? <FirstRun onClose={() => setFirstRun(null)} /> : null}
   </div>;
 }

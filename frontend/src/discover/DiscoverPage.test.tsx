@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Feed } from "../api/types";
 import { DiscoverPage, applyVote, feedbackSummary } from "./DiscoverPage";
 import { Workspace } from "../workspace/Workspace";
-import { tasteLines, tasteSentence } from "./DiscoverHeader";
 import { LibraryPage } from "../workspace/LibraryPage";
 
 const CARD = {
@@ -199,7 +198,7 @@ describe("DiscoverPage", () => {
   it("says so when the feed is demonstration data rather than real", async () => {
     stubFetch();
     render(<DiscoverPage />);
-    expect(await screen.findByText("SAMPLE · 0 SAVED · 0 SET ASIDE · CONNECT TO KEEP")).toBeInTheDocument();
+    expect(await screen.findByText("SAMPLE · 0 SAVED · 0 SET ASIDE")).toBeInTheDocument();
     expect(screen.getByText("Sample library. Decisions reset on reload.")).toBeInTheDocument();
   });
 
@@ -531,53 +530,27 @@ describe("the PySide card and header", () => {
     expect(within(card).getByText("Personal match unavailable")).toBeInTheDocument();
   });
 
-  it("words the taste vector exactly as the desktop's _summary_sentence", () => {
-    const term = (name: string, kind: "genre" | "studio", rated_count = 3) => ({ term: name, kind, rated_count });
-    expect(tasteSentence({ liked: [term("Drama", "genre"), term("Mystery", "genre")], avoided: [] })).toBe("You tend to enjoy Drama, Mystery.");
-    expect(tasteSentence({ liked: [term("Drama", "genre"), term("Shaft", "studio"), term("Madhouse", "studio"), term("Sunrise", "studio")], avoided: [] }))
-      .toBe("You tend to enjoy Drama, often from Shaft and Madhouse.");
-    expect(tasteSentence({ liked: [term("Shaft", "studio")], avoided: [] })).toBe("You tend to reach for work from Shaft.");
-    expect(tasteSentence({ liked: [], avoided: [term("Ecchi", "genre")] })).toBe("You tend to enjoy nothing yet.");
-    expect(tasteSentence({ liked: [], avoided: [] })).toBe("Your taste appears here once AniRec has seen your ratings.");
-    expect(tasteSentence(null)).toBe("Your taste appears here once AniRec has seen your ratings.");
-    expect(tasteLines({ liked: [term("Drama", "genre", 24)], avoided: [term("Ecchi", "genre", 7)] }))
-      .toEqual(["Drama: 24 you have finished", "Ecchi: usually not for you"]);
-  });
-
-  it("folds the taste lines behind EXPAND and disables it when there is no taste yet", async () => {
-    const user = userEvent.setup();
-    stubFetch({ ...FEED, taste_vector: { liked: [{ term: "Drama", kind: "genre", rated_count: 24 }], avoided: [] } });
-    const { unmount } = render(<DiscoverPage />);
-    const toggle = await screen.findByRole("button", { name: "Taste details: EXPAND" });
-    expect(screen.getByText("Drama: 24 you have finished")).not.toBeVisible();
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("Drama: 24 you have finished")).toBeVisible();
-    unmount();
-    stubFetch();
-    render(<DiscoverPage />);
-    expect(await screen.findByRole("button", { name: "Taste details: EXPAND" })).toBeDisabled();
-  });
-
   it("reports the feed in the desktop's status vocabulary", () => {
     expect(feedbackSummary({ ...FEED, state: { ...FEED.state, watch_later_mal_ids: [1], hidden_mal_ids: [2, 3] } }))
-      .toBe("SAMPLE · 1 SAVED · 2 SET ASIDE · CONNECT TO KEEP");
+      .toBe("SAMPLE · 1 SAVED · 2 SET ASIDE");
     expect(feedbackSummary({ ...FEED, ephemeral: false, state_profile_id: null })).toBe("NO PROFILE · LISTS DISABLED");
     expect(feedbackSummary({ ...FEED, ephemeral: false, state_profile_id: "p" })).toBe("PROFILE READY · SAVE OR SET ASIDE TO SHAPE THE FEED");
     expect(feedbackSummary({ ...FEED, ephemeral: false, state_profile_id: "p", state: { ...FEED.state, watch_later_mal_ids: [1] } }))
       .toBe("LISTS SAVED · 1 SAVED · 0 SET ASIDE");
   });
 
-  it("disables RUN ANALYSIS on the sample feed and gives the reason in words", async () => {
+  it("offers no RUN ANALYSIS or connect action, and disables more picks on the sample feed with the reason", async () => {
     stubFetch();
     render(<DiscoverPage />);
-    const run = await screen.findByRole("button", { name: /RUN ANALYSIS/ });
-    expect(run).toBeDisabled();
-    expect(screen.getByText(/Personal analysis needs a connected profile/)).toBeInTheDocument();
+    const more = await screen.findByRole("button", { name: "Recommend 5 more" });
+    expect(more).toBeDisabled();
+    expect(more).toHaveAttribute("title", "Not available for the sample library.");
+    expect(screen.queryByRole("button", { name: /RUN ANALYSIS/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/connect/i)).not.toBeInTheDocument();
     expect(screen.getByText("READY")).toBeInTheDocument();
   });
 
-  it("runs an analysis, shows BUSY with the stream's progress, and reloads the feed when it succeeds", async () => {
+  it("runs more picks, shows BUSY with the stream's progress, and reloads the feed when it succeeds", async () => {
     class FakeEventSource {
       static instances: FakeEventSource[] = [];
       listeners = new Map<string, Array<(event: Event) => void>>();
@@ -591,15 +564,15 @@ describe("the PySide card and header", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(profileFeed), { headers: { "Content-Type": "application/json" } });
-      if (url.endsWith("/api/operations/recommendation")) return new Response(JSON.stringify({ id: "run-1", kind: "recommendation", profile_id: "test-profile", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
+      if (url.endsWith("/api/operations/more-recommendations")) return new Response(JSON.stringify({ id: "run-1", kind: "more-recommendations", profile_id: "test-profile", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
       return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<DiscoverPage />);
-    await user.click(await screen.findByRole("button", { name: /RUN ANALYSIS/ }));
+    await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(screen.getByRole("button", { name: /ANALYSING…/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     act(() => FakeEventSource.instances[0]!.emit("progress", { stage_id: "fetch", message: "Fetch completed anime", current: 1, total: 4, cancellable: true }));
     expect(screen.getByText("BUSY")).toBeInTheDocument();
     expect(screen.getAllByText("Fetch completed anime").length).toBeGreaterThan(0);
@@ -623,7 +596,7 @@ describe("the PySide card and header", () => {
     }));
     const user = userEvent.setup();
     render(<DiscoverPage />);
-    await user.click(await screen.findByRole("button", { name: /RUN ANALYSIS/ }));
+    await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Another operation is already running");
     expect(alert).toHaveTextContent("Operation is already running: recommendation:test-profile");
@@ -644,7 +617,7 @@ describe("the PySide card and header", () => {
     }));
     const user = userEvent.setup();
     render(<DiscoverPage />);
-    await user.click(await screen.findByRole("button", { name: /RUN ANALYSIS/ }));
+    await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("No active profile. Complete setup first.");
     expect(alert).not.toHaveTextContent("Another operation");
@@ -732,5 +705,96 @@ describe("My Library collections", () => {
     const card = screen.getByRole("article", { name: "Death Note" });
     await user.click(within(card).getByRole("button", { name: "Show this recommendation again" }));
     expect(onVote.mock.calls[0]!.slice(0, 3)).toEqual([1535, "hidden", false]);
+  });
+});
+
+describe("design-port review fixes", () => {
+  it("numbers the Table's Rank column by the reader's order, not the backend rank (CHANGE [RANK])", async () => {
+    // Personal fit puts Steins;Gate (fit 2) above Death Note (fit 4); the
+    // backend ranks are 2 and 1, which the old column printed as-is.
+    stubFetch();
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: /Table/ }));
+    const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(within(rows[0]!).getByRole("rowheader")).toHaveTextContent("Steins;Gate");
+    expect(within(rows[0]!).getAllByRole("cell")[0]).toHaveTextContent(/^1$/);
+    expect(within(rows[1]!).getAllByRole("cell")[0]).toHaveTextContent(/^2$/);
+  });
+
+  it("collapses tags past the card's reservation into a +n that names the rest", async () => {
+    const genres = ["Action", "Drama", "Fantasy", "Mystery", "Romance", "Sci-Fi", "Suspense"];
+    stubFetch({ ...FEED, recommendations: [{ ...FEED.recommendations[1]!, genres, studios: ["White Fox", "Studio B"] }] });
+    render(<DiscoverPage />);
+    const card = await screen.findByRole("article", { name: "Steins;Gate" });
+    const tags = card.querySelector(".card-tags")!;
+    // Studio + 3 genres + "+n" fill the five slots; the rest are named.
+    const more = within(tags as HTMLElement).getByText(/^\+5/);
+    expect(more.closest(".card-tag")).toHaveAttribute("title", "Studio B · Mystery · Romance · Sci-Fi · Suspense");
+    expect(tags).toHaveTextContent("more: Studio B, Mystery, Romance, Sci-Fi, Suspense");
+  });
+
+  it("says the reader is all caught up when every title was marked Not interested before a reload", async () => {
+    const profileFeed = { ...FEED, source: "profile" as const, ephemeral: false, state_profile_id: "p", recommendations: [], hidden_count: 2 };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input).includes("/api/discover/feed")
+      ? new Response(JSON.stringify(profileFeed), { headers: { "Content-Type": "application/json" } })
+      : new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } })));
+    render(<DiscoverPage />);
+    expect(await screen.findByRole("heading", { name: "You’re all caught up" })).toBeInTheDocument();
+    expect(screen.queryByText("No recommendations yet")).not.toBeInTheDocument();
+  });
+
+  describe("a progress stream that closes before the operation reports", () => {
+    class ClosingEventSource {
+      static instances: ClosingEventSource[] = [];
+      static CLOSED = 2;
+      readyState = 0;
+      listeners = new Map<string, Array<(event: Event) => void>>();
+      constructor(readonly url: string) { ClosingEventSource.instances.push(this); }
+      addEventListener(type: string, listener: (event: Event) => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]); }
+      close() { this.readyState = ClosingEventSource.CLOSED; }
+      drop() { this.readyState = ClosingEventSource.CLOSED; for (const listener of this.listeners.get("error") ?? []) listener(new Event("error")); }
+    }
+    const profileFeed = { ...FEED, source: "profile" as const, ephemeral: false, state_profile_id: "test-profile" };
+
+    function stub(operation: () => Response) {
+      ClosingEventSource.instances = [];
+      vi.stubGlobal("EventSource", ClosingEventSource);
+      const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(profileFeed), { headers: { "Content-Type": "application/json" } });
+        if (url.endsWith("/api/operations/more-recommendations")) return new Response(JSON.stringify({ id: "run-1", kind: "more-recommendations", profile_id: "test-profile", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
+        if (url.endsWith("/api/operations/run-1")) return operation();
+        return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      return fetchMock;
+    }
+
+    it("reads the operation's own outcome and reloads when it had finished", async () => {
+      const fetchMock = stub(() => new Response(JSON.stringify({ id: "run-1", kind: "more-recommendations", profile_id: "test-profile", state: "succeeded", event_count: 3 }), { headers: { "Content-Type": "application/json" } }));
+      const user = userEvent.setup();
+      render(<DiscoverPage />);
+      await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
+      await waitFor(() => expect(ClosingEventSource.instances).toHaveLength(1));
+      const feedCalls = () => fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/discover/feed")).length;
+      const before = feedCalls();
+      act(() => ClosingEventSource.instances[0]!.drop());
+      await waitFor(() => expect(feedCalls()).toBe(before + 1));
+      expect(await screen.findByText("READY")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Recommend 5 more" })).toBeEnabled();
+    });
+
+    it("stops claiming to run, and says the outcome is unknown, when the service cannot answer", async () => {
+      stub(() => new Response("{}", { status: 404 }));
+      const user = userEvent.setup();
+      render(<DiscoverPage />);
+      await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
+      await waitFor(() => expect(ClosingEventSource.instances).toHaveLength(1));
+      act(() => ClosingEventSource.instances[0]!.drop());
+      expect(await screen.findByRole("alert")).toHaveTextContent("Lost contact with the running operation");
+      expect(screen.getByText("FAULT")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    });
   });
 });

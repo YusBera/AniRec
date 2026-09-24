@@ -30,7 +30,6 @@ presenting demonstration figures as real.
 
 from __future__ import annotations
 
-from dataclasses import asdict
 import json
 import os
 from typing import Any, Callable, Iterator
@@ -44,7 +43,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from ..application.pipeline import CancellationToken
 from ..models import PipelineProgress, PipelineResult, UserProfile
 from ..presentation import recommendation_view_models
-from ..presentation.taste_vector import taste_vector
 from ..services import ApiConnectionService
 from ..services.recommendation_event_service import (
     RecommendationEventService,
@@ -362,12 +360,6 @@ def create_app(
             catalogue=catalogue_to_dict(models),
             state=EMPTY_LOCAL_STATE if state is None else local_state_to_dict(state),
             user_stats=dict(result.user_stats),
-            taste_vector=asdict(
-                taste_vector(
-                    result.genre_stats,
-                    (studio for model in models for studio in model.studios),
-                )
-            ),
             activity_feed_id=feed_fingerprint(
                 models, activity_model_version(result.user_stats)
             ),

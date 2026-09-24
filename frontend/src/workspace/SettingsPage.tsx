@@ -27,7 +27,7 @@ const sortOptions = [
 
 const themes = [["system", "System"], ["dark", "Dark"], ["light", "Light"], ["oled", "OLED black"], ["gradient", "Gradient"]] as const;
 
-const NOT_IN_WEB = "Not available in the web client yet.";
+const NOT_IN_WEB = "Not available in the web client.";
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   const id = useId();
