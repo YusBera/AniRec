@@ -19,8 +19,12 @@ real operation outcomes and service outages; the version moved to Settings.
 against a sample-only API: no horizontal scroll, every top-bar control and
 menu link at least 44px.
 
-*Left open:* the Discover header and status line still read as an
-instrument panel (listed in `CURRENT_TASK.md`).
+*Follow-up (same day):* the Discover STATE readout, the upper-case status
+line, the "X // Y" page headings and the duplicate sample notes were replaced
+by a plain title, "N recommendations", plain headings, and the one banner.
+`npm run ci` 105 passed; checked at 1440×900 and 375×812.
+
+*Left open:* Profile's and Settings' upper-case legends.
 
 ---
 

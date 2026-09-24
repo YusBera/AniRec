@@ -25,7 +25,7 @@ import { OPERATION_RUNNING, useFeed, useOperation } from "../api/hooks";
 import type { Feed, LocalState, RecommendationViewModel } from "../api/types";
 import { Icon } from "../assets/Icon";
 import { Controls } from "./Controls";
-import { DiscoverHeader, type HeaderState } from "./DiscoverHeader";
+import { DiscoverHeader } from "./DiscoverHeader";
 import { FeedView, ViewToggle, type ViewMode } from "./FeedViews";
 import type { Decision } from "./RecommendationCard";
 import { ScoreInspector } from "./ScoreInspector";
@@ -67,14 +67,10 @@ interface Inspecting {
   list: RecommendationViewModel[];
 }
 
-/** The control bar's summary, in the desktop's vocabulary (`_update_feedback_summary`). */
-export function feedbackSummary(feed: Feed): string {
-  const saved = feed.state.watch_later_mal_ids.length;
-  const setAside = feed.state.hidden_mal_ids.length;
-  if (feed.ephemeral) return `SAMPLE · ${saved} SAVED · ${setAside} SET ASIDE`;
-  if (!feed.state_profile_id) return "NO PROFILE · LISTS DISABLED";
-  if (!saved && !setAside) return "PROFILE READY · SAVE OR SET ASIDE TO SHAPE THE FEED";
-  return `LISTS SAVED · ${saved} SAVED · ${setAside} SET ASIDE`;
+/** The one fact the control bar states, in plain words (D-019). Saved and
+ *  Not interested counts live on the My Library tabs, where they are used. */
+export function feedCount(count: number): string {
+  return count === 1 ? "1 recommendation" : `${count.toLocaleString("en-US")} recommendations`;
 }
 
 export function DiscoverPage({ surface = "discover", onFeedChange, onOperationStarted, autoRefresh = false, activeProfileId = null }: {
@@ -230,10 +226,6 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
   const progress = operation.status.progress;
   const opError = operation.status.error;
   const staleFeed = opError ? [opError.title, opError.description, opError.solution].join(" ").includes("Generate a new feed") : false;
-  const headerState: HeaderState = busy ? "busy" : operation.status.state === "failed" ? "fault" : "ready";
-  const headerMessage = busy ? progress?.message ?? "Working…"
-    : opError ? [opError.title, opError.description].filter(Boolean).join(". ")
-      : "";
   const start = (kind: string, payload: Record<string, unknown> = {}) => {
     void operation.start(kind, payload).then(() => onOperationStarted?.());
   };
@@ -305,18 +297,14 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
       <div hidden={surface !== "discover"}>
       <a className="skip-link" href="#recommendations">Skip to recommendations</a>
       <main className="shell discover">
-        <DiscoverHeader state={headerState} message={headerMessage} />
+        <DiscoverHeader busy={busy} detail={progress?.message} />
 
         {state === "error" && error ? <ErrorPanel error={error} onRetry={() => void reload()} /> : null}
 
         {feed ? (
           <>
             <div className="control-bar">
-              <p className="control-readout" role="status">
-                <span className="readout-count">{visible.length} IN FEED</span>
-                <span className="strip-rule" aria-hidden="true" />
-                <span>{feedbackSummary(feed)}</span>
-              </p>
+              <p className="control-readout" role="status">{feedCount(visible.length)}</p>
               <div className="control-actions">
                 {busy ? (
                   <button type="button" className="btn" onClick={() => void operation.cancel()}>Cancel</button>
@@ -383,7 +371,6 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
               onSort={(next) => { setSortMode(next); setPage(0); }} />
 
             <div className="feed-notices">
-              {feed.ephemeral ? <p className="sample-note">Sample library. Decisions reset on reload.</p> : null}
               <p className="feedback-notice" role="status">{surface === "discover" ? feedbackNotice : ""}</p>
               {feedbackError && surface === "discover" ? <div className="feedback-error" role="alert">
                 <p>{feedbackError.message}</p>

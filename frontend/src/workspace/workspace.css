@@ -95,7 +95,6 @@
 .sample-banner p { margin: 0; color: var(--accent); font-size: calc(var(--type-sm) * 1rem); }
 .sample-banner .btn { min-height: 32px; text-transform: none; letter-spacing: 0.02em; }
 .workspace-page { padding: var(--space-xl) var(--space-2xl) var(--space-3xl); max-width: 1500px; margin-inline: auto; }
-.channel-heading { margin: 0 0 var(--space-sm); }
 .workspace-page h2 { font: var(--weight-bold) calc(var(--type-lg) * 1rem) var(--font-display); color: var(--text-strong); margin: var(--space-xl) 0 var(--space-md); }
 .workspace-page h2 small { color: var(--text-muted); font: calc(var(--type-xs) * 1rem) var(--font-display); letter-spacing: 0.14em; margin-left: var(--space-sm); }
 .workspace-page h3 { font: var(--weight-bold) calc(var(--type-md) * 1rem) var(--font-display); color: var(--text-strong); margin: 0 0 var(--space-sm); overflow-wrap: anywhere; }

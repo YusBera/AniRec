@@ -14,7 +14,7 @@ import { api } from "../api/client";
 import type { CompareRead } from "../api/types";
 import { Icon } from "../assets/Icon";
 import { malScoreText, metaLine, PosterArt } from "../discover/RecommendationCard";
-import { ChannelHeading, number, useRead } from "./common";
+import { PageHeading, number, useRead } from "./common";
 
 type Report = NonNullable<CompareRead["report"]>;
 type Entry = NonNullable<Report["sections"]>[number]["entries"] extends readonly (infer E)[] | undefined ? E : never;
@@ -73,7 +73,7 @@ export function ComparePage() {
 
   return <main className="workspace-page">
     <section className="compare-selector panel">
-      <ChannelHeading name="Compare" mark="COMPATIBILITY" />
+      <PageHeading name="Compare" />
       <p className="workspace-intro">Enter a MyAnimeList username to see how your taste lines up with theirs.</p>
       {!sample ? <form className="compare-form" onSubmit={event => { event.preventDefault(); if (draft.trim() === liveName) read.retry(); else setLiveName(draft.trim()); }}>
         <label>MAL username<input required value={draft} maxLength={64} placeholder="MyAnimeList username" onChange={event => setDraft(event.target.value)} /></label>

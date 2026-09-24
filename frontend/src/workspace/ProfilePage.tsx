@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { api } from "../api/client";
 import { Icon } from "../assets/Icon";
-import { ChannelHeading, number, ReadState, useRead } from "./common";
+import { PageHeading, number, ReadState, useRead } from "./common";
 import { boardFacts, scoreText } from "./profileFacts";
 import { ProfileSections } from "./ProfileSections";
 
@@ -42,7 +42,7 @@ export function ProfilePage() {
   const memberYear = identity?.member_since?.match(/\d{4}/)?.[0];
 
   return <main className="workspace-page">
-    <ChannelHeading name="Profile" mark="TASTE READOUT" />
+    <PageHeading name="Profile" />
     <p className="workspace-intro">A portrait of your taste, read off the scores you have already given.</p>
     <div className="workspace-toolbar" role="group" aria-label="Profile source">
       <button className="btn" aria-pressed={!sample} onClick={() => setSample(false)}>Local profile</button>

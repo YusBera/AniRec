@@ -47,13 +47,9 @@ export function Genres({ genres }: { genres: string[] }) {
   return <div className="workspace-genres" aria-label="Genres">{genres.map(genre => <span className="workspace-genre" key={genre}>{genre}</span>)}</div>;
 }
 
-/**
- * The desktop's "X // Y" channel legend as the page heading. The page's name
- * is the heading's accessible name; the channel mark after the rule is
- * decoration, hidden from screen readers, and drawn in capitals by CSS.
- */
-export function ChannelHeading({ name, mark }: { name: string; mark: string }) {
-  return <h1 className="channel-heading" tabIndex={-1}>{name} <span aria-hidden="true">// {mark}</span></h1>;
+/** A page's name, as any site titles a page (D-019): no "X // Y" legend. */
+export function PageHeading({ name }: { name: string }) {
+  return <h1 className="page-heading" tabIndex={-1}>{name}</h1>;
 }
 
 /** 50 per page, the same batch a web refresh generates (D-018). */

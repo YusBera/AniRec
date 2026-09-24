@@ -319,10 +319,17 @@ reworded to reassure ("Try anything; nothing here is saved."). The package B
 items above for the rail, readout, console and BUILD footer are superseded.
 - Tests: `Shell.test.tsx` (top bar, account menu, bell, notifications from
   operations, no history announced, version in Settings); `npm run ci` 105.
-- Next, same principle, not started: the Discover header's STATE readout,
-  the upper-case status line ("8 IN FEED · SAMPLE · 0 SAVED"), the "X // Y"
-  page headings and the second sample note on Discover still read like an
-  instrument panel.
+- Follow-up, done: Discover opens with a plain title and one line ("Anime
+  picked for you."); "Updating your recommendations…" appears only while an
+  update runs, and failures stay in the control bar's alert. The STATE
+  readout is gone. The status line says "8 recommendations"; saved counts
+  live on the My Library tabs ("Watch Later 0"). Page headings are plain
+  ("My Library", "Profile", "Compare", "Settings"), with no "X // Y" marks.
+  The second sample note on Discover and Library is gone; the shell's banner
+  labels sample data on every page.
+- Still in the desktop's voice, for a later pass if wanted: Profile's
+  upper-case legends ("THE READING", "NOT ON YOUR MAL PROFILE", "THE
+  INSTRUMENT") and Settings' upper-case group titles.
 
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in

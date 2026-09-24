@@ -11,7 +11,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { AniRecApiError, api } from "../api/client";
 import type { SettingsRead, SettingsWrite } from "../api/types";
-import { ChannelHeading, ReadState, useRead } from "./common";
+import { PageHeading, ReadState, useRead } from "./common";
 
 function editable(saved: SettingsRead): SettingsWrite {
   const { username: _username, client_id_present: _clientId, using_defaults: _defaults, ...preferences } = saved;
@@ -119,7 +119,7 @@ function Preferences({ initial }: { initial: SettingsRead }) {
 export function SettingsPage({ version = null }: { version?: string | null }) {
   const read = useRead(api.settings, "settings");
   return <main className="workspace-page">
-    <ChannelHeading name="Settings" mark="CONFIGURATION" />
+    <PageHeading name="Settings" />
     <p className="workspace-intro">Manage recommendation behavior, local profiles, MyAnimeList API access, and appearance.</p>
     <ReadState {...read} />{read.result ? <Preferences initial={read.result} /> : null}
     {/* The build line left the page chrome (D-019); it lives here, with the

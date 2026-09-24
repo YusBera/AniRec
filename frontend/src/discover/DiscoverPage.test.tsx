@@ -11,7 +11,7 @@ import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Feed } from "../api/types";
-import { DiscoverPage, applyVote, feedbackSummary } from "./DiscoverPage";
+import { DiscoverPage, applyVote, feedCount } from "./DiscoverPage";
 import { Workspace } from "../workspace/Workspace";
 import { LibraryPage } from "../workspace/LibraryPage";
 
@@ -195,11 +195,14 @@ describe("DiscoverPage", () => {
     expect(container.querySelectorAll(".skeleton")).toHaveLength(0);
   });
 
-  it("says so when the feed is demonstration data rather than real", async () => {
+  it("states the feed in plain words, without a second sample note under the shell's banner", async () => {
     stubFetch();
     render(<DiscoverPage />);
-    expect(await screen.findByText("SAMPLE · 0 SAVED · 0 SET ASIDE")).toBeInTheDocument();
-    expect(screen.getByText("Sample library. Decisions reset on reload.")).toBeInTheDocument();
+    expect(await screen.findByText("2 recommendations")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Discover" })).toBeInTheDocument();
+    expect(screen.getByText("Anime picked for you.")).toBeInTheDocument();
+    expect(screen.queryByText(/Decisions reset on reload/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/IN FEED|SET ASIDE|STATE|READY/)).not.toBeInTheDocument();
   });
 
   it("filters the feed from a genre pill without another request", async () => {
@@ -275,7 +278,7 @@ describe("DiscoverPage", () => {
     const card = await screen.findByRole("article", { name: "Death Note" });
     await user.click(within(card).getByRole("button", { name: "Not interested" }));
     expect(screen.queryByRole("article", { name: "Death Note" })).not.toBeInTheDocument();
-    expect(screen.getByText("1 IN FEED")).toBeInTheDocument();
+    expect(screen.getByText("1 recommendation")).toBeInTheDocument();
     expect(screen.getByText(/Death Note marked Not interested in this preview/)).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "Show not interested" }));
     const restored = await screen.findByRole("article", { name: "Death Note" });
@@ -532,13 +535,10 @@ describe("the PySide card and header", () => {
     expect(within(card).getByText("Personal match unavailable")).toBeInTheDocument();
   });
 
-  it("reports the feed in the desktop's status vocabulary", () => {
-    expect(feedbackSummary({ ...FEED, state: { ...FEED.state, watch_later_mal_ids: [1], hidden_mal_ids: [2, 3] } }))
-      .toBe("SAMPLE · 1 SAVED · 2 SET ASIDE");
-    expect(feedbackSummary({ ...FEED, ephemeral: false, state_profile_id: null })).toBe("NO PROFILE · LISTS DISABLED");
-    expect(feedbackSummary({ ...FEED, ephemeral: false, state_profile_id: "p" })).toBe("PROFILE READY · SAVE OR SET ASIDE TO SHAPE THE FEED");
-    expect(feedbackSummary({ ...FEED, ephemeral: false, state_profile_id: "p", state: { ...FEED.state, watch_later_mal_ids: [1] } }))
-      .toBe("LISTS SAVED · 1 SAVED · 0 SET ASIDE");
+  it("counts the feed in plain words (D-019)", () => {
+    expect(feedCount(1)).toBe("1 recommendation");
+    expect(feedCount(0)).toBe("0 recommendations");
+    expect(feedCount(1250)).toBe("1,250 recommendations");
   });
 
   it("offers no RUN ANALYSIS, More or connect action, and disables Refresh on the sample feed with the reason", async () => {
@@ -550,10 +550,10 @@ describe("the PySide card and header", () => {
     expect(screen.queryByRole("button", { name: /Recommend/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /RUN ANALYSIS/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/connect/i)).not.toBeInTheDocument();
-    expect(screen.getByText("READY")).toBeInTheDocument();
+    expect(screen.queryByText(/Updating your recommendations/)).not.toBeInTheDocument();
   });
 
-  it("refreshes, shows BUSY with the stream's progress, and reloads the feed when it succeeds", async () => {
+  it("refreshes, says it is updating with the stream's progress, and reloads the feed when it succeeds", async () => {
     class FakeEventSource {
       static instances: FakeEventSource[] = [];
       listeners = new Map<string, Array<(event: Event) => void>>();
@@ -577,13 +577,13 @@ describe("the PySide card and header", () => {
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     act(() => FakeEventSource.instances[0]!.emit("progress", { stage_id: "fetch", message: "Fetch completed anime", current: 1, total: 4, cancellable: true }));
-    expect(screen.getByText("BUSY")).toBeInTheDocument();
-    expect(screen.getAllByText("Fetch completed anime").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Updating your recommendations…/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Fetch completed anime/).length).toBeGreaterThan(0);
     const feedCalls = () => fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/discover/feed")).length;
     const before = feedCalls();
     act(() => FakeEventSource.instances[0]!.emit("finished", { state: "succeeded" }));
     await waitFor(() => expect(feedCalls()).toBe(before + 1));
-    expect(screen.getByText("READY")).toBeInTheDocument();
+    expect(screen.queryByText(/Updating your recommendations/)).not.toBeInTheDocument();
   });
 
   it("words a 409 as another operation already running, not as a failed request", async () => {
@@ -604,7 +604,6 @@ describe("the PySide card and header", () => {
     expect(alert).toHaveTextContent("Another operation is already running");
     expect(alert).toHaveTextContent("Operation is already running: recommendation:test-profile");
     expect(alert).not.toHaveTextContent("reloads");
-    expect(screen.getByText("FAULT")).toBeInTheDocument();
   });
 
   it("keeps the service's own words for a 409 that is not a running operation", async () => {
@@ -662,10 +661,12 @@ describe("the PySide card and header", () => {
     const toggle = await screen.findByRole("checkbox", { name: "Show not interested" });
     await user.click(toggle);
     await user.click(toggle);
-    await waitFor(() => expect(screen.getByText("LISTS SAVED · 1 SAVED · 0 SET ASIDE")).toBeInTheDocument());
+    // The Watch Later count on the (hidden) Library tab shows which read landed.
+    const savedTab = (count: number) => screen.queryByRole("button", { name: `Watch Later · ${count}`, hidden: true });
+    await waitFor(() => expect(savedTab(1)).toBeInTheDocument());
     await act(async () => releaseFirst());
-    expect(screen.getByText("LISTS SAVED · 1 SAVED · 0 SET ASIDE")).toBeInTheDocument();
-    expect(screen.queryByText(/2 SAVED/)).not.toBeInTheDocument();
+    expect(savedTab(1)).toBeInTheDocument();
+    expect(savedTab(2)).not.toBeInTheDocument();
     expect(reads).toBe(3);
   });
 
@@ -784,8 +785,8 @@ describe("design-port review fixes", () => {
       const before = feedCalls();
       act(() => ClosingEventSource.instances[0]!.drop());
       await waitFor(() => expect(feedCalls()).toBe(before + 1));
-      expect(await screen.findByText("READY")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
+      expect(await screen.findByRole("button", { name: "Refresh" })).toBeEnabled();
+      expect(screen.queryByText(/Updating your recommendations/)).not.toBeInTheDocument();
     });
 
     it("stops claiming to run, and says the outcome is unknown, when the service cannot answer", async () => {
@@ -796,7 +797,7 @@ describe("design-port review fixes", () => {
       await waitFor(() => expect(ClosingEventSource.instances).toHaveLength(1));
       act(() => ClosingEventSource.instances[0]!.drop());
       expect(await screen.findByRole("alert")).toHaveTextContent("Lost contact with the running operation");
-      expect(screen.getByText("FAULT")).toBeInTheDocument();
+      expect(screen.queryByText(/Updating your recommendations/)).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
     });
   });
@@ -1017,7 +1018,6 @@ describe("automatic refresh, final review", () => {
     await screen.findByRole("heading", { name: "Death Note" });
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.queryByText("FAULT")).not.toBeInTheDocument();
   });
 
   it("still reports a 409 when the reader pressed Refresh", async () => {

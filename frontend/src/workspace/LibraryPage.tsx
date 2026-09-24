@@ -17,13 +17,13 @@ import type { Feed, RecommendationViewModel } from "../api/types";
 import { FeedView, ViewToggle, type ViewMode } from "../discover/FeedViews";
 import type { Decision } from "../discover/RecommendationCard";
 import { EmptyPanel } from "../discover/states";
-import { ChannelHeading, PAGE_SIZE, PageControls } from "./common";
+import { PageHeading, PAGE_SIZE, PageControls } from "./common";
 
 type Collection = "watch_later" | "hidden";
 
 const COLLECTIONS: { id: Collection; label: string; heading: string }[] = [
-  { id: "watch_later", label: "WATCH LATER", heading: "Watch Later" },
-  { id: "hidden", label: "NOT INTERESTED", heading: "Not interested" },
+  { id: "watch_later", label: "Watch Later", heading: "Watch Later" },
+  { id: "hidden", label: "Not interested", heading: "Not interested" },
 ];
 
 export function LibraryPage({ feed, pending, disabledReason, notice = "", error = null, onVote, onDetails, onExternal }: {
@@ -82,9 +82,8 @@ export function LibraryPage({ feed, pending, disabledReason, notice = "", error 
   const active = COLLECTIONS.find(item => item.id === collection)!;
 
   return <>
-    <ChannelHeading name="My Library" mark="COLLECTIONS" />
+    <PageHeading name="My Library" />
     <p className="workspace-intro">Everything you have saved, or passed on.</p>
-    {feed?.ephemeral ? <p className="sample-note">Sample data. Decisions reset on reload.</p> : null}
     <p role="status" className="feedback-notice">{feed?.ephemeral ? notice.replace(" in this preview. Changes reset on reload.", ".") : notice}</p>
     {error ? <div className="feedback-error" role="alert"><p>{error.message}</p>{error.retry ? <button className="btn" disabled={pending} onClick={error.retry}>Retry decision</button> : null}</div> : null}
     {loadError ? <div role="alert" className="feedback-error"><p>{loadError}</p><button className="btn" onClick={() => setAttempt(value => value + 1)}>Reload saved details</button></div> : null}
@@ -100,7 +99,6 @@ export function LibraryPage({ feed, pending, disabledReason, notice = "", error 
       })}
     </div>
     <div className="control-bar library-bar">
-      <p className="control-readout"><span className="readout-count">{shown.length} SHOWN</span></p>
       <div className="control-actions">
         <label className="library-search">Find a saved title<input type="search" value={query} onChange={e => { setQuery(e.target.value); setPage(0); }} /></label>
         <ViewToggle view={view} onChange={setView} />
