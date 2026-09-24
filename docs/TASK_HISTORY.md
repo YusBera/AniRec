@@ -7,6 +7,28 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - New verified model bundle
+
+The Goal 4 winner, reference `sasrec-typed-d256`, was retrained on split
+`28eb91cde4`: train before 1 September, validation 1-16 September, from the
+22 September snapshot. It early-stopped at epoch 7 and kept epoch 4. Its
+validation Recall@10 is 0.3074 on 48,668 users.
+
+It was exported as `sasrec-typed-d256-seed0-split28eb91cde4-v3`:
+- **Parity:** top-10 and top-50 order is exact on 256/256 histories; the
+  largest difference is 3.4e-5.
+- **Serving:** AniRec's production service builder served it without
+  fallback. It ranked 22,340 safe candidates in 21.8 ms, and no pick had an
+  unmet prerequisite.
+- **Live check:** it was also started through the API with the bundle set,
+  using read-only requests only.
+
+`ONNX_MODEL_SERVING.md` now names it. The previous bundle stays for rollback.
+No accuracy gain over the previous bundle is claimed, because the two cannot
+share an exam. Evidence: `AniRecTrainer/reports/anirec-onnx-inspection-24sep.md`.
+
+---
+
 ## 2026-09-24 - Workspace reorganised; this repository moved
 
 - **Moved.** The application moved from `AniRecTrainer/work/anirec-ui` to

@@ -2,10 +2,10 @@
 
 ## Status: Goals 1-3 committed; Goal 4 runs separately
 
-Goal 4's model decision is complete (2026-09-24): the reference SASRec config
-stays; see `RECOMMENDER_EVALUATION.md`. Its remaining step, retraining,
-exporting and parity-checking a new bundle, runs in `AniRecTrainer` and does
-not touch this repository until a bundle is verified. The local
+Goal 4 is complete (2026-09-24). The reference SASRec config stays; see
+`RECOMMENDER_EVALUATION.md`. It was retrained on data through August and
+verified as a v3 bundle, now named in `ONNX_MODEL_SERVING.md`. No application
+code changed. The local
 backend state lock and the local API request-field authority fix are complete.
 D-014 records the accepted hosted database direction; the local single-user
 mode is still undecided, so account/login/migration work remains paused.

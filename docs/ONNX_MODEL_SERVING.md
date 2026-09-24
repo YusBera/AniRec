@@ -4,9 +4,13 @@ AniRec uses the heuristic ranker unless `ANIREC_MODEL_BUNDLE` points to a
 verified bundle. The current serving contract is bundle version 3.
 
 ```powershell
-$env:ANIREC_MODEL_BUNDLE = 'C:\path\to\sasrec-bundle-v3'
-python -m AniRec.main
+$env:ANIREC_MODEL_BUNDLE = 'C:\Users\yusuf\AniRecTrainerWork\exports\sasrec-typed-d256-seed0-split28eb91cde4-v3'
+.\.venv\Scripts\python.exe -B -m AniRec.api --port 8770
 ```
+
+The bundle is chosen per launch; nothing persists it. Switching bundles changes
+the engine version, so an existing feed's "more" refuses with "Generate a new
+feed" instead of mixing two models' rankings.
 
 The bundle must contain `model.onnx`, `items.npy`, `candidate_mask.npy`,
 `catalog.json`, `prerequisites.npz`, and `manifest.json`. AniRec verifies every
@@ -53,8 +57,18 @@ the model reads (`history_window`). A failure yields an "unavailable"
 explanation, never a lost feed. Recommendation activity remains opt-in and local-only; new results
 store the actual ranking engine ID and version with each event.
 
-The verified 20 September 2026 bundle contains 30,540 model items. Its normal
-safe serving view contains 22,210 released, dated, candidate-mask-eligible
-titles as of that date; enabling NSFW results raises that view to 24,955. The
+The current verified bundle is `sasrec-typed-d256-seed0-split28eb91cde4-v3`
+(24 September 2026). It is the Goal 4 reference config, retrained on data
+before 1 September from the 22 September snapshot. It has 30,563 model items
+and 4,250 verified prerequisite edges. Its safe serving view held 22,340
+released, dated, candidate-mask-eligible titles as of that date.
+PyTorch/ONNX parity is exact on top-10 and top-50 order for 256/256 real
+histories. The evidence is `AniRecTrainer/reports/anirec-onnx-inspection-24sep.md`.
+
+It replaces the 20 September bundle (`sasrec-typed-d256-p6-seed2-split56534d1a96-v3`,
+30,540 items, trained on data before 1 August). That bundle stays in
+`AniRecTrainerWork\exports\` for rollback. The two were not scored on one exam,
+because they index different item sets. The reason for switching is one more
+month of data; no accuracy gain was measured. The
 configured `top_anime_limit` controls only the legacy no-bundle compatibility
 source. It does not limit a configured bundle's candidate population.
