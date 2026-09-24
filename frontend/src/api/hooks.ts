@@ -15,7 +15,7 @@ import type { ApiError, Feed, OperationState, ProgressEvent } from "./types";
 
 export type LoadState = "idle" | "loading" | "ready" | "error";
 
-export function useFeed() {
+export function useFeed(includeHidden = false) {
   const [feed, setFeed] = useState<Feed | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<ApiError | null>(null);
@@ -23,7 +23,7 @@ export function useFeed() {
   const load = useCallback(async (options?: { quiet?: boolean }) => {
     if (!options?.quiet) setState("loading");
     try {
-      const next = await api.feed();
+      const next = await api.feed(includeHidden);
       setFeed(next);
       setError(null);
       setState("ready");
@@ -31,7 +31,7 @@ export function useFeed() {
       if (caught instanceof AniRecApiError) setError(caught.detail);
       setState("error");
     }
-  }, []);
+  }, [includeHidden]);
 
   useEffect(() => {
     void load();
@@ -42,12 +42,38 @@ export function useFeed() {
 
 export interface OperationProgress {
   id: string | null;
+  /** The operation kind this client started, e.g. "recommendation". */
+  kind: string | null;
   state: OperationState | "idle";
   progress: ProgressEvent | null;
   error: ApiError | null;
 }
 
-const IDLE: OperationProgress = { id: null, state: "idle", progress: null, error: null };
+const IDLE: OperationProgress = { id: null, kind: null, state: "idle", progress: null, error: null };
+
+/**
+ * A 409 means the service is already running something that writes this
+ * feed (`OperationAlreadyRunningError`), or that the active profile changed
+ * under this view. Neither is a failure of the request a retry would fix, so
+ * it is worded as what it is, with the service's own sentence kept.
+ */
+function startError(caught: unknown): ApiError {
+  if (caught instanceof AniRecApiError && caught.status === 409) {
+    return {
+      ...caught.detail,
+      title: "Another operation is already running",
+      solution: "Wait for it to finish; the feed reloads when it does.",
+      retryable: false,
+    };
+  }
+  return caught instanceof AniRecApiError ? caught.detail : {
+    code: "network_error",
+    title: "The operation could not be started",
+    description: "The request did not complete.",
+    solution: "Confirm the AniRec service is running, then try again.",
+    retryable: true,
+  };
+}
 
 /**
  * Start an operation and follow its event stream to a terminal state.
@@ -74,16 +100,12 @@ export function useOperation(onFinished?: (state: OperationState) => void) {
   const start = useCallback(
     async (kind: string, payload: Record<string, unknown> = {}) => {
       close();
-      setStatus({ ...IDLE, state: "running" });
+      setStatus({ ...IDLE, kind, state: "running" });
       let snapshot;
       try {
         snapshot = await api.startOperation(kind, payload);
       } catch (caught) {
-        const detail =
-          caught instanceof AniRecApiError
-            ? caught.detail
-            : { ...IDLE.error! };
-        setStatus({ id: null, state: "failed", progress: null, error: detail });
+        setStatus({ id: null, kind, state: "failed", progress: null, error: startError(caught) });
         return null;
       }
 

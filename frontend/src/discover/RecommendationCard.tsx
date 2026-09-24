@@ -1,93 +1,138 @@
-import { memo, useState } from "react";
-import type { RecommendationViewModel } from "../api/types";
-import { FitIndicator } from "./ScoreRail";
-import { MalLink } from "./RecommendationDetails";
+/**
+ * One recommendation, as `gui/recommendation_card.py` builds it.
+ *
+ * Order, top to bottom: poster, personal-fit line, title, secondary title,
+ * the verdict row, studio and genre tags, year/status/episodes, MAL score, the
+ * API's reason, and the utility row. Nothing is drawn over the artwork: the
+ * desktop retired its match plate with the percentage (D-008), so the poster
+ * is only the poster.
+ *
+ * The verdict row is exactly the two judgements a card can support before the
+ * anime is watched (D-015, the desktop's CHANGE [NO-VERDICTS]): keep it for
+ * later, or stop offering it. Both are icon toggles whose state is in the
+ * accessible name and the glyph's filled variant, not in colour alone.
+ */
 
-export type Sentiment = "liked" | "disliked" | null;
+import { memo, useState, type ReactNode } from "react";
+import type { RecommendationViewModel } from "../api/types";
+import { Icon } from "../assets/Icon";
+import { usePlatform } from "../platform/PlatformContext";
+import { fitRankText } from "./ScoreRail";
+
+export type Decision = "watch_later" | "hidden";
 
 interface Props {
   model: RecommendationViewModel;
-  rankingEngineId: string | null;
   watchLater: boolean;
   hidden: boolean;
-  sentiment: Sentiment;
   pending: boolean;
-  sentimentPending: boolean;
+  /** Why the verdicts are unavailable, when they are. */
+  disabledReason?: string;
+  /** Mark the card as an activity-attributable feed position. */
+  trackActivity?: boolean;
   onDetails: (model: RecommendationViewModel) => void;
   onExternal?: (model: RecommendationViewModel) => void;
-  onVote: (malId: number, action: "watch_later" | "hidden", value: boolean) => void;
-  onSentiment: (malId: number, sentiment: Sentiment) => void;
+  onVote: (malId: number, action: Decision, value: boolean) => void;
+}
+
+export function initials(title: string): string {
+  return title.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toLocaleUpperCase();
+}
+
+/** A title's own initials on the poster's frame, never a stand-in cover. */
+type Artwork = Pick<RecommendationViewModel, "display_title" | "cover_url" | "large_cover_url">;
+
+export function PosterArt({ model, large = false }: { model: Artwork; large?: boolean }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const url = large ? model.large_cover_url || model.cover_url : model.cover_url;
+  return <>
+    <span className="placeholder" aria-hidden="true"><b>{initials(model.display_title)}</b><span>No artwork</span></span>
+    {url && failed !== url ? (
+      <img src={url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(url)} />
+    ) : null}
+  </>;
+}
+
+export function verdictLabels(watchLater: boolean, hidden: boolean) {
+  return {
+    later: watchLater ? "Remove from Watch Later" : "Save for later",
+    hide: hidden ? "Show this recommendation again" : "Not interested",
+    hideTip: hidden ? "Show this anime in For You again." : "Stop recommending this anime. It stays in Not interested.",
+  };
+}
+
+/** Only the parts that exist are shown; "not available" is left out, as the desktop row does. */
+export function metaLine(model: Pick<RecommendationViewModel, "year_text" | "status" | "episodes_text">): string {
+  return [model.year_text, model.status, model.episodes_text]
+    .filter((item) => item && !item.toLocaleLowerCase().includes("not available"))
+    .join(" · ");
+}
+
+export function malScoreText(model: Pick<RecommendationViewModel, "mal_score">): string {
+  return `MAL score: ${model.mal_score === null ? "not rated" : `${model.mal_score.toFixed(2)} / 10`}`;
+}
+
+export function MalLink({ model, onExternal, className = "pill mal-link", children }: {
+  model: RecommendationViewModel;
+  onExternal?: (model: RecommendationViewModel) => void;
+  className?: string;
+  children?: ReactNode;
+}) {
+  const platform = usePlatform();
+  if (!model.mal_url) return null;
+  return <a className={className} href={model.mal_url} target="_blank" rel="noreferrer noopener"
+    aria-label={`Open ${model.display_title} on MyAnimeList (external)`} title="Open on MyAnimeList"
+    onClick={(event) => {
+      // Preserve modified clicks and the real href in the browser.
+      if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      event.preventDefault();
+      void platform.openExternal(model.mal_url!).then(() => onExternal?.(model)).catch(() => {});
+    }}>{children ?? <>MyAnimeList <span aria-hidden="true">↗</span></>}</a>;
 }
 
 function RecommendationCardInner({
-  model,
-  rankingEngineId,
-  watchLater,
-  hidden,
-  sentiment,
-  pending,
-  sentimentPending,
-  onDetails,
-  onVote,
-  onSentiment,
-  onExternal,
+  model, watchLater, hidden, pending, disabledReason, trackActivity = false, onDetails, onVote, onExternal,
 }: Props) {
-  const [failedCover, setFailedCover] = useState<string | null>(null);
   const malId = model.mal_id;
-  const meta = [model.year_text, model.episodes_text, model.status].filter(
-    (item) => item && !item.toLocaleLowerCase().includes("not available"),
-  );
-  const initials = model.display_title.split(/\s+/).slice(0, 2).map((word) => word[0]).join("");
-  const sentimentDisabled = malId === null || pending || sentimentPending;
+  const labels = verdictLabels(watchLater, hidden);
+  const locked = malId === null || pending || !!disabledReason;
+  const studio = model.studios[0];
+  const meta = metaLine(model);
 
   return (
-    <article className="card" data-activity-mal-id={malId ?? undefined} data-hidden={hidden} aria-label={model.display_title}>
-      <div className="card-art">
-        <button type="button" className="card-art-open" aria-label={`Inspect ${model.display_title}`} onClick={() => onDetails(model)}>
-          <span className="placeholder" aria-hidden="true"><b>{initials}</b><span>No artwork</span></span>
-          {model.cover_url && failedCover !== model.cover_url ? (
-            <img src={model.cover_url} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer"
-              onError={() => setFailedCover(model.cover_url)} />
-          ) : null}
+    <article className="card" data-activity-mal-id={trackActivity ? malId ?? undefined : undefined}
+      data-card-id={malId ?? undefined} data-hidden={hidden} aria-label={model.display_title}>
+      <button type="button" className="card-art" aria-label={`Inspect ${model.display_title}`} onClick={() => onDetails(model)}>
+        <PosterArt model={model} />
+      </button>
+      <p className="card-fit" data-available={model.fit_rank != null && model.fit_pool_size != null}>{fitRankText(model)}</p>
+      <h2 className="card-title"><button type="button" title={model.display_title} onClick={() => onDetails(model)}>{model.display_title}</button></h2>
+      <div className="card-secondary" title={model.secondary_title ?? undefined}>{model.secondary_title || " "}</div>
+
+      <div className="card-verdicts" role="group" aria-label={`Decisions for ${model.display_title}`}>
+        <button type="button" className="verdict" data-action="later" aria-pressed={watchLater} aria-label={labels.later}
+          title={disabledReason ?? labels.later} disabled={locked}
+          onClick={() => malId !== null && onVote(malId, "watch_later", !watchLater)}>
+          <Icon name={watchLater ? "watch-later-active" : "watch-later"} />
         </button>
-        {model.rank !== null ? <span className="card-rank" aria-label={`Feed position ${model.rank}`}>#{model.rank}</span> : null}
-        <FitIndicator model={model} engineId={rankingEngineId} onOpen={() => onDetails(model)} />
+        <button type="button" className="verdict" data-action="hide" aria-pressed={hidden} aria-label={labels.hide}
+          title={disabledReason ?? labels.hideTip} disabled={locked}
+          onClick={() => malId !== null && onVote(malId, "hidden", !hidden)}>
+          <Icon name={hidden ? "not-interested-active" : "not-interested"} />
+        </button>
       </div>
 
-      <div className="card-body">
-        <h2 className="card-title"><button type="button" title={model.display_title} onClick={() => onDetails(model)}>{model.display_title}</button></h2>
-        <div className="card-secondary" title={model.secondary_title ?? undefined}>{model.secondary_title || "\u00a0"}</div>
-
-        <div className="card-sentiment" role="group" aria-label={`Your reaction to ${model.display_title}`}>
-          <button type="button" data-action="like" aria-pressed={sentiment === "liked"} disabled={sentimentDisabled}
-            onClick={() => malId !== null && onSentiment(malId, sentiment === "liked" ? null : "liked")}>Like</button>
-          <button type="button" data-action="dislike" aria-pressed={sentiment === "disliked"} disabled={sentimentDisabled}
-            onClick={() => malId !== null && onSentiment(malId, sentiment === "disliked" ? null : "disliked")}>Dislike</button>
-        </div>
-        <p className="card-sentiment-note">Saved for evaluation only; votes do not change recommendations yet.</p>
-
-        <div className="card-actions" aria-label={`Decisions for ${model.display_title}`}>
-          <button type="button" data-action="later" aria-pressed={watchLater} disabled={malId === null || pending}
-            onClick={() => malId !== null && onVote(malId, "watch_later", !watchLater)}>
-            {watchLater ? "Saved for later" : "Save for later"}
-          </button>
-          <button type="button" data-action="hide" aria-pressed={hidden} disabled={malId === null || pending}
-            onClick={() => malId !== null && onVote(malId, "hidden", !hidden)}>
-            {hidden ? "Show again" : "Set aside"}
-          </button>
-        </div>
-        {hidden ? <p className="card-set-aside">Set aside. Excluded from future feeds.</p> : null}
-
-        <div className="card-tags" title={[...model.studios, ...model.genres].join(" · ")}>
-          {model.studios.map((studio) => <span className="card-tag studio" key={`s-${studio}`}>{studio}</span>)}
-          {model.genres.map((genre) => <span className="card-tag" key={`g-${genre}`}>{genre}</span>)}
-        </div>
-        <div className="card-meta">{meta.map((item) => <span key={item}>{item}</span>)}</div>
-        <div className="card-mal">MAL score: {model.mal_score === null ? "not rated" : `${model.mal_score.toFixed(2)} / 10`}</div>
-        <div className="card-utilities">
-          <button type="button" className="pill" onClick={() => onDetails(model)}>Details</button>
-          <MalLink model={model} onExternal={onExternal} />
-        </div>
+      <div className="card-tags" title={[...model.studios, ...model.genres].join(" · ")}>
+        {studio ? <span className="card-tag studio"><span className="visually-hidden">Studio: </span>{studio}</span> : null}
+        {model.genres.map((genre) => <span className="card-tag" key={genre}><span className="visually-hidden">Genre: </span>{genre}</span>)}
+      </div>
+      <div className="card-meta">{meta}</div>
+      <div className="card-mal">{malScoreText(model)}</div>
+      <p className="card-reason" title={model.reason || undefined}>{model.reason?.trim() ? model.reason : null}</p>
+      <div className="card-utilities">
+        <button type="button" className="icon-action" aria-label={`Open the full breakdown for ${model.display_title}`} title="Open the full breakdown"
+          onClick={() => onDetails(model)}><Icon name="details-inspector" /></button>
+        <MalLink model={model} onExternal={onExternal} className="icon-action"><Icon name="external-mal" /></MalLink>
       </div>
     </article>
   );

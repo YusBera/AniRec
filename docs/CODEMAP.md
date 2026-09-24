@@ -100,15 +100,20 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Concern | File |
 | --- | --- |
 | Entry point and provider wiring | `frontend/src/main.tsx` |
-| Workspace shell, hash routing, nav | `frontend/src/workspace/Workspace.tsx` |
+| Workspace shell, hash routing, nav rail, sample banner | `frontend/src/workspace/Workspace.tsx` |
+| SYSTEM readout and ACTIVITY console (polls `/api/system/state`, `/api/operations`) | `frontend/src/workspace/Shell.tsx` |
+| First run (Welcome, honest connect step; session-remembered) | `frontend/src/workspace/FirstRun.tsx` |
 | My Library | `frontend/src/workspace/LibraryPage.tsx` |
-| Profile | `frontend/src/workspace/ProfilePage.tsx`, `ProfileSections.tsx` |
+| Profile (reader block, THE READING, fact board, instrument) | `frontend/src/workspace/ProfilePage.tsx`, `ProfileSections.tsx`, `profileFacts.ts` |
 | Compare | `frontend/src/workspace/ComparePage.tsx` |
 | Settings | `frontend/src/workspace/SettingsPage.tsx` |
-| Shared workspace pieces (read state, poster, scores) | `frontend/src/workspace/common.tsx` |
-| Discover feed, votes, operations | `frontend/src/discover/DiscoverPage.tsx` |
-| Recommendation card | `frontend/src/discover/RecommendationCard.tsx` |
-| Inspector dialog | `frontend/src/discover/RecommendationDetails.tsx` |
+| Shared workspace pieces (read state, poster, channel heading, paging) | `frontend/src/workspace/common.tsx` |
+| Discover feed, decisions, operations | `frontend/src/discover/DiscoverPage.tsx` |
+| Discover header (STATE, RUN ANALYSIS, TASTE VECTOR) | `frontend/src/discover/DiscoverHeader.tsx` |
+| Recommendation card, poster art, MAL link | `frontend/src/discover/RecommendationCard.tsx` |
+| Cards / List / Table views and toggle | `frontend/src/discover/FeedViews.tsx` |
+| Score Inspector | `frontend/src/discover/ScoreInspector.tsx` |
+| Interface icons (copies of `AniRec/gui/resources/icons/ui`) | `frontend/src/assets/Icon.tsx`, `assets/icons/`, `assets/shell/` |
 | Score rail and breakdown | `frontend/src/discover/ScoreRail.tsx` |
 | Filters and sort controls | `frontend/src/discover/Controls.tsx`, `filtering.ts` |
 | Empty, error, loading states | `frontend/src/discover/states.tsx` |

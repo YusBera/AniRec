@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { Explanation, RecommendationViewModel } from "../api/types";
-import { FitIndicator, WhyExplanation } from "./ScoreRail";
+import { fitRankText, rankingEngineLabel, WhyExplanation } from "./ScoreRail";
 
 function model(overrides: Partial<RecommendationViewModel> = {}): RecommendationViewModel {
   return {
@@ -116,20 +116,17 @@ const COUNTERFACTUAL: Explanation = {
   influences: [{ mal_id: 19, title: "Monster", user_score: 10, list_status: "completed", value: 0.7, rank_without: 33 }],
 };
 
-describe("personal fit indicator", () => {
-  it("shows the API rank, pool, and ranking engine without presenting a match percentage", () => {
-    render(<FitIndicator model={model()} engineId="sasrec-onnx" onOpen={() => undefined} />);
-    const button = screen.getByRole("button", { name: /Why this pick/ });
-    expect(button).toHaveTextContent("#4 of 13,458");
-    expect(button).toHaveTextContent("sequence model");
-    expect(button).not.toHaveTextContent("%");
+describe("personal fit line", () => {
+  it("states the API rank and pool in the desktop's words, never as a percentage", () => {
+    const text = fitRankText(model());
+    expect(text).toBe("Ranked #4 of 13,458 for you");
+    expect(text).not.toContain("%");
+    expect(rankingEngineLabel("sasrec-onnx")).toBe("sequence model");
   });
 
-  it("uses words, not zero or a dash, when fit is unavailable", () => {
-    render(<FitIndicator model={model({ fit_rank: null, fit_pool_size: null, fit_top_percent: null })} engineId={null} onOpen={() => undefined} />);
-    expect(screen.getByRole("button", { name: /Why this pick/ })).toHaveTextContent("Personal fit unavailable");
-    expect(screen.queryByText("0")).not.toBeInTheDocument();
-    expect(screen.queryByText("—")).not.toBeInTheDocument();
+  it("uses words, not zero or a dash, when the rank or the pool is missing", () => {
+    expect(fitRankText(model({ fit_rank: null, fit_pool_size: null, fit_top_percent: null }))).toBe("Personal match unavailable");
+    expect(fitRankText(model({ fit_pool_size: null }))).toBe("Personal match unavailable");
   });
 });
 

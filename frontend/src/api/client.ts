@@ -15,7 +15,7 @@
  * `api.feed()` either way.
  */
 
-import type { ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, OperationSnapshot, SystemState } from "./types";
+import type { ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, OperationList, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
 import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
@@ -98,6 +98,8 @@ export const api = {
   health: () => request<{ status: string; version: string }>("/api/health"),
 
   systemState: () => request<SystemState>("/api/system/state"),
+
+  operations: () => request<OperationList>("/api/operations"),
 
   feed: (includeHidden = false) =>
     request<Feed>(`/api/discover/feed?include_hidden=${includeHidden ? "true" : "false"}`),

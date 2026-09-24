@@ -47,6 +47,15 @@ export function Genres({ genres }: { genres: string[] }) {
   return <div className="workspace-genres" aria-label="Genres">{genres.map(genre => <span className="workspace-genre" key={genre}>{genre}</span>)}</div>;
 }
 
+/**
+ * The desktop's "X // Y" channel legend as the page heading. The page's name
+ * is the heading's accessible name; the channel mark after the rule is
+ * decoration, hidden from screen readers, and drawn in capitals by CSS.
+ */
+export function ChannelHeading({ name, mark }: { name: string; mark: string }) {
+  return <h1 className="channel-heading" tabIndex={-1}>{name} <span aria-hidden="true">// {mark}</span></h1>;
+}
+
 export const PAGE_SIZE = 20;
 
 export function PageControls({ page, total, onPageChange, label }: {

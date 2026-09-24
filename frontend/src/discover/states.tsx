@@ -9,7 +9,9 @@
  * request that cannot succeed.
  */
 
+import type { ReactNode } from "react";
 import type { ApiError } from "../api/types";
+import { Icon, type IconName } from "../assets/Icon";
 
 export function FeedSkeleton({ count = 8 }: { count?: number }) {
   return (
@@ -41,27 +43,22 @@ export function ErrorPanel({ error, onRetry }: { error: ApiError; onRetry: () =>
   );
 }
 
-export function EmptyPanel({
-  filtered,
-  onClear,
-}: {
-  filtered: boolean;
-  onClear: () => void;
+/**
+ * An empty collection or feed, as `_show_current_view` words each case: a
+ * folder or search mark, a title, one sentence, and the way out.
+ */
+export function EmptyPanel({ icon, title, message, children }: {
+  icon: IconName;
+  title: string;
+  message: string;
+  children?: ReactNode;
 }) {
   return (
-    <div className="state-panel">
-      <span className="led off" />
-      <h2>{filtered ? "No titles match these filters" : "Nothing to show yet"}</h2>
-      <p>
-        {filtered
-          ? "Every recommendation in the feed was excluded by the active filters."
-          : "Run an analysis to generate recommendations from your MyAnimeList history."}
-      </p>
-      {filtered ? (
-        <button type="button" className="btn" onClick={onClear}>
-          Clear filters
-        </button>
-      ) : null}
+    <div className="state-panel empty-panel">
+      <Icon name={icon} className="empty-icon" />
+      <h2>{title}</h2>
+      <p>{message}</p>
+      {children ? <div className="empty-actions">{children}</div> : null}
     </div>
   );
 }

@@ -24,18 +24,21 @@ interface Props {
   sortMode: SortMode;
   onFilters: (next: Filters) => void;
   onSort: (next: SortMode) => void;
+  /** The filter grid is folded behind the Filters toggle; the pill row is always shown. */
+  open?: boolean;
+  id?: string;
 }
 
 function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
-export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Props) {
+export function Controls({ catalogue, filters, sortMode, onFilters, onSort, open = true, id }: Props) {
   const count = activeFilterCount(filters);
 
   return (
     <>
-      <div className="controls">
+      <div className="controls" id={id} hidden={!open}>
         <details className="control-group filter-group">
           <summary>Genre <span>{catalogue.genres.length} options · {filters.genres.length} selected</span></summary>
           <div className="term-row">
