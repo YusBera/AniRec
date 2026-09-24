@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from AniRec.services.cover_url_service import CoverUrlService
 from AniRec.api.models import Explanation, RecommendationViewModelResponse
 from AniRec.api.serialization import view_model_to_dict
 from AniRec.application.pipeline import PipelineOrchestrator
@@ -847,6 +848,7 @@ def test_web_generate_and_more_are_saved_for_the_feed_to_show(system_temp_dir):
         orchestrator=orchestrator,
         results=ResultService(root_override=root),
         recommendation_state=RecommendationStateService(root_override=root),
+        cover_urls=CoverUrlService(root_override=root),
     )
 
     def run(kind, **payload):
@@ -1004,6 +1006,7 @@ def test_votes_are_collected_but_never_change_what_is_recommended(system_temp_di
             orchestrator=orchestrator,
             results=ResultService(root_override=root / "app-data"),
             recommendation_state=state,
+            cover_urls=CoverUrlService(root_override=root / "app-data"),
         )
         for kind, payload in (("recommendation", {}), ("more-recommendations", {"count": 4})):
             _build_handler(

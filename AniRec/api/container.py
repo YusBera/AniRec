@@ -25,6 +25,7 @@ from ..infrastructure.csv_storage import CsvStorage
 from ..infrastructure.mailer import Mailer, SmtpMailer
 from ..infrastructure.mal_client import MALClient
 from ..services.account_service import AccountService
+from ..services.cover_url_service import CoverUrlService
 from ..services.password_reset_service import PasswordResetService, public_url_from_environment
 from ..services import (
     AnimeDataService,
@@ -68,6 +69,7 @@ class ApiContainer:
     statistics: ProfileStatisticsService
     accounts: AccountService
     password_resets: PasswordResetService
+    cover_urls: CoverUrlService
 
 
 def build_container(root_override: str | Path | None = None, *, mailer: Mailer | None = None) -> ApiContainer:
@@ -121,6 +123,7 @@ def build_container(root_override: str | Path | None = None, *, mailer: Mailer |
         bundles=BundleContextService(),
         statistics=ProfileStatisticsService(profiles),
         accounts=accounts,
+        cover_urls=CoverUrlService(root_override=root_override),
         password_resets=PasswordResetService(
             accounts, mailer or SmtpMailer.from_environment(), public_url_from_environment()
         ),

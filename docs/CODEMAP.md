@@ -87,6 +87,7 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Accounts, sessions, password hashing, import ownership, installation owner, reset tokens (D-021) | `AniRec/services/account_service.py` |
 | Password reset: queues the mail work, builds the link from `ANIREC_PUBLIC_URL` | `AniRec/services/password_reset_service.py` |
 | Cover image fetch and cache | `AniRec/services/cover_image_service.py` |
+| Cover addresses for picks the installed catalogue has none for; cached in `cache/cover_urls.json` (shared, public metadata), filled when an operation saves a feed | `AniRec/services/cover_url_service.py` |
 | Folder and cache management | `AniRec/services/data_management_service.py` |
 | Connection test | `AniRec/services/api_connection_service.py` |
 

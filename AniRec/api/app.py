@@ -715,7 +715,15 @@ def _build_handler(
         # reloads the saved feed when an operation finishes, so without this a
         # generated feed or "more" batch was computed and then never shown.
         if isinstance(result, PipelineResult):
-            return services.results.save_merged(profile_id, result)
+            merged = services.results.save_merged(profile_id, result)
+            # The installed catalogue has no pictures: covers are looked up
+            # once per title and cached (cover_url_service.py). Filled after
+            # the merge, so a refresh that finds the feed current fills the
+            # saved picks too.
+            filled = services.cover_urls.fill(merged, settings.client_id)
+            if filled is not merged:
+                services.results.save(profile_id, filled)
+            return filled
         return result
 
     if kind == "sync":

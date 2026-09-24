@@ -7,6 +7,22 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-25 - Covers for feeds ranked from the installed catalogue
+
+The collector snapshot behind the ONNX bundle carries no picture URLs, so a
+rebuilt feed showed "No artwork" on all 50 picks. `CoverUrlService` fills
+missing covers from MyAnimeList's `main_picture` (official API, the
+installation's Client ID), cached per title in `cache/cover_urls.json`;
+`persisted()` in `_build_handler` fills after the merge.
+
+*Verification:* `tests/test_cover_url_service.py` 10 (written first; the
+current-feed case failed before the fill moved after the merge); non-Qt
+pytest passes.
+
+*Left open:* picture URLs in the collector snapshot (other repos).
+
+---
+
 ## 2026-09-25 - Follow-ups from the first real-data run
 
 `ClientIdRejectedError` for a 401 on a Client-ID-only request (Refresh no

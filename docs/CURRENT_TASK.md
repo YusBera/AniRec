@@ -521,10 +521,17 @@ reviews and the known limits are in `ACCOUNTS.md`, "Password reset by email
 - The account dialog names its fields (`email` with
   `autocomplete="username"`, `password`) and keeps the password in place as
   it closes, so password managers can save it.
-- Open: the installation's Client ID was rejected by MyAnimeList; the owner
-  replaces it (not from the web). The feed on screen is from 30 Aug and has
-  no explanations until a Refresh succeeds. The MAL score's prominence on
-  the card is being proposed.
+- The Client ID was replaced by the owner; Refresh rebuilt the feed with
+  explanations.
+- **Covers:** the installed model catalogue has no picture URLs, so ONNX
+  feeds had no artwork. `CoverUrlService` looks up each pick's
+  `main_picture` once through the official API (at most 60 a run, 4 at a
+  time) into `cache/cover_urls.json`, when an operation saves a feed,
+  including a refresh that finds the feed current. A title with no picture
+  is re-asked after 30 days; a refused Client ID, rate limit or outage
+  stops the run and is not remembered. Upstream fix still open: carry
+  picture URLs in the collector snapshot and the bundle catalogue.
+- Proposed, not built: a more prominent MAL score on the card.
 
 Next, in order:
 1. **Email verification** can reuse the mailer and a token table like the
