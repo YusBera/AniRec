@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from typing import Any, Callable, Iterator
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
@@ -326,6 +327,7 @@ def create_app(
             # Per reader: setup is needed until this account has an import.
             needs_setup=profile is None,
             mal_client_id_present=bool(settings.client_id),
+            password_reset_available=services.password_resets.available,
             active_operations=tuple(
                 OperationSnapshotResponse(**r.snapshot())
                 for r in operations.active()
@@ -786,6 +788,8 @@ def _build_handler(
                 profile_id,
                 username,
                 watch_later_mal_ids=state.watch_later_mal_ids,
+                # Required: the time this sync claims to have run.
+                synced_at=datetime.now(timezone.utc).isoformat(),
                 client_id=settings.client_id,
                 include_nsfw=ranking.include_nsfw,
                 cancellation_token=token,

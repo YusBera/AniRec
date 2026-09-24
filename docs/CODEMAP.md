@@ -25,6 +25,7 @@ file updates the matching row in the same change.
 | `GET /api/account`, `POST /api/account/{register,sign-in,sign-out}` (D-021) | `AniRec/api/accounts.py` |
 | `GET /api/account/imports`, `POST /api/account/imports/active` (switch between an account's own lists) | `AniRec/api/accounts.py` |
 | `POST /api/account/password`, `POST /api/account/delete`, `GET /api/account/export` (account management) | `AniRec/api/accounts.py` |
+| `POST /api/account/password-reset`, `POST /api/account/password-reset/confirm` (reset by email, phase 5); `password_reset_available` in `/api/system/state` | `AniRec/api/accounts.py`, `AniRec/services/password_reset_service.py` |
 | Account deletion on disk, the hourly sweep (pending deletions, stray web lists, guest pruning) | `AniRec/api/account_maintenance.py` |
 | `POST /api/workspace/preferences` (the reader's own adventurousness, minimum score, NSFW); `reader_pipeline` merges them for every operation | `AniRec/api/workspace.py`, `AniRec/api/accounts.py` |
 | Per-visitor limits (new accounts, sign-in failures, MyAnimeList budget) and trusted proxies (`ANIREC_TRUSTED_PROXIES`) | `AniRec/api/limits.py` |
@@ -83,7 +84,8 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Result persistence | `AniRec/services/result_service.py` |
 | Sample library and demonstration payloads | `AniRec/services/sample_data_service.py` |
 | First-run flow; public MyAnimeList import by username into an account (D-020, D-021) | `AniRec/services/onboarding_service.py` |
-| Accounts, sessions, password hashing, import ownership, installation owner (D-021) | `AniRec/services/account_service.py` |
+| Accounts, sessions, password hashing, import ownership, installation owner, reset tokens (D-021) | `AniRec/services/account_service.py` |
+| Password reset: queues the mail work, builds the link from `ANIREC_PUBLIC_URL` | `AniRec/services/password_reset_service.py` |
 | Cover image fetch and cache | `AniRec/services/cover_image_service.py` |
 | Folder and cache management | `AniRec/services/data_management_service.py` |
 | Connection test | `AniRec/services/api_connection_service.py` |
@@ -98,6 +100,7 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | CSV read/write and batch transactions | `AniRec/infrastructure/csv_storage.py` |
 | JSON read/write | `AniRec/infrastructure/json_storage.py` |
 | Log redaction set | `AniRec/infrastructure/logging_config.py` |
+| Sending email: SMTP settings from `ANIREC_SMTP_*`, the background mail outbox | `AniRec/infrastructure/mailer.py` |
 | Data root and resource paths | `AniRec/infrastructure/paths.py` |
 | Single-instance lock | `AniRec/infrastructure/single_instance.py` |
 | OAuth redirect handling | `AniRec/infrastructure/oauth_callback.py` |
@@ -115,8 +118,9 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Top bar: tabs, notifications bell, account menu (D-019) | `frontend/src/workspace/TopBar.tsx` |
 | Service polling and notifications (polls `/api/system/state`, `/api/operations`) | `frontend/src/workspace/Shell.tsx` |
 | First-time setup pop-up: MyAnimeList username, AniList/AniDB coming soon, newcomer path, look around (D-020) | `frontend/src/workspace/FirstRun.tsx` |
-| Create account / sign in dialog (D-021) | `frontend/src/workspace/AccountDialog.tsx` |
-| Settings → ACCOUNT: change password, download my data, delete account (D-021) | `frontend/src/workspace/AccountSection.tsx` |
+| Create account / sign in / ask for a reset link dialog (D-021) | `frontend/src/workspace/AccountDialog.tsx` |
+| Settings → ACCOUNT: change password, reset link by email, download my data, delete account (D-021) | `frontend/src/workspace/AccountSection.tsx` |
+| `#/reset-password` page reached from the emailed link; takes the token out of the address | `frontend/src/workspace/ResetPasswordPage.tsx` |
 | My Library | `frontend/src/workspace/LibraryPage.tsx` |
 | Profile (reader block, THE READING, fact board, instrument) | `frontend/src/workspace/ProfilePage.tsx`, `ProfileSections.tsx`, `profileFacts.ts` |
 | Compare | `frontend/src/workspace/ComparePage.tsx` |
@@ -164,8 +168,9 @@ Per-account directory under the data root:
 
 Application-wide settings, including credentials, live in `config/settings.json`
 under the data root. Accounts, sessions (SHA-256 digests only), import
-ownership, reader preferences, pending deletions and the installation owner
-live in `config/accounts.sqlite3`
+ownership, reader preferences, pending deletions, password reset tokens
+(SHA-256 digests only) and the installation owner live in
+`config/accounts.sqlite3`
 (`account_service.py`, D-021). The per-import directories above are named
 `imp_<hex>` for web imports; `profile_state.json` (the machine-wide active
 profile) is used only by the deprecated desktop tool. No CSV carries a schema version; changing a column layout

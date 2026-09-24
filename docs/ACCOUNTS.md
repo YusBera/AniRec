@@ -1,6 +1,6 @@
 # AniRec accounts: design (D-021)
 
-Status: phase 1 in progress; early design review applied (13 findings). This file is the design and the phase plan; D-021
+Status: phases 1, 2 and 5 (password reset) done; 3 and 4 not started. This file is the design and the phase plan; D-021
 in `DECISIONS.md` records the choices, and `ACCOUNT_SCOPE_INVENTORY.md`
 records what the code scoped to before accounts existed.
 
@@ -330,9 +330,155 @@ jump).
 the sign-in failure limits; export counts against a new per-visitor limit of
 20 an hour.
 
-**Password reset** needs email and waits for an SMTP configuration (phase 5).
-Until then a forgotten password means the account cannot be reached; the
-sign-in dialog says so.
+**Password reset** needs email: see "Password reset by email (phase 5)".
+
+## Password reset by email (phase 5)
+
+Early design review: 14 findings (1 blocker), applied below before code.
+Final review: 8 findings (no blocker); the 3 should-fix ones and the
+frontend ones were fixed, each with a failing test first.
+
+**Sending mail.** `AniRec/infrastructure/mailer.py` holds a small `Mailer`
+seam. `SmtpMailer` reads its settings from the environment when the process
+starts; nothing is saved to disk or shown by the API:
+
+| Variable | Meaning |
+| --- | --- |
+| `ANIREC_SMTP_HOST` | Mail server. Unset: reset is not available. |
+| `ANIREC_SMTP_PORT` | Default 587 (STARTTLS). 465 means TLS from the first byte. |
+| `ANIREC_SMTP_USER`, `ANIREC_SMTP_PASSWORD` | Sign-in for the server; both or neither. |
+| `ANIREC_SMTP_SENDER` | The From address. Unset: reset is not available. |
+| `ANIREC_PUBLIC_URL` | The web client's address, used for the link in the email. Unset or invalid: reset is not available. |
+
+The connection is always encrypted (STARTTLS, or TLS on 465) with the
+standard library's default certificate checks, and every connection has a
+15-second timeout. The one exception to encryption is a loopback mail
+server (a local test catcher), which may offer no STARTTLS. Messages are
+built with `email.message.EmailMessage`. The mailer never turns on
+`smtplib`'s debug output, and a failure is logged by its exception class
+only (SMTP errors carry addresses and server text), so neither the SMTP
+password, an address nor the link reaches a log. The redaction set also
+gains `token`, so a `token=` value or a `"token": "…"` field is masked
+wherever it appears.
+
+**The request does no account work.** `POST /api/account/password-reset`
+only checks the email's form and the visitor's limit, then queues the email
+address for one background worker (a bounded queue of 50). The worker looks
+the account up, issues the token and sends the mail. An email that has an
+account therefore answers exactly as fast, and fails exactly as often, as
+one that does not. When the queue is full the answer is `busy` and the job
+is logged without the address.
+
+`GET /api/system/state` gains `password_reset_available`: true when the
+mail host, the sender and a valid public address are all set. When it is
+false, the sign-in dialog and Settings say in words that this AniRec is not
+set up to send email, so a password cannot be reset here.
+
+**Tokens.** A new table in `config/accounts.sqlite3`:
+
+| Table | Columns | Notes |
+| --- | --- | --- |
+| `password_resets` | `token_hash` PK, `account_id`, `email_hash`, `created_at`, `expires_at`, `spent` | Only SHA-256 of the token and of the email are stored. No foreign key: a row outlives its account so it keeps counting. |
+
+- A token is 32 random bytes, URL-safe, and lives **30 minutes**.
+- It is issued only for a **registered** account with that email. A guest
+  has no email, and an unknown email gets no token and no mail.
+- Counted and inserted in one `BEGIN IMMEDIATE` transaction, so parallel
+  requests cannot race past a limit:
+  - at most **3 per email address an hour**, so nobody can flood a reader's
+    inbox;
+  - at most **100 an hour and 500 a day for the whole installation**,
+    because registration does not verify addresses: without a ceiling the
+    installation's mail server could be made to write to strangers.
+
+  Beyond a limit nothing is sent and the answer is unchanged. Rows older
+  than a day are removed whenever a token is issued, and never earlier:
+  changing the password, a reset and deleting the account only mark rows
+  `spent`, and the address count is keyed by the email, so no step a visitor
+  can take (change the password, delete and register again) resets a limit.
+- An unused token stays valid after a newer one is issued: the reader may
+  open any link they received within its 30 minutes.
+- **Single use.** A successful reset spends *every* reset token of the
+  account. Changing the password spends them too, in the same transaction
+  as the new hash, so a reset in flight fails its re-check.
+- A token only works while its account exists: the lookup joins
+  `accounts`, so a deleted account's tokens are dead, even if the email is
+  registered again.
+- **Sign-in re-checks the hash.** Sign-in checks the password outside the
+  write lock. Its final transaction therefore refuses (`wrong-credentials`)
+  unless the stored hash is still the one it checked, so a sign-in that was
+  under way when a reset committed cannot outlive the reset.
+- **One recipient.** Addresses may not contain whitespace or `,;<>"()`
+  (registration and reset alike), and the mailer passes the single address
+  to SMTP itself (`to_addrs`), so no address can name a second recipient.
+
+**The link.** It is `<ANIREC_PUBLIC_URL>/#/reset-password?token=<token>`.
+The base comes **only** from `ANIREC_PUBLIC_URL`, never from the request.
+The `Origin` allow-list always contains `http://localhost:5173`, and anyone
+can send an allowed `Origin` from a plain HTTP client. A request-derived
+base would let an attacker mail a reader a genuine link that hands the token
+to whatever runs on the reader's port 5173. The address is checked at
+startup: `https`, or `http` only for a loopback host; no user, query or
+fragment. The token sits in the URL fragment, which browsers never send to a
+server or put in a `Referer`. Spending it needs a POST, so a mail scanner
+that opens the link spends nothing. The web client reads the token before
+its first render and replaces the address and the current history entry
+(`history.replaceState`); a reload then says to open the link again. A
+browser's history list may still have recorded the original address; the
+token is single-use and lives 30 minutes.
+
+**Routes.** Both pass the request guard (Host, and Origin on writes), as
+every `/api/` route does.
+
+| Route | Does |
+| --- | --- |
+| `POST /api/account/password-reset` | `{email}`. The answer is always `{reason: null}` whether or not an account uses the email. The only other answers depend on the installation or the visitor, never on the email: `reset-unavailable` (no mailer or public address), `invalid-email` (not an email address at all), `too-many-attempts` (this visitor asked 5 times this hour, counted per visitor in `limits.py`), `busy` (the queue is full). |
+| `POST /api/account/password-reset/confirm` | `{token, new_password}`. Checks the new password's length and refuses a token over 200 characters. Then it checks the token without spending it, hashes the new password in a hashing slot (`busy` when both are taken, which neither spends the token nor counts as a failure), and in one `BEGIN IMMEDIATE` transaction: re-checks that the token exists and has not expired, replaces the hash, spends every reset token, deletes **every session of the account**, and clears the account's stored sign-in failure counts (so a reset ends a per-email lockout; the per-visitor minute window in `limits.py` is not cleared). |
+
+A token that is unknown, expired or already used answers `invalid-token`,
+counts as one sign-in failure for the visitor (`limits.py`) and costs no
+hash. It could not be guessed anyway: 256 bits.
+
+The confirm route does **not** sign the browser in. The link may be opened on
+another device, and signing in here would bring along any guest list this
+browser holds. The page says the password changed and every device was
+signed out, and offers Sign in.
+
+**Frontend.**
+- Sign-in dialog: "Forgot your password?" opens a third mode, "Reset your
+  password" (email only, "Email me a link"), with its own heading; focus
+  returns to the email field on every mode switch. After sending it says the
+  same for every email: a link is on its way if an account uses it, and it
+  works for 30 minutes.
+- Settings → ACCOUNT, for a registered reader: "Email me a reset link" sends
+  to the account's own email.
+- `#/reset-password`: a page with a new-password field (`new-password`,
+  8 to 256 characters, the hint linked to it), a show/hide control, and one
+  live status region. On success focus moves to the Sign in button. For a
+  missing, expired or used link it offers to ask for a new one. First-time
+  setup does not open over this page. It works at 375px, by keyboard and with
+  a screen reader, like every other surface.
+
+**Known limits of phase 5.**
+- Email is not *verified*: the reset mail goes to whatever address the
+  account was registered with, and registering still reveals whether an
+  email is taken. The installation-wide mail ceiling bounds the damage.
+- The installation owner can be reset by email like any account, so the
+  owner's power (installation settings, shutdown) rests on that mailbox.
+  The console command remains the stronger path; refusing email reset for
+  the owner is an open choice.
+- The per-account mail limit counts rows. A successful reset deletes them,
+  and with them that account's count.
+- The mail queue lives in the process: a restart drops mail not yet sent,
+  and an SMTP failure leaves only a log line naming the exception class. The
+  reader is told a link is on its way either way.
+- The queue drains faster for unknown emails than for known ones (no SMTP
+  work). An attacker with many addresses who fills the 50 slots could time
+  when `busy` clears; the per-address limit of 3 an hour bounds what that
+  teaches, and filling the queue also delays genuine resets.
+- A visitor past the per-visitor sign-in failure window (shared by many
+  readers behind one address) is also refused a reset confirmation until
+  the minute passes; the page says to wait a minute.
 
 ## Known limits
 
@@ -347,8 +493,8 @@ sign-in dialog says so.
   addresses gets many. The MyAnimeList budget has no installation-wide
   ceiling yet.
 - An attacker with 50 addresses can still lock one account for 15 minutes
-  at a time (the account-wide ceiling). Email verification with a sign-in
-  link would remove this (phase 5).
+  at a time (the account-wide ceiling). Where reset is set up, the reader
+  can end the lock with an emailed reset link (phase 5).
 - The guest-pruning clock guard can be passed after a forward clock jump
   once one new visitor arrives; old guests may then be pruned early.
 - The limit tables live in the process: a restart clears them, and several
@@ -376,6 +522,6 @@ sign-in dialog says so.
    an IP address: locally the app must be served at `localhost`, not
    `127.0.0.1`. This likely needs a WebAuthn library (a new dependency, to be
    agreed).
-5. **Email:** verification and password reset. It needs an email-sending
-   service, which does not exist. Until then a forgotten local password
-   cannot be reset from the web.
+5. **Email:** password reset. Done (2026-09-24): see "Password reset by
+   email (phase 5)".
+   Verification can reuse the mailer and a token table like it; not built.

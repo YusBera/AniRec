@@ -7,6 +7,42 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Accounts: password reset by email (D-021, phase 5)
+
+A `Mailer` seam (`infrastructure/mailer.py`, SMTP settings from
+`ANIREC_SMTP_*`, always encrypted, one background worker), a
+`password_resets` table (SHA-256 digests only, 30 minutes, single use,
+3 per address an hour, 100 an hour and 500 a day per installation), and
+two routes: the request always answers the same, and does no account work on
+the request path. The confirm route ends every session and clears the
+per-email lockout. The link's address comes only from `ANIREC_PUBLIC_URL`
+(the early review's blocker: an allowed `Origin` can be forged by any HTTP
+client). The frontend adds "Forgot your password?" in the sign-in dialog,
+"Email me a reset link" in Settings, and a `#/reset-password` page that
+strips the token from the address before the first render.
+
+Also: `list-sync` passes `synced_at` and its `MalSyncService` uses the data
+root.
+
+*Verification:* early design review (14 findings, applied before code);
+final review (8 findings, no blocker). Each of its 3 should-fix findings
+got a failing test first: a sign-in racing a reset, mail limits reset by a
+password change or re-registration, and a comma naming a second recipient.
+Its frontend findings were fixed the same way. Tests:
+`tests/test_account_password_reset.py` 56; `tests/test_api_list_sync.py` 1;
+every test module that does not import Qt, 609 passed; `npm run ci` 144.
+`tests/test_background_sync.py` (Qt) hangs now and then inside
+`theme.apply` on this branch and on the commit before it alike. In the browser
+pane at 375×812 against a scratch API: request by keyboard, a real token
+reset end to end, reuse refused, focus on Sign in, no overflow, targets
+44px or larger. No real SMTP server was used; the failed send logged only
+the exception class.
+
+*Left open:* email verification; the owner can be reset by email; the
+queue is in memory (see `ACCOUNTS.md` known limits).
+
+---
+
 ## 2026-09-24 - Profile fact icons redrawn for a single glance
 
 The 17 icons on Profile's "NOT ON YOUR MAL PROFILE" board

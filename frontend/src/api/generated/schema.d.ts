@@ -117,6 +117,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/account/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Password Reset
+         * @description Queue a reset link for the email; the same answer whether or not an
+         *     account uses it (docs/ACCOUNTS.md, "Password reset by email").
+         */
+        post: operations["request_password_reset_api_account_password_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/password-reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Password Reset
+         * @description Set a new password from an emailed token. Every session of the
+         *     account ends; this browser is not signed in.
+         */
+        post: operations["confirm_password_reset_api_account_password_reset_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/account/register": {
         parameters: {
             query?: never;
@@ -1366,6 +1408,26 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /** PasswordResetConfirm */
+        PasswordResetConfirm: {
+            /** New Password */
+            new_password: string;
+            /** Token */
+            token: string;
+        };
+        /** PasswordResetRequest */
+        PasswordResetRequest: {
+            /** Email */
+            email: string;
+        };
+        /** PasswordResetResponse */
+        PasswordResetResponse: {
+            /**
+             * Reason
+             * @description Never depends on whether an account uses the email. Asking: reset-unavailable, invalid-email, too-many-attempts or busy. Confirming: invalid-token, weak-password, password-too-long, too-many-attempts, busy or unavailable.
+             */
+            reason?: string | null;
+        };
         /**
          * PreferencesWriteRequest
          * @description The reader's own recommendation preferences (docs/ACCOUNTS.md).
@@ -1805,6 +1867,12 @@ export interface components {
             mal_client_id_present: boolean;
             /** Needs Setup */
             needs_setup: boolean;
+            /**
+             * Password Reset Available
+             * @description Whether this installation can email a password reset link (mail and a public address are set up).
+             * @default false
+             */
+            password_reset_available: boolean;
             profile: components["schemas"]["ProfileSummary"] | null;
         };
         /**
@@ -2081,6 +2149,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_password_reset_api_account_password_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_password_reset_api_account_password_reset_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetResponse"];
                 };
             };
             /** @description Validation Error */

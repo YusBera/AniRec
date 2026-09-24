@@ -16,7 +16,7 @@ _REDACTION_PATTERNS = (
     (
         re.compile(
             r"(?i)([\"']?(?:password|password_hash|anirec_session|access_token|refresh_token"
-            r"|client_secret)[\"']?\s*[:=]\s*\")(?:[^\"\\]|\\.)*\""
+            r"|client_secret|token)[\"']?\s*[:=]\s*\")(?:[^\"\\]|\\.)*\""
         ),
         rf'\1{REDACTION_MARKER}"',
     ),
@@ -27,7 +27,7 @@ _REDACTION_PATTERNS = (
     (
         re.compile(
             r"(?i)([\"']?(?:access_token|refresh_token|client_secret|authorization_code|id_token"
-            r"|password|password_hash|anirec_session)"
+            r"|password|password_hash|anirec_session|token)"
             r"[\"']?\s*[:=]\s*[\"']?)([^&,\s\"'}]+)"
         ),
         rf"\1{REDACTION_MARKER}",

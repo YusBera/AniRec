@@ -493,18 +493,32 @@ State: everything above is committed on `feat/pyside-design-port` (PR #5
 into `codex/ui-v3-engine`). The account work (D-021) is complete through
 phase 2; `docs/ACCOUNTS.md` is the design and the phase plan.
 
+**Password reset by email (phase 5): done (2026-09-24).** Design, both
+reviews and the known limits are in `ACCOUNTS.md`, "Password reset by email
+(phase 5)".
+- To turn it on, set `ANIREC_SMTP_HOST`, `ANIREC_SMTP_SENDER`,
+  `ANIREC_PUBLIC_URL` (the web client's address, `https` or loopback
+  `http`), and optionally `ANIREC_SMTP_PORT` (587; 465 for TLS),
+  `ANIREC_SMTP_USER` and `ANIREC_SMTP_PASSWORD`. Without all three
+  required ones, the dialog and Settings say reset isn't available here.
+- Routes: `POST /api/account/password-reset` and `.../confirm`;
+  `password_reset_available` in `/api/system/state`; the `#/reset-password`
+  page.
+- Also in this change, found by the final review: a sign-in under way
+  when the password changes is now refused, and addresses containing
+  `,;<>"()` are refused at registration.
+- **`list-sync` fixed**: it now passes `synced_at`, and the API's
+  `MalSyncService` uses the data root (`--root-override`); before, its
+  state went to the default root. Test: `tests/test_api_list_sync.py`.
+
 Next, in order:
-1. **Password reset (phase 5)** once the user wires SMTP: a `Mailer` seam
-   reading SMTP settings from the environment, a single-use, short-lived,
-   hashed reset token table, and "Forgot your password?" in the sign-in
-   dialog and Settings (both currently say reset is not available). Email
-   verification can reuse it, which also removes the per-account lockout
-   limit noted in `ACCOUNTS.md`.
+1. **Email verification** can reuse the mailer and a token table like the
+   reset one; it would stop registration revealing taken emails and let
+   reset mail go only to verified addresses. Open choice: refuse email
+   reset for the installation owner (`ACCOUNTS.md`).
 2. **Google sign-in (phase 3)** needs an OAuth client the owner creates.
 3. **Passkeys (phase 4)** need the app served at `localhost`.
-4. Separate queued task: `list-sync` never passes `synced_at` to
-   `MalSyncService.sync`, so that operation always fails.
-5. Still open from earlier reviews: after a 409 the page does not reload
+4. Still open from earlier reviews: after a 409 the page does not reload
    when another tab's run finishes; a history that became empty keeps the
    old `user_history.csv`.
 

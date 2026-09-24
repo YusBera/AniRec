@@ -155,14 +155,14 @@ function DesktopSettingsForm({ saved, onSaved }: { saved: SettingsRead; onSaved:
   </form>;
 }
 
-function Preferences({ initial, account, onAccount, onPreferencesChanged }: {
-  initial: SettingsRead; account: AccountSummary | null;
+function Preferences({ initial, account, resetAvailable, onAccount, onPreferencesChanged }: {
+  initial: SettingsRead; account: AccountSummary | null; resetAvailable?: boolean;
   onAccount?: (event: "deleted" | "password-changed") => void; onPreferencesChanged?: () => void;
 }) {
   const [saved, setSaved] = useState(initial);
   return <>
     <div className="settings-groups">
-      <AccountSection account={account} onAccount={onAccount} />
+      <AccountSection account={account} resetAvailable={resetAvailable} onAccount={onAccount} />
       <ReaderPreferencesForm saved={saved} onSaved={setSaved} onChanged={onPreferencesChanged} />
     </div>
     <DesktopSettingsForm saved={saved} onSaved={setSaved} />
@@ -186,15 +186,15 @@ function Preferences({ initial, account, onAccount, onPreferencesChanged }: {
   </>;
 }
 
-export function SettingsPage({ version = null, account = null, onAccount, onPreferencesChanged }: {
-  version?: string | null; account?: AccountSummary | null;
+export function SettingsPage({ version = null, account = null, resetAvailable = false, onAccount, onPreferencesChanged }: {
+  version?: string | null; account?: AccountSummary | null; resetAvailable?: boolean;
   onAccount?: (event: "deleted" | "password-changed") => void; onPreferencesChanged?: () => void;
 }) {
   const read = useRead(api.settings, "settings");
   return <main className="workspace-page">
     <PageHeading name="Settings" />
     <p className="workspace-intro">Manage recommendation behavior, local profiles, MyAnimeList API access, and appearance.</p>
-    <ReadState {...read} />{read.result ? <Preferences initial={read.result} account={account} onAccount={onAccount} onPreferencesChanged={onPreferencesChanged} /> : null}
+    <ReadState {...read} />{read.result ? <Preferences initial={read.result} account={account} resetAvailable={resetAvailable} onAccount={onAccount} onPreferencesChanged={onPreferencesChanged} /> : null}
     {/* The build line left the page chrome (D-019); it lives here, with the
         other things only someone troubleshooting looks for. */}
     <p className="settings-version">{version ? `AniRec version ${version}` : "AniRec version unavailable"}</p>

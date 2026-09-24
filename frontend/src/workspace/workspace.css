@@ -299,6 +299,13 @@
 .password-form h3 { margin: 0 0 var(--space-xs); }
 .password-form input { min-height: 44px; padding: var(--space-sm) var(--space-md); background: var(--well); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); font: inherit; }
 .password-form .btn { justify-self: start; min-height: 44px; margin-top: var(--space-xs); }
+.reset-link .btn { min-height: 44px; }
+.reset-page { display: grid; justify-items: start; gap: var(--space-sm); width: min(36em, calc(100% - var(--space-xl))); margin: var(--space-xl) auto; padding: var(--space-xl) var(--space-lg); }
+.reset-page p { margin: 0; }
+.reset-page .btn { min-height: 44px; }
+.reset-page .password-form { width: 100%; margin: 0; }
+.reset-page label { margin-top: var(--space-sm); color: var(--text-strong); font-weight: var(--weight-bold); }
+.reset-page .password-field input { min-width: 0; }
 .save-prompt { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-sm) var(--space-md); margin: var(--space-md) var(--space-xl) 0; padding: var(--space-sm) var(--space-md); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .save-prompt p { margin: 0; flex: 1 1 16em; color: var(--text-strong); }
 .save-prompt .btn { min-height: 44px; }

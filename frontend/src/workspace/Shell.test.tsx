@@ -11,7 +11,7 @@ import { Notifications } from "./TopBar";
 import { Workspace } from "./Workspace";
 import { FirstRun, importProblem } from "./FirstRun";
 
-const SYSTEM: SystemState = { profile: null, needs_setup: true, mal_client_id_present: false, active_operations: [] };
+const SYSTEM: SystemState = { profile: null, needs_setup: true, mal_client_id_present: false, password_reset_available: false, active_operations: [] };
 const SAMPLE_FEED = {
   source: "sample", ephemeral: true, profile: null, state_profile_id: null, recommendations: [], hidden_count: 0,
   catalogue: { genres: [], studios: [], years: [], statuses: [] },
@@ -675,4 +675,143 @@ it("says in words when Compare's MyAnimeList lookups are limited", async () => {
   await user.type(screen.getByRole("textbox", { name: /MAL username/ }), "friend");
   await user.click(screen.getByRole("button", { name: "Compare your anime list with this profile" }));
   expect(await screen.findByText("Too many lookups for now")).toBeInTheDocument();
+});
+
+describe("password reset by email (D-021, phase 5)", () => {
+  const READER = { kind: "registered" as const, email: "reader@example.com", has_import: true, installation_owner: false };
+  function stubShell(system: SystemState) {
+    vi.spyOn(api, "health").mockResolvedValue({ status: "ok", version: "1.3.0" });
+    vi.spyOn(api, "systemState").mockResolvedValue(system);
+    vi.spyOn(api, "operations").mockResolvedValue({ operations: [] });
+    vi.spyOn(api, "feed").mockResolvedValue(SAMPLE_FEED);
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  }
+  afterEach(() => { history.replaceState(null, "", location.pathname); });
+
+  it("asks for a link from the sign-in dialog and answers the same for every email", async () => {
+    const { AccountDialog } = await import("./AccountDialog");
+    const ask = vi.spyOn(api, "requestPasswordReset").mockResolvedValue({ reason: null });
+    render(<AccountDialog mode="sign-in" resetAvailable onDone={vi.fn()} onClose={vi.fn()} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Forgot your password?" }));
+    const dialog = screen.getByRole("dialog", { name: "Reset your password" });
+    const email = within(dialog).getByLabelText("Email");
+    expect(email).toHaveFocus();
+    expect(within(dialog).queryByLabelText("Password")).not.toBeInTheDocument();
+    await user.type(email, "reader@example.com");
+    await user.click(within(dialog).getByRole("button", { name: "Email me a link" }));
+    expect(ask).toHaveBeenCalledWith("reader@example.com");
+    await waitFor(() => expect(within(dialog).getByRole("status")).toHaveTextContent(
+      "If an account uses that email, a link to reset its password is on its way. It works for 30 minutes."));
+    await user.click(within(dialog).getByRole("button", { name: "Sign in" }));
+    expect(screen.getByRole("dialog", { name: "Welcome back" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Email")).toHaveFocus();
+  });
+
+  it("says in words that reset isn't available when this AniRec can't send email", async () => {
+    const { AccountDialog } = await import("./AccountDialog");
+    const ask = vi.spyOn(api, "requestPasswordReset");
+    const { unmount } = render(<AccountDialog mode="sign-in" onDone={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByText(/isn't set up to send email, so a password can't be reset here/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Forgot your password?" })).not.toBeInTheDocument();
+    unmount();
+    render(<AccountDialog mode="reset" onDone={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByRole("dialog", { name: "Reset your password" })).toHaveTextContent(/isn't set up to send email/);
+    expect(screen.queryByRole("button", { name: "Email me a link" })).not.toBeInTheDocument();
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it("words every reason a reset can be refused, without technical terms", async () => {
+    const { resetProblem } = await import("./AccountDialog");
+    for (const reason of ["reset-unavailable", "invalid-email", "too-many-attempts", "busy", "invalid-token", "weak-password", "password-too-long", "unavailable"]) {
+      expect(resetProblem(reason)).not.toMatch(/undefined|reason|HTTP|session|token|cookie|SMTP/i);
+    }
+    expect(resetProblem("invalid-token")).toMatch(/expired or has already been used/);
+  });
+
+  it("emails a reset link to a registered reader from Settings", async () => {
+    const { AccountSection } = await import("./AccountSection");
+    const ask = vi.spyOn(api, "requestPasswordReset").mockResolvedValue({ reason: null });
+    const { unmount } = render(<AccountSection account={READER} resetAvailable />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Email me a reset link" }));
+    expect(ask).toHaveBeenCalledWith("reader@example.com");
+    expect(await screen.findByText(/A reset link is on its way to reader@example.com/)).toBeInTheDocument();
+    unmount();
+    render(<AccountSection account={READER} />);
+    expect(screen.getByText(/isn't set up to send email, so it can't send you a reset link/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Email me a reset link" })).not.toBeInTheDocument();
+  });
+
+  it("opens the reset page from the emailed link, takes the token out of the address, and never opens setup over it", async () => {
+    stubShell({ ...SYSTEM, needs_setup: true, password_reset_available: true });
+    const confirm = vi.spyOn(api, "confirmPasswordReset").mockResolvedValue({ reason: null });
+    history.replaceState(null, "", "#/reset-password?token=emailed-token");
+    render(<Workspace />);
+    const heading = await screen.findByRole("heading", { level: 1, name: "Choose a new password" });
+    expect(location.hash).toBe("#/reset-password");
+    expect(location.href).not.toContain("emailed-token");
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(screen.queryByRole("dialog", { name: "Welcome to AniRec" })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    const password = screen.getByLabelText("New password");
+    expect(password).toHaveAttribute("autocomplete", "new-password");
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveAccessibleDescription(/At least 8 characters/);
+    await user.type(password, "a brand new password{Enter}");
+    expect(confirm).toHaveBeenCalledWith("emailed-token", "a brand new password");
+    expect(await screen.findByText(/Your password was changed/)).toHaveTextContent(/signed out everywhere/);
+    const signIn = screen.getByRole("button", { name: "Sign in" });
+    expect(signIn).toHaveFocus();
+    await user.click(signIn);
+    expect(screen.getByRole("dialog", { name: "Welcome back" })).toBeInTheDocument();
+  });
+
+  it("says a used or expired link can't be used and offers a new one", async () => {
+    stubShell({ ...SYSTEM, needs_setup: false, password_reset_available: true });
+    vi.spyOn(api, "confirmPasswordReset").mockResolvedValue({ reason: "invalid-token" });
+    history.replaceState(null, "", "#/reset-password?token=spent");
+    render(<Workspace />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("New password"), "a brand new password");
+    await user.click(screen.getByRole("button", { name: "Set new password" }));
+    expect(await screen.findByText("This link has expired or has already been used. Ask for a new one.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Email me a new link" }));
+    expect(screen.getByRole("dialog", { name: "Reset your password" })).toBeInTheDocument();
+  });
+
+  it("closes first-time setup when a reset link opens in a tab that shows it", async () => {
+    stubShell({ ...SYSTEM, needs_setup: true, password_reset_available: true });
+    history.replaceState(null, "", "#/discover");
+    render(<Workspace />);
+    expect(await screen.findByRole("dialog", { name: "Welcome to AniRec" })).toBeInTheDocument();
+    await act(async () => {
+      history.replaceState(null, "", "#/reset-password?token=later");
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Welcome to AniRec" })).not.toBeInTheDocument());
+    expect(screen.getByLabelText("New password")).toBeInTheDocument();
+    expect(location.hash).toBe("#/reset-password");
+  });
+
+  it("words a refusal to set the password for what the reader just did", async () => {
+    stubShell({ ...SYSTEM, needs_setup: false, password_reset_available: true });
+    vi.spyOn(api, "confirmPasswordReset").mockResolvedValue({ reason: "too-many-attempts" });
+    history.replaceState(null, "", "#/reset-password?token=t");
+    render(<Workspace />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("New password"), "a brand new password{Enter}");
+    expect(await screen.findByText("Too many attempts. Wait a minute, then try again.")).toBeInTheDocument();
+  });
+
+  it("says so when the link is incomplete, instead of a form that can't work", async () => {
+    stubShell({ ...SYSTEM, needs_setup: false, password_reset_available: true });
+    const confirm = vi.spyOn(api, "confirmPasswordReset");
+    history.replaceState(null, "", "#/reset-password?from=mail");
+    render(<Workspace />);
+    expect(await screen.findByText(/This link is incomplete/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Email me a new link" })).toBeInTheDocument();
+    expect(confirm).not.toHaveBeenCalled();
+  });
 });

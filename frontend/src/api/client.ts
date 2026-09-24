@@ -15,7 +15,7 @@
  * `api.feed()` either way.
  */
 
-import type { AccountImports, AccountResult, PreferencesWrite, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
+import type { AccountImports, AccountResult, PasswordResetResult, PreferencesWrite, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
 import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
@@ -110,6 +110,9 @@ export const api = {
   signOut: () => request<AccountResult>("/api/account/sign-out", { method: "POST" }),
   imports: () => request<AccountImports>("/api/account/imports"),
   changePassword: (currentPassword: string, newPassword: string) => request<AccountResult>("/api/account/password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
+  /** Always the same answer whether or not an account uses the email. */
+  requestPasswordReset: (email: string) => request<PasswordResetResult>("/api/account/password-reset", { method: "POST", body: JSON.stringify({ email }) }),
+  confirmPasswordReset: (token: string, newPassword: string) => request<PasswordResetResult>("/api/account/password-reset/confirm", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }),
   deleteAccount: (password: string | null) => request<AccountResult>("/api/account/delete", { method: "POST", body: JSON.stringify({ password }) }),
   /** The account's data as a file, or an ApiError-shaped refusal. */
   exportAccount: async (): Promise<Blob> => {

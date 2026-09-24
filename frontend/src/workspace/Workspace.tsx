@@ -16,6 +16,7 @@ import { DiscoverPage } from "../discover/DiscoverPage";
 import { ProfilePage } from "./ProfilePage";
 import { ComparePage } from "./ComparePage";
 import { SettingsPage } from "./SettingsPage";
+import { ResetPasswordPage, takeResetToken } from "./ResetPasswordPage";
 import { FirstRun, firstRunDismissed } from "./FirstRun";
 import { useShellState } from "./Shell";
 import { TopBar, useAvatar, type AccountAction } from "./TopBar";
@@ -23,14 +24,18 @@ import "./workspace.css";
 
 const titles: Record<string, string> = {
   discover: "Discover", library: "My Library", profile: "Profile", compare: "Compare", settings: "Settings",
+  "reset-password": "Reset password",
 };
-type Page = "discover" | "library" | "profile" | "compare" | "settings";
+type Page = "discover" | "library" | "profile" | "compare" | "settings" | "reset-password";
 const SAVE_PROMPT_KEY = "anirec.savePrompt.dismissed";
 const savePromptDismissed = () => { try { return sessionStorage.getItem(SAVE_PROMPT_KEY) === "1"; } catch { return false; } };
 
-const route = (): Page => (Object.keys(titles).find((id) => location.hash === `#/${id}`) ?? "discover") as Page;
+// The query after a route (only the reset link carries one) is not the route.
+const route = (): Page => (Object.keys(titles).find((id) => location.hash.split("?")[0] === `#/${id}`) ?? "discover") as Page;
 
 export function Workspace() {
+  // Before the first render: the emailed token leaves the address at once.
+  const [resetToken, setResetToken] = useState(takeResetToken);
   const [page, setPage] = useState<Page>(route);
   const [visited, setVisited] = useState<Set<Page>>(() => new Set([route()]));
   const [feed, setFeed] = useState<Feed | null>(null);
@@ -49,6 +54,8 @@ export function Workspace() {
     const change = () => {
       if (!location.hash.startsWith("#/")) return;
       const next = route();
+      // A reset link opened in a tab that already shows AniRec.
+      if (next === "reset-password") setResetToken(takeResetToken());
       positions.current[active.current] = window.scrollY;
       active.current = next;
       setPage(next);
@@ -66,9 +73,11 @@ export function Workspace() {
   }, [page]);
   // First run: when the service says setup is needed, once per session.
   useEffect(() => {
-    // A reader who already has a profile is never interrupted by it.
+    // A reader who already has a profile is never interrupted by it, nor is
+    // one choosing a new password from an emailed link.
+    if (page === "reset-password") { setFirstRun(null); return; }
     if (shell.system?.needs_setup && !shell.system.profile && !firstRunDismissed()) setFirstRun((current) => current ?? "welcome");
-  }, [shell.system?.needs_setup, shell.system?.profile]);
+  }, [shell.system?.needs_setup, shell.system?.profile, page]);
 
   const onFeedChange = useCallback((next: Feed | null) => setFeed(next), []);
   const accountChanged = useCallback(() => {
@@ -147,7 +156,7 @@ export function Workspace() {
     <div className="workspace-content" ref={content} id="workspace-content" tabIndex={-1}>
       {/* No "Connect my account" here: connecting an account from the web
           client is not possible (user decision, 2026-09-24). */}
-      {sample ? <div className="sample-banner" role="note">
+      {sample && page !== "reset-password" ? <div className="sample-banner" role="note">
         <p>You're exploring a sample library. Try anything; nothing here is saved.</p>
       </div> : null}
       {showSavePrompt ? <section className="save-prompt" aria-label="Keep your list">
@@ -164,7 +173,15 @@ export function Workspace() {
       <div hidden={page !== "profile"}>{visited.has("profile") ? <ProfilePage key={generation} /> : null}</div>
       <div hidden={page !== "compare"}>{visited.has("compare") ? <ComparePage key={generation} /> : null}</div>
       <div hidden={page !== "settings"}>{visited.has("settings") ? <SettingsPage key={generation} version={shell.version}
-        account={account} onAccount={onSettingsAccount} onPreferencesChanged={onPreferencesChanged} /> : null}</div>
+        account={account} resetAvailable={!!shell.system?.password_reset_available}
+        onAccount={onSettingsAccount} onPreferencesChanged={onPreferencesChanged} /> : null}</div>
+      <div hidden={page !== "reset-password"}>{page === "reset-password" ? <ResetPasswordPage token={resetToken}
+        onSignIn={() => setAccountDialog("sign-in")} onAskAgain={() => setAccountDialog("reset")}
+        onReset={() => {
+          // Every session of that account ended, perhaps this browser's too.
+          accountChanged();
+          shell.notify({ tone: "done", title: "Password changed", detail: "Sign in with your new password." });
+        }} /> : null}</div>
     </div>
     {firstRun ? <FirstRun clientIdPresent={!!shell.system?.mal_client_id_present}
       onImported={(profile) => {
@@ -175,8 +192,10 @@ export function Workspace() {
       }}
       onClose={() => setFirstRun(null)}
       onSignIn={() => setAccountDialog("sign-in")} /> : null}
-    {accountDialog ? <AccountDialog mode={accountDialog}
+    {accountDialog ? <AccountDialog mode={accountDialog} resetAvailable={!!shell.system?.password_reset_available}
       onDone={(signed, mode, moved) => {
+        // Signed in after a reset: on to the reader's picks.
+        if (active.current === "reset-password") location.hash = "#/discover";
         accountChanged();
         shell.notify(mode === "register"
           ? { tone: "done", title: "Account created", detail: signed.has_import ? "Your list and Watch Later are saved to it." : "Add your MyAnimeList list from the account menu." }

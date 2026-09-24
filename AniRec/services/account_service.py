@@ -47,6 +47,14 @@ EMAIL_MAX = 254
 FAILURE_LIMIT = 5
 ACCOUNT_FAILURE_LIMIT = 50
 FAILURE_WINDOW = timedelta(minutes=15)
+# Password reset by email (docs/ACCOUNTS.md, "Password reset by email").
+RESET_LIFETIME = timedelta(minutes=30)
+RESETS_PER_ACCOUNT_HOUR = 3
+# Registration does not verify addresses: without an installation-wide
+# ceiling, the mail server could be made to write to strangers.
+INSTALLATION_RESETS_PER_HOUR = 100
+INSTALLATION_RESETS_PER_DAY = 500
+_RESET_TOKEN_MAX = 200
 # Per-visitor limits (new accounts, sign-in failures) live in the API, which
 # knows who the visitor is: ``AniRec/api/limits.py``.
 
@@ -58,7 +66,9 @@ _SCRYPT_P = 1
 _SCRYPT_MAXMEM = 64 * 1024 * 1024
 # At most two hashes at once: each holds 32 MiB, and sign-in is unauthenticated.
 _HASH_SLOTS = threading.BoundedSemaphore(2)
-_EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+# No whitespace, and none of the characters that let one header name several
+# recipients or a display name (``,;<>"()``): the address goes into a To header.
+_EMAIL = re.compile(r'[^@\s,;<>"()]+@[^@\s,;<>"()]+\.[^@\s,;<>"()]+')
 
 
 class AccountError(AniRecError):
@@ -225,6 +235,16 @@ CREATE TABLE IF NOT EXISTS released_lists (
     profile_id TEXT PRIMARY KEY,
     released_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    email_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    spent INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS password_resets_email ON password_resets(email_hash, created_at);
+CREATE INDEX IF NOT EXISTS password_resets_created ON password_resets(created_at);
 """
 
 # Reader preferences kept per account (docs/ACCOUNTS.md, "Reader preferences").
@@ -576,10 +596,12 @@ class AccountService(_AccountManagement):
         # The hashing slot is taken before the attempt is counted: a "busy"
         # refusal must never count as a wrong password (final review).
         with _HashSlot():
-            account_id = self._checked_credentials(email, password, dummy, client)
+            account_id, checked_hash = self._checked_credentials_with_hash(email, password, dummy, client)
         with self._transaction() as conn:
-            if self._load(conn, account_id) is None:
-                # Deleted between the password check and now.
+            row = conn.execute("SELECT password_hash FROM accounts WHERE account_id=?", (account_id,)).fetchone()
+            if row is None or row[0] != checked_hash:
+                # Deleted, or its password changed or was reset, between the
+                # check and now: a reset must end every way in (final review).
                 raise AccountError("wrong-credentials")
             moved: tuple[str, ...] = ()
             current = self._session_account_locked(conn, current_token)
@@ -667,6 +689,9 @@ class AccountService(_AccountManagement):
             if not changed:
                 raise AccountError("wrong-credentials")
             conn.execute("DELETE FROM sessions WHERE account_id=?", (account_id,))
+            # A reset link mailed before the change must not undo it. Spent,
+            # not deleted: the rows still count towards the mail limits.
+            conn.execute("UPDATE password_resets SET spent=1 WHERE account_id=?", (account_id,))
             token = self._new_session(conn, account_id)
             return SignedIn(self._load(conn, account_id), token)
 
@@ -677,6 +702,96 @@ class AccountService(_AccountManagement):
         with _HashSlot():
             if self._checked_credentials(email, password, dummy, client) != account_id:
                 raise AccountError("wrong-credentials")
+
+    # -- password reset by email (docs/ACCOUNTS.md) ----------------------------
+
+    def issue_reset_token(self, email: str) -> tuple[str, str] | None:
+        """A fresh reset token and the address to mail it to, or ``None``.
+
+        ``None`` for an unknown email, a guest, or past a limit (per account,
+        and for the whole installation): the caller sends nothing then, and
+        the reader was answered the same way long before. Counted and
+        inserted in one locked transaction, so parallel requests cannot race
+        past a limit. Runs on the mail worker, never on the request path.
+        """
+        try:
+            email = normalize_email(email)
+        except AccountError:
+            return None
+        now = self._now()
+        hour_ago = (now - timedelta(hours=1)).isoformat()
+        with self._transaction() as conn:
+            conn.execute("DELETE FROM password_resets WHERE created_at < ?", ((now - timedelta(days=1)).isoformat(),))
+            row = conn.execute(
+                "SELECT account_id FROM accounts WHERE email=? AND kind='registered'", (email,)
+            ).fetchone()
+            if row is None:
+                return None
+            count = lambda sql, *args: conn.execute(sql, args).fetchone()[0]  # noqa: E731
+            # Rows are never removed early (a change, a reset or a deletion
+            # only spends them) and the per-address count is keyed by the
+            # email, so no step a visitor can take resets a limit.
+            email_hash = _token_hash(email)
+            if (
+                count("SELECT COUNT(*) FROM password_resets WHERE email_hash=? AND created_at >= ?", email_hash, hour_ago)
+                >= RESETS_PER_ACCOUNT_HOUR
+                or count("SELECT COUNT(*) FROM password_resets WHERE created_at >= ?", hour_ago)
+                >= INSTALLATION_RESETS_PER_HOUR
+                or count("SELECT COUNT(*) FROM password_resets") >= INSTALLATION_RESETS_PER_DAY
+            ):
+                return None
+            token = secrets.token_urlsafe(32)
+            conn.execute(
+                "INSERT INTO password_resets(token_hash, account_id, email_hash, created_at, expires_at) VALUES (?,?,?,?,?)",
+                (_token_hash(token), row[0], email_hash, now.isoformat(), (now + RESET_LIFETIME).isoformat()),
+            )
+            return token, email
+
+    def _reset_account_locked(self, conn, token: str) -> tuple[str, str] | None:
+        """The account ID and email a live reset token names, or ``None``."""
+        if not isinstance(token, str) or not token or len(token) > _RESET_TOKEN_MAX:
+            return None
+        row = conn.execute(
+            "SELECT a.account_id, a.email, r.expires_at FROM password_resets r "
+            "JOIN accounts a ON a.account_id = r.account_id "
+            "WHERE r.token_hash=? AND r.spent=0 AND a.kind='registered'",
+            (_token_hash(token),),
+        ).fetchone()
+        if row is None or datetime.fromisoformat(row[2]) <= self._now():
+            return None
+        return row[0], row[1]
+
+    def reset_password(self, token: str, new_password: str) -> None:
+        """Replace the password of the account a reset token names.
+
+        The token is checked before any hashing (a wrong one costs nothing)
+        and again, with the change, in one locked transaction: it works once.
+        Every reset token and every session of the account end, and its
+        sign-in failure counts are cleared. The browser is not signed in.
+        """
+        _check_password(new_password)
+        with self._transaction() as conn:
+            if self._reset_account_locked(conn, token) is None:
+                raise AccountError("invalid-token")
+        password_hash = hash_password(new_password)   # busy: nothing spent
+        with self._transaction() as conn:
+            found = self._reset_account_locked(conn, token)
+            if found is None:
+                raise AccountError("invalid-token")
+            account_id, email = found
+            conn.execute(
+                "UPDATE accounts SET password_hash=?, updated_at=? WHERE account_id=?",
+                (password_hash, self._now().isoformat(), account_id),
+            )
+            conn.execute("UPDATE password_resets SET spent=1 WHERE account_id=?", (account_id,))
+            conn.execute("DELETE FROM sessions WHERE account_id=?", (account_id,))
+            # Both counters: this email from everyone, and from each visitor
+            # (keyed "<email>\n<visitor>"); compared exactly, never by LIKE,
+            # whose wildcards would match other readers' addresses.
+            conn.execute(
+                "DELETE FROM login_failures WHERE email=? OR substr(email, 1, ?)=?",
+                (email, len(email) + 1, email + "\n"),
+            )
 
     def _move_guest_locked(self, conn, guest: Account, account_id: str) -> tuple[str, ...]:
         moved = tuple(r[0] for r in conn.execute(

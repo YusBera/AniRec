@@ -22,8 +22,10 @@ from pathlib import Path
 from ..application.pipeline import PipelineOrchestrator
 from ..errors import AuthError
 from ..infrastructure.csv_storage import CsvStorage
+from ..infrastructure.mailer import Mailer, SmtpMailer
 from ..infrastructure.mal_client import MALClient
 from ..services.account_service import AccountService
+from ..services.password_reset_service import PasswordResetService, public_url_from_environment
 from ..services import (
     AnimeDataService,
     AnimeGraphService,
@@ -65,10 +67,14 @@ class ApiContainer:
     bundles: BundleContextService
     statistics: ProfileStatisticsService
     accounts: AccountService
+    password_resets: PasswordResetService
 
 
-def build_container(root_override: str | Path | None = None) -> ApiContainer:
-    """Construct the service graph. Mirrors ``gui_main.main()``."""
+def build_container(root_override: str | Path | None = None, *, mailer: Mailer | None = None) -> ApiContainer:
+    """Construct the service graph. Mirrors ``gui_main.main()``.
+
+    ``mailer`` replaces the SMTP mailer the environment describes (tests).
+    """
     settings = SettingsService(root_override=root_override)
     tokens = TokenStore(root_override=root_override)
     profiles = ProfileService(
@@ -77,6 +83,7 @@ def build_container(root_override: str | Path | None = None) -> ApiContainer:
         token_store=tokens,
     )
     auth = AuthService(token_store=tokens)
+    accounts = AccountService(root_override=root_override)
 
     def access_token_provider() -> str:
         # Never the machine-wide active profile: every API call passes a
@@ -107,11 +114,14 @@ def build_container(root_override: str | Path | None = None) -> ApiContainer:
         results=ResultService(root_override=root_override),
         recommendation_state=RecommendationStateService(root_override=root_override),
         data_management=DataManagementService(root_override=root_override),
-        mal_sync=MalSyncService(),
+        mal_sync=MalSyncService(root_override=root_override),
         taste_feedback=TasteFeedbackService(),
         covers=CoverImageService(root_override=root_override),
         samples=SampleDataService(),
         bundles=BundleContextService(),
         statistics=ProfileStatisticsService(profiles),
-        accounts=AccountService(root_override=root_override),
+        accounts=accounts,
+        password_resets=PasswordResetService(
+            accounts, mailer or SmtpMailer.from_environment(), public_url_from_environment()
+        ),
     )

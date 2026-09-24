@@ -178,6 +178,27 @@ class PasswordChange(ApiModel):
     new_password: str = Field(max_length=PASSWORD_MAX)
 
 
+class PasswordResetRequest(ApiModel):
+    email: str = Field(max_length=254)
+
+
+class PasswordResetConfirm(ApiModel):
+    token: str = Field(max_length=512)
+    # Capped here, before any hashing happens (docs/ACCOUNTS.md, "Passwords").
+    new_password: str = Field(max_length=PASSWORD_MAX)
+
+
+class PasswordResetResponse(ApiModel):
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "Never depends on whether an account uses the email. Asking: reset-unavailable, invalid-email, "
+            "too-many-attempts or busy. Confirming: invalid-token, weak-password, password-too-long, "
+            "too-many-attempts, busy or unavailable."
+        ),
+    )
+
+
 class DeleteRequest(ApiModel):
     # Registered accounts only; a guest has no password.
     password: str | None = Field(default=None, max_length=PASSWORD_MAX)
@@ -305,6 +326,36 @@ def accounts_router(services: ApiContainer, limits: ClientLimits, maintenance) -
         except AccountError as error:
             return AccountResponse(reason=error.reason)
         return signed_in(request, response, result[0])
+
+    @router.post("/password-reset", response_model=PasswordResetResponse)
+    def request_password_reset(payload: PasswordResetRequest, request: Request) -> PasswordResetResponse:
+        """Queue a reset link for the email; the same answer whether or not an
+        account uses it (docs/ACCOUNTS.md, "Password reset by email")."""
+        resets = services.password_resets
+        if not resets.available:
+            return PasswordResetResponse(reason="reset-unavailable")
+        if not limits.password_resets.take(limits.client(request)):
+            return PasswordResetResponse(reason="too-many-attempts")
+        try:
+            resets.request(payload.email)
+        except AccountError as error:
+            return PasswordResetResponse(reason=error.reason)
+        return PasswordResetResponse()
+
+    @router.post("/password-reset/confirm", response_model=PasswordResetResponse)
+    def confirm_password_reset(payload: PasswordResetConfirm, request: Request) -> PasswordResetResponse:
+        """Set a new password from an emailed token. Every session of the
+        account ends; this browser is not signed in."""
+        client = limits.client(request)
+        if limits.sign_in_failures.full(client):
+            return PasswordResetResponse(reason="too-many-attempts")
+        try:
+            services.password_resets.confirm(payload.token, payload.new_password)
+        except AccountError as error:
+            if error.reason == "invalid-token":
+                limits.sign_in_failures.take(client)
+            return PasswordResetResponse(reason=error.reason)
+        return PasswordResetResponse()
 
     @router.post("/delete", response_model=AccountResponse)
     def delete_account(payload: DeleteRequest, request: Request, response: Response) -> AccountResponse:

@@ -32,6 +32,9 @@ NEW_ACCOUNTS_PER_HOUR = 10
 SIGN_IN_FAILURES_PER_MINUTE = 20
 MAL_CALLS_PER_HOUR = 60
 EXPORTS_PER_HOUR = 20
+# Password reset emails asked for; the mail worker also caps each account
+# and the installation (account_service.py).
+PASSWORD_RESETS_PER_HOUR = 5
 # Beyond this many tracked clients the least recently seen is forgotten, so
 # the table itself cannot be used to exhaust memory.
 MAX_TRACKED_CLIENTS = 10_000
@@ -124,6 +127,7 @@ class ClientLimits:
     # spends this installation's MyAnimeList Client ID.
     mal_calls: KeyedRateWindow = field(default_factory=lambda: KeyedRateWindow(MAL_CALLS_PER_HOUR, 3600))
     exports: KeyedRateWindow = field(default_factory=lambda: KeyedRateWindow(EXPORTS_PER_HOUR, 3600))
+    password_resets: KeyedRateWindow = field(default_factory=lambda: KeyedRateWindow(PASSWORD_RESETS_PER_HOUR, 3600))
 
     @classmethod
     def from_environment(cls) -> "ClientLimits":

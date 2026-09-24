@@ -1,6 +1,7 @@
 /**
  * Settings → ACCOUNT (D-021): who you are signed in as, change password,
- * download your data, and delete your account.
+ * a reset link by email for a forgotten one, download your data, and delete
+ * your account.
  *
  * Deleting names every list it removes before asking, and asks a registered
  * reader for their password. A guest has none; only their own cookie reaches
@@ -10,6 +11,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { AniRecApiError, api } from "../api/client";
 import type { AccountSummary } from "../api/types";
+import { resetProblem } from "./AccountDialog";
 
 const PROBLEMS: Record<string, string> = {
   "wrong-credentials": "That password isn't right.",
@@ -53,6 +55,29 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
     <button className="btn" disabled={busy}>{busy ? "Changing…" : "Change password"}</button>
     <p role="status" className="settings-hint">{status}</p>
   </form>;
+}
+
+/** A reset link to the account's own email, for a forgotten password. */
+function ResetLink({ email, available }: { email: string; available: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  if (!available) {
+    return <p className="settings-hint">Forgot your password? This AniRec isn't set up to send email, so it can't send you a reset link.</p>;
+  }
+  return <div className="reset-link">
+    <p className="settings-hint">Forgot your password? AniRec can email you a link to choose a new one.</p>
+    <button type="button" className="btn" disabled={busy} onClick={async () => {
+      setBusy(true); setStatus("");
+      try {
+        const result = await api.requestPasswordReset(email);
+        setStatus(result.reason ? resetProblem(result.reason)
+          : `A reset link is on its way to ${email}, unless several were sent this hour. It works for 30 minutes.`);
+      } catch (caught) {
+        setStatus(caught instanceof AniRecApiError && caught.status === 0 ? "AniRec couldn't reach its local service. Try again in a moment." : resetProblem(""));
+      } finally { setBusy(false); }
+    }}>{busy ? "Sending…" : "Email me a reset link"}</button>
+    <p role="status" className="settings-hint">{status}</p>
+  </div>;
 }
 
 /** Saves the export through a temporary link, and says so when it can't. */
@@ -151,8 +176,10 @@ function DeleteDialog({ registered, onDeleted, onClose }: { registered: boolean;
   </dialog>;
 }
 
-export function AccountSection({ account, onAccount }: {
+export function AccountSection({ account, resetAvailable = false, onAccount }: {
   account: AccountSummary | null;
+  /** Whether this installation can email a reset link (from the system state). */
+  resetAvailable?: boolean;
   onAccount?: (event: "deleted" | "password-changed") => void;
 }) {
   const [deleting, setDeleting] = useState(false);
@@ -163,7 +190,7 @@ export function AccountSection({ account, onAccount }: {
   return <Section>
     <p>{registered ? <>Signed in as <strong>{account.email}</strong>.</> : "You're using AniRec as a guest. Create an account from the account menu to keep your lists."}</p>
     {registered ? <PasswordForm onChanged={() => onAccount?.("password-changed")} /> : null}
-    {registered ? <p className="settings-hint">Forgot your password? Resetting it needs email, which this AniRec doesn't send yet.</p> : null}
+    {registered && account.email ? <ResetLink email={account.email} available={resetAvailable} /> : null}
     <div className="workspace-toolbar">
       <DownloadButton />
       <button type="button" className="btn danger" onClick={() => setDeleting(true)}>{registered ? "Delete account" : "Delete my data"}</button>

@@ -364,6 +364,10 @@ class SystemStateResponse(ApiModel):
     account: AccountSummary | None = None
     needs_setup: bool
     mal_client_id_present: bool
+    password_reset_available: bool = Field(
+        default=False,
+        description="Whether this installation can email a password reset link (mail and a public address are set up).",
+    )
     active_operations: tuple[OperationSnapshotResponse, ...]
 
 
