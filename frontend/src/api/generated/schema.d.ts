@@ -697,6 +697,7 @@ export interface components {
             state: components["schemas"]["LocalState"];
             /** State Profile Id */
             state_profile_id: string | null;
+            taste_vector?: components["schemas"]["TasteVector"] | null;
             /** User Stats */
             user_stats: {
                 [key: string]: unknown;
@@ -1520,6 +1521,25 @@ export interface components {
             timeline?: components["schemas"]["RatingTimeline"];
         };
         /**
+         * TasteTerm
+         * @description One ranked term from the reader's taste profile, typed by kind.
+         *
+         *     The importance ranking mixes genres and studios; ``kind`` tells them apart
+         *     so the client never words a studio as a genre (DOMAIN_RULES, "Signal
+         *     labels are typed").
+         */
+        TasteTerm: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "genre" | "studio";
+            /** Rated Count */
+            rated_count: number;
+            /** Term */
+            term: string;
+        };
+        /**
          * TasteTitle
          * @description A title in a genre's drill-down list: a name and one score.
          */
@@ -1528,6 +1548,18 @@ export interface components {
             title: string;
             /** Your Score */
             your_score?: number | null;
+        };
+        /**
+         * TasteVector
+         * @description The desktop Discover header's taste line: up to four liked terms and
+         *     up to two avoided ones, from the same ranking. Both empty means there is
+         *     no ranked taste yet, which the client states rather than inventing one.
+         */
+        TasteVector: {
+            /** Avoided */
+            avoided: components["schemas"]["TasteTerm"][];
+            /** Liked */
+            liked: components["schemas"]["TasteTerm"][];
         };
         /** TimelinePoint */
         TimelinePoint: {
