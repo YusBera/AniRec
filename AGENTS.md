@@ -151,9 +151,14 @@ where the current code still fuses them:
 
 Domain and service code must not depend on PySide, on HTTP types, or on React.
 
-`AniRec/gui/` is deprecated. Do not add features to it, and do not treat it as
-the visual or behavioural authority for new work. Bug fixes needed to keep the
-developer tool usable are acceptable; new surfaces are not.
+`AniRec/gui/` is deprecated as an application: do not add features to it.
+Bug fixes needed to keep the developer tool usable are acceptable.
+
+Its design is the reference for the web client (`docs/DECISIONS.md` D-016).
+Before building or changing a web surface, read how the latest PySide client
+does it: the widget code, its docstrings and change comments, and the wording
+in `AniRec/gui/texts.py`. Keep the design's intent. Domain rules still outrank
+both clients.
 
 ---
 

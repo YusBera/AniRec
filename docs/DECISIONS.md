@@ -105,6 +105,40 @@ web-first.
 
 ---
 
+## D-016 - The desktop design is the reference for the web client
+**2026-09-24 - Accepted (user decision). Revises the visual-authority clause of D-004.**
+
+The user designed the PySide client deliberately, and the React port lost
+much of it:
+- the card's shape and structure;
+- the Discover instrument header;
+- the Cards, List and Table views;
+- the Score Inspector;
+- the Profile's voice;
+- the Settings structure;
+- controls the desktop had retired.
+
+From now on, the latest PySide client (`AniRec/gui/` at HEAD, not only the
+1.3.0 package) is the design reference for web surfaces:
+- **Structure:** how each surface is built, for example `recommendation_card.py`
+  and `discover_page.py`.
+- **Controls:** which controls exist, and which are retired.
+- **Wording:** the strings in `AniRec/gui/texts.py`.
+- **Intent:** the reasoning in its docstrings and change comments.
+
+A port must understand why an element exists, not only copy how it looks.
+
+The rest of D-004 stands:
+- The web client is the product.
+- `AniRec/gui/` gets no new features.
+- Domain rules outrank both clients. For example, an uncalibrated percentage
+  the desktop once showed is still not shown.
+
+*Why:* the first React port copied surface styling without the design's
+reasons. Calling the port its own authority let that drift become policy.
+
+---
+
 ## D-015 - Feedback is given after watching, in the Library
 **2026-09-24 - Accepted (user decision). Revises D-013.**
 
@@ -260,6 +294,7 @@ writing one. This is cheap now and not later.
 
 ## D-004 - PySide is deprecated
 **2026-09-20 - Accepted. Supersedes prior "PySide holds visual authority".**
+**Its "own visual authority" clause is revised by D-016 (2026-09-24).**
 
 `AniRec/gui/` becomes a development and power-user tool. No new surfaces. The web
 client is the product and its own visual authority.

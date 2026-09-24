@@ -2,12 +2,16 @@
 
 This records the established visual world, not a new theme.
 
-**The web client is the visual authority** (`docs/DECISIONS.md` D-004). The retired
-PySide screens are where this world came from and stay useful reference for
-palette, density and proportion, but they no longer govern layout: web-first means
-the browser client owns its own composition, at its own breakpoints. Preserving the
-feel does not mean reproducing desktop geometry. Current implementation takes
-precedence over stale dimensions and obsolete button descriptions.
+**The latest PySide client is the design reference** (`docs/DECISIONS.md` D-016,
+which revises D-004). It is the reference for:
+- structure and proportion;
+- which controls exist;
+- wording (`AniRec/gui/texts.py`).
+
+The web client is the product, and it adapts that design to the browser,
+including narrow breakpoints. It does not replace the design with its own.
+Where this file and the PySide code disagree, the PySide code wins, unless a
+domain rule forbids what it shows.
 
 ## Existing visual system
 

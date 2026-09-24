@@ -115,7 +115,26 @@ mapped to plain text:
 
 Never substitute another engine's explanation.
 
-### Likes and dislikes (D-013)
+### Taste vector (desktop Discover header, D-016)
+
+`FeedResponse.taste_vector` is `{liked: TasteTerm[], avoided: TasteTerm[]}` or
+`null` when there is no feed. Each `TasteTerm` is `{term, kind: "genre" |
+"studio", rated_count}`.
+- There are up to 4 liked terms and 2 avoided terms, already in the desktop's
+  order.
+- Word the sentence exactly as `AniRec/gui/discover_page.py`
+  `_summary_sentence` does, with the `texts.py` strings. Genres are what the
+  reader enjoys; studios are who tends to make it. Never word a studio as a
+  genre.
+- Both lists empty means no ranked taste yet. Show `taste_empty`; do not
+  invent a sentence.
+
+### Likes and dislikes (D-013, revised by D-015)
+
+**No vote controls on Discover cards or in the inspector.** D-015 moves
+feedback to the Library, after watching. The Library-side reporting and the
+observed-on-return path are later work. The endpoint below stays, and so do
+the votes already collected under D-013.
 
 The backend collects votes. They do not change recommendations yet, so the UI
 must not say or imply that they do: no "we'll show you more like this".

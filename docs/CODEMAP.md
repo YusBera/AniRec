@@ -91,6 +91,7 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | OAuth redirect handling | `AniRec/infrastructure/oauth_callback.py` |
 | MAL payload to domain mapping, CSV columns | `AniRec/core/mal_mapping.py` |
 | View models shared by both clients | `AniRec/presentation/` |
+| Discover taste vector (desktop header rules, typed genre/studio terms) | `AniRec/presentation/taste_vector.py`, served as `FeedResponse.taste_vector` |
 
 ---
 
@@ -151,8 +152,9 @@ has no migration path today.
 ## Deprecated
 
 `AniRec/gui/` and `AniRec/gui_main.py` are the retired PySide application. They
-still call the same service layer. Do not add surfaces there, and do not treat
-their layout as authority for web work. See `docs/DECISIONS.md` D-004.
+still call the same service layer. Do not add surfaces there (D-004). Their
+design is the reference for web surfaces (D-016). For wording, see
+`AniRec/gui/texts.py`.
 
 ---
 

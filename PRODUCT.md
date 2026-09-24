@@ -21,8 +21,8 @@ Discover, My Library, Profile, Compare and Settings are implemented in the
 browser workspace.
 
 The PySide application is deprecated and is being retired to a development and
-power-user tool (`docs/DECISIONS.md` D-004). It is not the shipping application
-and is not the visual authority for new work.
+power-user tool (`docs/DECISIONS.md` D-004). It is not the shipping application,
+but its design is the reference the web client follows (D-016).
 
 The service layer behind the API still assumes one user in one process. Accounts,
 per-request identity, and an owned catalogue are the named gaps in
