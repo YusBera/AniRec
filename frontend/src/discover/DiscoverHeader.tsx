@@ -75,10 +75,14 @@ export function DiscoverHeader({ state, message, running, runDisabledReason, onR
     <div className="discover-strip">
       <h1 className="discover-channel">{DISCOVER_TEXT.channel} <span aria-hidden="true">{DISCOVER_TEXT.channelMark}</span></h1>
       <span className="strip-rule" aria-hidden="true" />
-      <p className="discover-state" role="status">
-        <span className="state-caption">{DISCOVER_TEXT.stateCaption}</span>{" "}
-        <span className="state-value" data-tone={state}>{stateText}</span>
-        {message ? <span className="state-message" id={messageId}>{message}</span> : null}
+      <p className="discover-state">
+        <span role="status">
+          <span className="state-caption">{DISCOVER_TEXT.stateCaption}</span>{" "}
+          <span className="state-value" data-tone={state}>{stateText}</span>
+        </span>
+        {/* The stage sentence is not live while BUSY: the progress bar
+            already reports it, and announcing both repeats every stage. */}
+        {message ? <span className="state-message" id={messageId} aria-live={state === "busy" ? "off" : "polite"}>{message}</span> : null}
       </p>
       <button type="button" className="btn primary run-analysis" disabled={running || runDisabledReason !== null}
         aria-describedby={runDisabledReason && message ? messageId : undefined}

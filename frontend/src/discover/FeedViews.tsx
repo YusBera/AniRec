@@ -43,7 +43,7 @@ export interface FeedViewProps {
   trackActivity?: boolean;
   onDetails: (model: RecommendationViewModel) => void;
   onExternal?: (model: RecommendationViewModel) => void;
-  onVote: (malId: number, action: Decision, value: boolean) => void;
+  onVote: (malId: number, action: Decision, value: boolean, model?: RecommendationViewModel) => void;
 }
 
 export function FeedView(props: FeedViewProps) {
@@ -74,12 +74,12 @@ function Decisions({ model, props, compact = false }: { model: RecommendationVie
   const locked = malId === null || props.pending || !!props.disabledReason;
   return <>
     <button type="button" className={`btn row-action${compact ? " compact" : ""}`} data-action="later" aria-pressed={saved} disabled={locked}
-      title={props.disabledReason} onClick={() => malId !== null && props.onVote(malId, "watch_later", !saved)}>
+      title={props.disabledReason} onClick={() => malId !== null && props.onVote(malId, "watch_later", !saved, model)}>
       {saved ? "Remove from Watch Later" : "Watch Later"}
     </button>
     <button type="button" className={`btn row-action${compact ? " compact" : ""}`} data-action="hide" aria-pressed={hidden} disabled={locked}
       title={props.disabledReason ?? (hidden ? "Show this anime in For You again." : "Stop recommending this anime. It stays in Not interested.")}
-      onClick={() => malId !== null && props.onVote(malId, "hidden", !hidden)}>
+      onClick={() => malId !== null && props.onVote(malId, "hidden", !hidden, model)}>
       {hidden ? "Show again" : "Not interested"}
     </button>
   </>;

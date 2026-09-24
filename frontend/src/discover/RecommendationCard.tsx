@@ -32,7 +32,7 @@ interface Props {
   trackActivity?: boolean;
   onDetails: (model: RecommendationViewModel) => void;
   onExternal?: (model: RecommendationViewModel) => void;
-  onVote: (malId: number, action: Decision, value: boolean) => void;
+  onVote: (malId: number, action: Decision, value: boolean, model?: RecommendationViewModel) => void;
 }
 
 export function initials(title: string): string {
@@ -72,8 +72,10 @@ export function malScoreText(model: Pick<RecommendationViewModel, "mal_score">):
   return `MAL score: ${model.mal_score === null ? "not rated" : `${model.mal_score.toFixed(2)} / 10`}`;
 }
 
-export function MalLink({ model, onExternal, className = "pill mal-link", children }: {
+export function MalLink({ model, onExternal, className = "pill mal-link", label, children }: {
   model: RecommendationViewModel;
+  /** Must contain any visible text the link carries (WCAG 2.5.3). */
+  label?: string;
   onExternal?: (model: RecommendationViewModel) => void;
   className?: string;
   children?: ReactNode;
@@ -81,7 +83,7 @@ export function MalLink({ model, onExternal, className = "pill mal-link", childr
   const platform = usePlatform();
   if (!model.mal_url) return null;
   return <a className={className} href={model.mal_url} target="_blank" rel="noreferrer noopener"
-    aria-label={`Open ${model.display_title} on MyAnimeList (external)`} title="Open on MyAnimeList"
+    aria-label={label ?? `Open ${model.display_title} on MyAnimeList (external)`} title="Open on MyAnimeList"
     onClick={(event) => {
       // Preserve modified clicks and the real href in the browser.
       if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
@@ -112,12 +114,12 @@ function RecommendationCardInner({
       <div className="card-verdicts" role="group" aria-label={`Decisions for ${model.display_title}`}>
         <button type="button" className="verdict" data-action="later" aria-pressed={watchLater} aria-label={labels.later}
           title={disabledReason ?? labels.later} disabled={locked}
-          onClick={() => malId !== null && onVote(malId, "watch_later", !watchLater)}>
+          onClick={() => malId !== null && onVote(malId, "watch_later", !watchLater, model)}>
           <Icon name={watchLater ? "watch-later-active" : "watch-later"} />
         </button>
         <button type="button" className="verdict" data-action="hide" aria-pressed={hidden} aria-label={labels.hide}
           title={disabledReason ?? labels.hideTip} disabled={locked}
-          onClick={() => malId !== null && onVote(malId, "hidden", !hidden)}>
+          onClick={() => malId !== null && onVote(malId, "hidden", !hidden, model)}>
           <Icon name={hidden ? "not-interested-active" : "not-interested"} />
         </button>
       </div>

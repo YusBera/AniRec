@@ -255,7 +255,8 @@
 @media (max-width: 700px), (pointer: coarse) {
   .workspace-page .btn, .workspace-toolbar input, .workspace-toolbar select, .compare-form input, .compare-form .btn,
   .settings-control input:not([type="checkbox"]):not([type="range"]), .settings-control select, .preference-check,
-  .sample-banner .btn, .console-toggle, .taste-detail summary, .first-run-nav .btn, .page-controls .btn { min-height: 44px; }
+  .sample-banner .btn, .console-toggle, .taste-detail summary, .first-run-nav .btn, .page-controls .btn,
+  .workspace-nav nav a { min-height: 44px; }
   .console-toggle { min-width: 44px; }
   .workspace-page a[href^="https://myanimelist.net"] { display: inline-flex; align-items: center; min-height: 44px; }
   .settings-control input[type="range"] { min-height: 44px; }

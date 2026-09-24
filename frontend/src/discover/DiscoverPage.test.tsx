@@ -615,7 +615,10 @@ describe("the PySide card and header", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(profileFeed), { headers: { "Content-Type": "application/json" } });
-      if (url.includes("/api/operations/")) return new Response(JSON.stringify({ detail: "An operation is already running for this profile." }), { status: 409, headers: { "Content-Type": "application/json" } });
+      if (url.includes("/api/operations/")) return new Response(JSON.stringify({ error: {
+        code: "invalid_request", title: "Operation is already running: recommendation:test-profile",
+        description: "Operation is already running: recommendation:test-profile", solution: "", retryable: false,
+      } }), { status: 409, headers: { "Content-Type": "application/json" } });
       return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
     }));
     const user = userEvent.setup();
@@ -623,8 +626,71 @@ describe("the PySide card and header", () => {
     await user.click(await screen.findByRole("button", { name: /RUN ANALYSIS/ }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Another operation is already running");
-    expect(alert).toHaveTextContent("An operation is already running for this profile.");
+    expect(alert).toHaveTextContent("Operation is already running: recommendation:test-profile");
+    expect(alert).not.toHaveTextContent("reloads");
     expect(screen.getByText("FAULT")).toBeInTheDocument();
+  });
+
+  it("keeps the service's own words for a 409 that is not a running operation", async () => {
+    const profileFeed = { ...FEED, source: "profile" as const, ephemeral: false, state_profile_id: "test-profile" };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(profileFeed), { headers: { "Content-Type": "application/json" } });
+      if (url.includes("/api/operations/")) return new Response(JSON.stringify({ error: {
+        code: "invalid_request", title: "No active profile. Complete setup first.",
+        description: "No active profile. Complete setup first.", solution: "", retryable: false,
+      } }), { status: 409, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
+    }));
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: /RUN ANALYSIS/ }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("No active profile. Complete setup first.");
+    expect(alert).not.toHaveTextContent("Another operation");
+  });
+
+  it("returns focus to the visible Library card, not the hidden Discover copy, when the inspector closes", async () => {
+    stubFetch({ ...FEED, state: { ...FEED.state, watch_later_mal_ids: [1535] } });
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    window.history.replaceState(null, "", "#/library");
+    const user = userEvent.setup();
+    render(<Workspace />);
+    const libraryMain = (await screen.findByRole("heading", { level: 1, name: "My Library" })).closest("main")!;
+    const card = await within(libraryMain).findByRole("article", { name: "Death Note" });
+    await user.click(within(card).getByRole("button", { name: "Death Note" }));
+    const dialog = await screen.findByRole("dialog", { name: "Death Note" });
+    await user.click(within(dialog).getByRole("button", { name: "Close score inspector" }));
+    await waitFor(() => expect(within(card).getByRole("button", { name: "Death Note" })).toHaveFocus());
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("ignores a superseded feed read so a stale state cannot land over a newer one", async () => {
+    const profileFeed = { ...FEED, source: "profile" as const, ephemeral: false, state_profile_id: "test-profile", hidden_count: 1 };
+    let releaseFirst!: () => void;
+    let reads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/discover/feed")) {
+        reads += 1;
+        // Read 2 is the superseded one and carries a different saved list.
+        const saved = reads === 1 ? [] : reads === 2 ? [1, 2] : [3];
+        const body = new Response(JSON.stringify({ ...profileFeed, state: { ...FEED.state, watch_later_mal_ids: saved } }), { headers: { "Content-Type": "application/json" } });
+        if (reads === 2) await new Promise<void>((resolve) => { releaseFirst = resolve; });
+        return body;
+      }
+      return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
+    }));
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    const toggle = await screen.findByRole("checkbox", { name: "Show not interested" });
+    await user.click(toggle);
+    await user.click(toggle);
+    await waitFor(() => expect(screen.getByText("LISTS SAVED · 1 SAVED · 0 SET ASIDE")).toBeInTheDocument());
+    await act(async () => releaseFirst());
+    expect(screen.getByText("LISTS SAVED · 1 SAVED · 0 SET ASIDE")).toBeInTheDocument();
+    expect(screen.queryByText(/2 SAVED/)).not.toBeInTheDocument();
+    expect(reads).toBe(3);
   });
 
   it("renders List and Table with 2:3 thumbnails and the same decisions", async () => {
@@ -665,6 +731,6 @@ describe("My Library collections", () => {
     await user.click(screen.getByRole("button", { name: "Not interested · 1" }));
     const card = screen.getByRole("article", { name: "Death Note" });
     await user.click(within(card).getByRole("button", { name: "Show this recommendation again" }));
-    expect(onVote).toHaveBeenCalledWith(1535, "hidden", false);
+    expect(onVote.mock.calls[0]!.slice(0, 3)).toEqual([1535, "hidden", false]);
   });
 });

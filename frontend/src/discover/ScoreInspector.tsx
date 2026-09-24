@@ -36,7 +36,7 @@ interface Props {
   onPrevious: () => void;
   onNext: () => void;
   onClose: () => void;
-  onVote: (malId: number, action: Decision, value: boolean) => void;
+  onVote: (malId: number, action: Decision, value: boolean, model?: RecommendationViewModel) => void;
   onExternal?: (model: RecommendationViewModel) => void;
 }
 
@@ -65,8 +65,12 @@ export function ScoreInspector({
     onClose();
     // After the dialog has gone, return focus to the card being inspected.
     requestAnimationFrame(() => {
-      const target = current.current === null ? null
-        : document.querySelector<HTMLElement>(`[data-card-id="${current.current}"] .card-title button, [data-card-id="${current.current}"] .row-title button, [data-card-id="${current.current}"] .table-title`);
+      // Discover and Library both stay mounted; only a visible copy of the
+      // card can take focus.
+      const id = current.current;
+      const target = id === null ? undefined
+        : [...document.querySelectorAll<HTMLElement>(`[data-card-id="${id}"] .card-title button, [data-card-id="${id}"] .row-title button, [data-card-id="${id}"] .table-title`)]
+          .find((node) => !node.closest("[hidden]"));
       target?.focus();
     });
   };
@@ -141,11 +145,11 @@ export function ScoreInspector({
 
           <div className="inspector-actions">
             <button type="button" className="btn" data-action="later" aria-pressed={watchLater} disabled={locked} title={disabledReason}
-              onClick={() => malId !== null && onVote(malId, "watch_later", !watchLater)}>{watchLater ? "Remove saved" : "Watch Later"}</button>
+              onClick={() => malId !== null && onVote(malId, "watch_later", !watchLater, model)}>{watchLater ? "Remove saved" : "Watch Later"}</button>
             <button type="button" className="btn" data-action="hide" aria-pressed={hidden} disabled={locked} title={disabledReason}
-              onClick={() => malId !== null && onVote(malId, "hidden", !hidden)}>{hidden ? "Show again" : "Not interested"}</button>
+              onClick={() => malId !== null && onVote(malId, "hidden", !hidden, model)}>{hidden ? "Show again" : "Not interested"}</button>
             <span className="spacer" />
-            <MalLink model={model} onExternal={onExternal} className="inspector-mal">Open on MyAnimeList <span aria-hidden="true">↗</span></MalLink>
+            <MalLink model={model} onExternal={onExternal} className="inspector-mal" label={`Open on MyAnimeList: ${model.display_title} (external)`}>Open on MyAnimeList <span aria-hidden="true">↗</span></MalLink>
           </div>
         </div>
       </div>

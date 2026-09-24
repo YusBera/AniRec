@@ -20,14 +20,20 @@ export function useFeed(includeHidden = false) {
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<ApiError | null>(null);
 
+  // Only the newest read may land: a superseded response carries a whole
+  // local state that could revert a decision saved after it was served.
+  const latest = useRef(0);
   const load = useCallback(async (options?: { quiet?: boolean }) => {
+    const request = ++latest.current;
     if (!options?.quiet) setState("loading");
     try {
       const next = await api.feed(includeHidden);
+      if (request !== latest.current) return;
       setFeed(next);
       setError(null);
       setState("ready");
     } catch (caught) {
+      if (request !== latest.current) return;
       if (caught instanceof AniRecApiError) setError(caught.detail);
       setState("error");
     }
@@ -52,17 +58,17 @@ export interface OperationProgress {
 const IDLE: OperationProgress = { id: null, kind: null, state: "idle", progress: null, error: null };
 
 /**
- * A 409 means the service is already running something that writes this
- * feed (`OperationAlreadyRunningError`), or that the active profile changed
- * under this view. Neither is a failure of the request a retry would fix, so
- * it is worded as what it is, with the service's own sentence kept.
+ * `OperationAlreadyRunningError` arrives as a 409 whose description starts
+ * "Operation is already running". It is not a failed request, so it is worded
+ * as what it is, with the service's own sentence kept. Other 409s (no active
+ * profile, the profile changed) keep the service's wording unchanged.
  */
 function startError(caught: unknown): ApiError {
-  if (caught instanceof AniRecApiError && caught.status === 409) {
+  if (caught instanceof AniRecApiError && caught.status === 409 && /already running/i.test(caught.detail.description)) {
     return {
       ...caught.detail,
       title: "Another operation is already running",
-      solution: "Wait for it to finish; the feed reloads when it does.",
+      solution: "Wait for it to finish, then try again.",
       retryable: false,
     };
   }

@@ -32,7 +32,7 @@ export function LibraryPage({ feed, pending, disabledReason, notice = "", error 
   disabledReason?: string;
   notice?: string;
   error?: { message: string; retry: (() => void) | null } | null;
-  onVote: (id: number, action: Decision, value: boolean) => void;
+  onVote: (id: number, action: Decision, value: boolean, model?: RecommendationViewModel) => void;
   onDetails: (model: RecommendationViewModel, list: RecommendationViewModel[]) => void;
   onExternal?: (model: RecommendationViewModel) => void;
 }) {

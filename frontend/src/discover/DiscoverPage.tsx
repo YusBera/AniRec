@@ -87,6 +87,19 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
     if (finished === "succeeded") void reload({ quiet: true });
   });
 
+  // A reloaded feed is a new ranking: an inspector still showing the old
+  // snapshot would pair its rank and why with the new feed's engine label.
+  useEffect(() => setInspecting(null), [feed?.activity_feed_id]);
+
+  // The saved "show not interested" preference sets the checkbox's first
+  // state; the server already included those titles in that case.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!feed || seeded.current) return;
+    seeded.current = true;
+    if (feed.state.show_hidden) setShowHidden(true);
+  }, [feed]);
+
   const feedRef = useRef(onFeedChange);
   feedRef.current = onFeedChange;
   useEffect(() => { feedRef.current?.(feed); }, [feed]);
@@ -105,10 +118,10 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
   };
 
   const vote = useCallback(
-    async (malId: number, action: Decision, value: boolean) => {
+    async (malId: number, action: Decision, value: boolean, known?: RecommendationViewModel) => {
       if (!feed || savingRef.current || operation.status.state === "running") return;
       setFeedbackError(null);
-      const model = feed.recommendations.find((m) => m.mal_id === malId)
+      const model = known ?? feed.recommendations.find((m) => m.mal_id === malId)
         ?? inspecting?.list.find((m) => m.mal_id === malId);
       const title = model?.display_title ?? "Title";
       const outcome = action === "watch_later"
@@ -239,7 +252,7 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
                   {activeFilterCount(filters) ? <span className="filter-count"> · {activeFilterCount(filters)} active</span> : null}
                 </button>
                 {feed.hidden_count > 0 || hiddenInFeed || showHidden ? <label className="show-hidden">
-                  <input type="checkbox" checked={showHidden} onChange={(event) => {
+                  <input type="checkbox" checked={showHidden} disabled={saving} onChange={(event) => {
                     setShowHidden(event.target.checked);
                     if (!feed.ephemeral) setFetchHidden(event.target.checked);
                   }} /> Show not interested

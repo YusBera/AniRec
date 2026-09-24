@@ -115,12 +115,20 @@ export function useShellState() {
       setVersion(health.version);
       log("BOOT", `core ${health.version} online`);
     }).catch(() => { if (!cancelled) log("ERROR", "local service unreachable"); });
-    const loop = async () => {
+    // One polling chain at a time. Each run takes a generation number; a run
+    // superseded by a nudge while its poll was in flight schedules nothing.
+    let generation = 0;
+    const loop = async (fresh = false) => {
+      const mine = ++generation;
       if (timer.current) clearTimeout(timer.current);
+      // A nudge must read the state after the start, not a poll already in flight.
+      if (fresh) await inflight.current?.catch(() => undefined);
       await refreshRef.current().catch(() => undefined);
-      if (!cancelled) timer.current = setTimeout(loop, busy.current ? BUSY_POLL_MS : IDLE_POLL_MS);
+      if (cancelled || mine !== generation) return;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => void loop(), busy.current ? BUSY_POLL_MS : IDLE_POLL_MS);
     };
-    kick.current = () => void loop();
+    kick.current = () => void loop(true);
     void loop();
     const open = streams.current;
     return () => {
