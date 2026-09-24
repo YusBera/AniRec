@@ -31,6 +31,7 @@ TRUSTED_PROXIES_ENV_VAR = "ANIREC_TRUSTED_PROXIES"
 NEW_ACCOUNTS_PER_HOUR = 10
 SIGN_IN_FAILURES_PER_MINUTE = 20
 MAL_CALLS_PER_HOUR = 60
+EXPORTS_PER_HOUR = 20
 # Beyond this many tracked clients the least recently seen is forgotten, so
 # the table itself cannot be used to exhaust memory.
 MAX_TRACKED_CLIENTS = 10_000
@@ -122,6 +123,7 @@ class ClientLimits:
     # Imports, public-list lookups, live Compare and title look-ups: each
     # spends this installation's MyAnimeList Client ID.
     mal_calls: KeyedRateWindow = field(default_factory=lambda: KeyedRateWindow(MAL_CALLS_PER_HOUR, 3600))
+    exports: KeyedRateWindow = field(default_factory=lambda: KeyedRateWindow(EXPORTS_PER_HOUR, 3600))
 
     @classmethod
     def from_environment(cls) -> "ClientLimits":

@@ -465,17 +465,96 @@ describe("the account dialog (D-021)", () => {
   });
 });
 
-it("shows installation settings read-only, with the reason, to anyone but the owner", async () => {
+it("shows the desktop settings read-only, with the reason, to anyone but the owner", async () => {
   const { SettingsPage } = await import("./SettingsPage");
   vi.spyOn(api, "settings").mockResolvedValue({
     adventurousness: 5, batch_size: 10, minimum_mal_score: null, default_sort: "personal-match", include_hidden: false,
     include_nsfw: false, background_sync: false, theme: "dark", gui_scale: 1, font_scale: 1, show_covers: true,
-    username: "reader", client_id_present: true, using_defaults: false, can_edit: false,
+    username: "reader", client_id_present: true, using_defaults: false, can_edit: false, can_edit_preferences: false,
   });
   render(<SettingsPage />);
-  expect(await screen.findByText("Only the owner of this AniRec installation can change these settings.")).toBeInTheDocument();
+  expect(await screen.findByText("Only the owner of this AniRec installation can change the desktop app's settings.")).toBeInTheDocument();
+  expect(screen.getByText("Add your MyAnimeList list or create an account to save your own preferences.")).toBeInTheDocument();
   expect(screen.getByRole("slider", { name: "Adventurousness (1–10)" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Save preferences" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Save desktop settings" })).toBeDisabled();
+});
+
+describe("Settings → ACCOUNT (D-021)", () => {
+  const SETTINGS = {
+    adventurousness: 5, batch_size: 10, minimum_mal_score: null, default_sort: "personal-match" as const, include_hidden: false,
+    include_nsfw: false, background_sync: false, theme: "dark" as const, gui_scale: 1, font_scale: 1, show_covers: true,
+    username: "reader_01", client_id_present: true, using_defaults: false, can_edit: false, can_edit_preferences: true,
+  };
+  const READER = { kind: "registered" as const, email: "reader@example.com", has_import: true, installation_owner: false };
+
+  it("changes the password and says what it did", async () => {
+    const { SettingsPage } = await import("./SettingsPage");
+    vi.spyOn(api, "settings").mockResolvedValue(SETTINGS);
+    const change = vi.spyOn(api, "changePassword").mockResolvedValue({ account: READER, reason: null, moved_imports: 0 });
+    const onAccount = vi.fn();
+    render(<SettingsPage account={READER} onAccount={onAccount} />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByLabelText("Current password"), "a long password");
+    await user.type(screen.getByLabelText("New password"), "a new long password");
+    await user.click(screen.getByRole("button", { name: "Change password" }));
+    expect(change).toHaveBeenCalledWith("a long password", "a new long password");
+    expect(await screen.findByText(/Password changed\./)).toBeInTheDocument();
+    expect(onAccount).toHaveBeenCalledWith("password-changed");
+    expect(screen.getByLabelText("Current password")).toHaveValue("");
+  });
+
+  it("offers the data as a download", async () => {
+    const { SettingsPage } = await import("./SettingsPage");
+    vi.spyOn(api, "settings").mockResolvedValue(SETTINGS);
+    render(<SettingsPage account={READER} />);
+    const link = await screen.findByRole("link", { name: "Download my data" });
+    expect(link).toHaveAttribute("href", "/api/account/export");
+    expect(link).toHaveAttribute("download");
+  });
+
+  it("names every list before deleting, asks for the password, and reports a refusal in words", async () => {
+    const { SettingsPage } = await import("./SettingsPage");
+    vi.spyOn(api, "settings").mockResolvedValue(SETTINGS);
+    vi.spyOn(api, "imports").mockResolvedValue({ imports: [
+      { profile_id: "imp_1", username: "reader_01" }, { profile_id: "imp_2", username: "guest_list" },
+    ], active_profile_id: "imp_1", reason: null });
+    const remove = vi.spyOn(api, "deleteAccount")
+      .mockResolvedValueOnce({ account: null, reason: "wrong-credentials", moved_imports: 0 })
+      .mockResolvedValueOnce({ account: null, reason: null, moved_imports: 0 });
+    const onAccount = vi.fn();
+    render(<SettingsPage account={READER} onAccount={onAccount} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Delete account" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete your account?" });
+    expect(await within(dialog).findByText("reader_01's list, with its Watch Later and Not interested")).toBeInTheDocument();
+    expect(within(dialog).getByText("guest_list's list, with its Watch Later and Not interested")).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText("Your password"), "wrong one");
+    await user.click(within(dialog).getByRole("button", { name: "Delete my account" }));
+    expect(await within(dialog).findByText("That password isn't right.")).toBeInTheDocument();
+    expect(onAccount).not.toHaveBeenCalled();
+    await user.clear(within(dialog).getByLabelText("Your password"));
+    await user.type(within(dialog).getByLabelText("Your password"), "a long password");
+    await user.click(within(dialog).getByRole("button", { name: "Delete my account" }));
+    expect(remove).toHaveBeenLastCalledWith("a long password");
+    await waitFor(() => expect(onAccount).toHaveBeenCalledWith("deleted"));
+  });
+
+  it("lets a guest delete their data without a password", async () => {
+    const { SettingsPage } = await import("./SettingsPage");
+    vi.spyOn(api, "settings").mockResolvedValue(SETTINGS);
+    vi.spyOn(api, "imports").mockResolvedValue({ imports: [{ profile_id: "imp_1", username: "reader_01" }], active_profile_id: "imp_1", reason: null });
+    const remove = vi.spyOn(api, "deleteAccount").mockResolvedValue({ account: null, reason: null, moved_imports: 0 });
+    render(<SettingsPage account={{ kind: "guest", email: null, has_import: true, installation_owner: false }} />);
+    const user = userEvent.setup();
+    expect(await screen.findByText(/You're using AniRec as a guest/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Current password")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete my data" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete your data?" });
+    await within(dialog).findByText("reader_01's list, with its Watch Later and Not interested");
+    expect(within(dialog).queryByLabelText("Your password")).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Delete my data" }));
+    expect(remove).toHaveBeenCalledWith(null);
+  });
 });
 
 it("forgets the previous reader's notifications when someone signs out (D-021)", async () => {

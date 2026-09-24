@@ -37,6 +37,7 @@ from typing import Any, Callable, Iterator
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -51,7 +52,13 @@ from ..services.recommendation_event_service import (
     feed_fingerprint,
 )
 from ..services.account_service import AccountError
-from .accounts import ReaderScope, account_summary, accounts_router, is_installation_owner, resolve_scope
+from contextlib import asynccontextmanager
+
+from .account_maintenance import AccountMaintenance
+from .accounts import (
+    ReaderScope, account_summary, accounts_router, is_installation_owner, reader_pipeline,
+    renew_cookie, resolve_scope,
+)
 from .limits import ClientLimits
 from .container import ApiContainer, build_container
 from .request_guard import RequestGuardMiddleware, allowed_hosts_from_environment
@@ -75,6 +82,7 @@ from .models import (
 )
 from .operations import (
     OperationAlreadyRunningError,
+    ProfileClosedError,
     OperationRegistry,
     error_payload,
 )
@@ -179,8 +187,20 @@ def create_app(
     resolved_token = token if token is not None else token_from_environment()
     origins = allow_origins if allow_origins is not None else _default_origins()
     client_limits = limits or ClientLimits.from_environment()
+    maintenance = AccountMaintenance(services, operations)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        # Finishes interrupted deletions and prunes abandoned guests, at
+        # startup and hourly, off the request path (docs/ACCOUNTS.md).
+        maintenance.start()
+        try:
+            yield
+        finally:
+            maintenance.stop()
 
     app = FastAPI(
+        lifespan=lifespan,
         title="AniRec",
         version="0.1.0",
         summary="HTTP boundary over the existing AniRec service layer.",
@@ -192,9 +212,10 @@ def create_app(
     app.state.operations = operations
     app.state.token_required = bool(resolved_token)
     app.state.limits = client_limits
+    app.state.maintenance = maintenance
     app.include_router(workspace_router(services, client_limits))
     app.include_router(onboarding_router(services, client_limits))
-    app.include_router(accounts_router(services, client_limits))
+    app.include_router(accounts_router(services, client_limits, maintenance))
 
     if resolved_token:
         app.add_middleware(TokenAuthMiddleware, token=resolved_token)
@@ -216,9 +237,11 @@ def create_app(
         RequestGuardMiddleware, origins=tuple(origins), hosts=allowed_hosts_from_environment()
     )
 
-    def reader(request: Request) -> ReaderScope:
+    def reader(request: Request, response: Response) -> ReaderScope:
         """The requesting account and the import it owns (D-021)."""
-        return resolve_scope(services, request)
+        scope = resolve_scope(services, request)
+        renew_cookie(request, response, scope, client_limits)
+        return scope
 
     def visible(record, scope: ReaderScope) -> bool:
         """An operation is seen only by the account that owns its import now."""
@@ -579,7 +602,10 @@ def create_app(
                 detail="AniRec is limiting MyAnimeList look-ups for a while. Try again later.",
             )
 
-        handler = _build_handler(services, kind, payload, username, profile_id, profile=profile)
+        handler = _build_handler(
+            services, kind, payload, username, profile_id, profile=profile,
+            pipeline=reader_pipeline(services, scope),
+        )
         exclusive_with = (
             tuple(
                 operation_key(other, profile_id)
@@ -598,6 +624,8 @@ def create_app(
                 serialize_result=any_to_dict,
                 exclusive_with=exclusive_with,
             )
+        except ProfileClosedError as error:
+            raise HTTPException(status_code=409, detail="This list is being deleted.") from error
         except OperationAlreadyRunningError as error:
             # 409, not 500: the desktop refuses the same start for the same
             # reason and the client's response is the same - do nothing, the
@@ -659,6 +687,7 @@ def _build_handler(
     profile_id: str,
     *,
     profile: UserProfile | None = None,
+    pipeline=None,
 ) -> Callable[[CancellationToken, Callable[[PipelineProgress], None]], Any]:
     """The one place a kind is bound to a service call.
 
@@ -667,6 +696,8 @@ def _build_handler(
     ``self.report_progress`` arriving as arguments instead of attributes.
     """
     settings = services.settings.load()
+    # The reader's own settings over the installation's (docs/ACCOUNTS.md).
+    ranking = pipeline or settings.pipeline
     binding = (
         {}
         if profile is None
@@ -689,7 +720,7 @@ def _build_handler(
         def run_sync(token: CancellationToken, report) -> Any:
             return persisted(services.orchestrator.run_sync(
                 username,
-                settings.pipeline,
+                ranking,
                 progress_callback=report,
                 cancellation_token=token,
                 **binding,
@@ -702,7 +733,7 @@ def _build_handler(
             state = services.recommendation_state.load(profile_id)
             return persisted(services.orchestrator.run_full(
                 username,
-                settings.pipeline,
+                ranking,
                 progress_callback=report,
                 cancellation_token=token,
                 excluded_mal_ids=state.hidden_mal_ids,
@@ -717,7 +748,7 @@ def _build_handler(
         def run_refresh(token: CancellationToken, report) -> Any:
             return persisted(services.orchestrator.run_refresh(
                 username,
-                settings.pipeline,
+                ranking,
                 existing=services.results.load(profile_id),
                 count=count,
                 progress_callback=report,
@@ -737,7 +768,7 @@ def _build_handler(
             state = services.recommendation_state.load(profile_id)
             return persisted(services.orchestrator.run_more(
                 username,
-                settings.pipeline,
+                ranking,
                 existing_recommendations=existing.recommendations,
                 excluded_mal_ids=state.hidden_mal_ids,
                 count=count,
@@ -756,7 +787,7 @@ def _build_handler(
                 username,
                 watch_later_mal_ids=state.watch_later_mal_ids,
                 client_id=settings.client_id,
-                include_nsfw=settings.pipeline.include_nsfw,
+                include_nsfw=ranking.include_nsfw,
                 cancellation_token=token,
             )
 

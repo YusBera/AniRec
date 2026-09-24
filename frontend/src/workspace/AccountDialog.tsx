@@ -128,6 +128,7 @@ export function AccountDialog({ mode: initialMode, onDone, onClose }: {
       </p>
       <button type="submit" className="btn primary account-submit" disabled={busy}>{busy ? copy.busy : copy.submit}</button>
     </form>
+    {mode === "sign-in" ? <p className="account-hint">Forgot your password? Resetting it needs email, which this AniRec doesn't send yet.</p> : null}
     <p className="account-switch">{copy.switchTo}{" "}
       <button type="button" className="link-button" onClick={() => { setMode(mode === "register" ? "sign-in" : "register"); setProblem(""); }}>
         {copy.switchLabel}

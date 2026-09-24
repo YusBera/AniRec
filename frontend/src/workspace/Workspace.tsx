@@ -95,6 +95,29 @@ export function Workspace() {
     }).catch(() => shell.notify({ tone: "problem", title: "Signing out didn't finish", detail: "Try again in a moment." }));
   }, [accountChanged, shell.notify, shell.nudge]);
   const account = shell.system?.account ?? null;
+  // A rebuild started by saving preferences: reload the pages when it ends,
+  // since Discover only follows the runs it started itself.
+  const [rebuild, setRebuild] = useState<{ id: string; seen: boolean } | null>(null);
+  const onPreferencesChanged = useCallback(() => {
+    api.startOperation("recommendation").then((operation) => {
+      setRebuild({ id: operation.id, seen: false });
+      shell.nudge();
+    }).catch(() => shell.notify({ tone: "problem", title: "Your recommendations weren't updated", detail: "Your preferences are saved; they apply the next time your recommendations are rebuilt." }));
+  }, [shell.nudge, shell.notify]);
+  useEffect(() => {
+    if (!rebuild) return;
+    const running = (shell.system?.active_operations ?? []).some((operation) => operation.id === rebuild.id);
+    if (running && !rebuild.seen) setRebuild({ ...rebuild, seen: true });
+    if (!running && rebuild.seen) { setRebuild(null); setFeed(null); setGeneration((value) => value + 1); }
+  }, [shell.system, rebuild]);
+  const onSettingsAccount = useCallback((event: "deleted" | "password-changed") => {
+    if (event === "deleted") {
+      accountChanged();
+      shell.notify({ tone: "info", title: "Your account was deleted", detail: "Everything saved with it is gone. You can keep looking around." });
+    } else {
+      shell.notify({ tone: "done", title: "Password changed", detail: "You're still signed in here; everywhere else is signed out." });
+    }
+  }, [accountChanged, shell.notify]);
   // "Try first, then register": a guest with something saved is reminded,
   // gently and dismissibly, that it lives only in this browser (D-021).
   const showSavePrompt = account?.kind === "guest" && account.has_import && !promptHidden
@@ -132,7 +155,8 @@ export function Workspace() {
         activeProfileId={shell.system?.profile?.profile_id ?? null} />
       <div hidden={page !== "profile"}>{visited.has("profile") ? <ProfilePage key={generation} /> : null}</div>
       <div hidden={page !== "compare"}>{visited.has("compare") ? <ComparePage key={generation} /> : null}</div>
-      <div hidden={page !== "settings"}>{visited.has("settings") ? <SettingsPage key={generation} version={shell.version} /> : null}</div>
+      <div hidden={page !== "settings"}>{visited.has("settings") ? <SettingsPage key={generation} version={shell.version}
+        account={account} onAccount={onSettingsAccount} onPreferencesChanged={onPreferencesChanged} /> : null}</div>
     </div>
     {firstRun ? <FirstRun clientIdPresent={!!shell.system?.mal_client_id_present}
       onImported={(profile) => {

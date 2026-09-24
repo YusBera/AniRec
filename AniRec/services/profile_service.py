@@ -276,6 +276,19 @@ class ProfileService:
             return None
         return value if (self.directory(value) / "profile.json").exists() else None
 
+    def desktop_active_profile_id(self) -> str | None:
+        """The list the desktop tool has active, read only to protect it.
+
+        The web never uses it to choose a reader's data (D-021); deleting an
+        account releases this list instead of deleting it.
+        """
+        try:
+            payload = self._store.read(self._state_path) if self._state_path.exists() else {}
+        except (OSError, TypeError, ValueError):
+            return None
+        value = payload.get("active_profile_id") if isinstance(payload, dict) else None
+        return value if isinstance(value, str) and value else None
+
     def active_profile(self) -> UserProfile | None:
         profile_id = self.active_profile_id()
         return self.get_profile(profile_id) if profile_id else None

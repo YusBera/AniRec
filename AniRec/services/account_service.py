@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import re
 import secrets
 import sqlite3
@@ -126,9 +127,9 @@ def _scrypt(password: str, salt: bytes, log_n: int, r: int, p: int, *, slot_held
         return run()
 
 
-def hash_password(password: str, *, salt: bytes | None = None) -> str:
+def hash_password(password: str, *, salt: bytes | None = None, slot_held: bool = False) -> str:
     salt = salt or secrets.token_bytes(16)
-    key = _scrypt(password, salt, _SCRYPT_LOG_N, _SCRYPT_R, _SCRYPT_P)
+    key = _scrypt(password, salt, _SCRYPT_LOG_N, _SCRYPT_R, _SCRYPT_P, slot_held=slot_held)
     return f"scrypt${_SCRYPT_LOG_N}${_SCRYPT_R}${_SCRYPT_P}${_b64(salt)}${_b64(key)}"
 
 
@@ -211,10 +212,169 @@ CREATE TABLE IF NOT EXISTS installation (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS preferences (
+    account_id TEXT PRIMARY KEY REFERENCES accounts(account_id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pending_deletions (
+    profile_id TEXT PRIMARY KEY,
+    requested_at TEXT NOT NULL
+);
 """
 
+# Reader preferences kept per account (docs/ACCOUNTS.md, "Reader preferences").
+PREFERENCE_KEYS = ("adventurousness", "minimum_mal_score", "include_nsfw")
+# A guest unused this long (30-day session plus a week of grace) is pruned.
+GUEST_IDLE_LIMIT = timedelta(days=37)
+PRUNE_INTERVAL = timedelta(hours=1)
+PRUNE_BATCH = 20
 
-class AccountService:
+
+def is_web_import(profile_id: str) -> bool:
+    """A list imported through the web (``imp_*``), as opposed to one from
+    before accounts that the desktop tool may still use."""
+    return profile_id.startswith("imp_")
+
+
+@dataclass(frozen=True)
+class Deletion:
+    """What deleting an account does to its lists."""
+
+    pending: tuple[str, ...]   # web lists whose directories are now to be removed
+    released: tuple[str, ...]  # pre-account lists handed back to no owner
+
+
+# -- account management (docs/ACCOUNTS.md, "Account management") ----------------
+
+def _preferences_from(raw: str | None) -> dict:
+    try:
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        return {}
+    return {key: data[key] for key in PREFERENCE_KEYS if key in data} if isinstance(data, dict) else {}
+
+
+class _AccountManagement:
+    """Mixed into AccountService below; kept apart for reading."""
+
+    def account_details(self, account_id: str) -> dict | None:
+        with self._transaction() as conn:
+            row = conn.execute(
+                "SELECT kind, email, created_at FROM accounts WHERE account_id=?", (account_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return {"kind": row[0], "email": row[1] if row[0] == "registered" else None, "created_at": row[2]}
+
+    def preferences(self, account_id: str) -> dict:
+        """This account's saved reader preferences (only the keys it saved)."""
+        with self._transaction() as conn:
+            row = conn.execute("SELECT data FROM preferences WHERE account_id=?", (account_id,)).fetchone()
+        return _preferences_from(None if row is None else row[0])
+
+    def save_preferences(self, account_id: str, values: dict) -> dict:
+        data = {key: values[key] for key in PREFERENCE_KEYS if key in values}
+        with self._transaction() as conn:
+            if self._load(conn, account_id) is None:
+                raise AccountError("session-ended")
+            conn.execute(
+                "INSERT INTO preferences(account_id, data, updated_at) VALUES (?,?,?) "
+                "ON CONFLICT(account_id) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
+                (account_id, json.dumps(data, sort_keys=True), self._now().isoformat()),
+            )
+        return data
+
+    def delete_account(self, account_id: str, *, keep: Iterable[str] = ()) -> Deletion:
+        """Step 2 of deleting an account: one transaction.
+
+        Web lists enter ``pending_deletions``; lists from before accounts, and
+        any in ``keep`` (the desktop tool's active one), are released to no
+        owner. The account, its sessions, preferences and ownership rows go,
+        and the installation owner row if it was the owner. The caller has
+        already closed the lists to new operations (step 1) and removes the
+        pending directories afterwards (step 3).
+        """
+        keep = set(keep)
+        now = self._now().isoformat()
+        with self._transaction() as conn:
+            if self._load(conn, account_id) is None:
+                raise AccountError("session-ended")
+            owned = [r[0] for r in conn.execute(
+                "SELECT profile_id FROM profile_owners WHERE account_id=? ORDER BY created_at", (account_id,)
+            )]
+            pending = tuple(i for i in owned if is_web_import(i) and i not in keep)
+            released = tuple(i for i in owned if i not in pending)
+            for profile_id in pending:
+                conn.execute(
+                    "INSERT OR IGNORE INTO pending_deletions(profile_id, requested_at) VALUES (?,?)",
+                    (profile_id, now),
+                )
+            conn.execute("DELETE FROM profile_owners WHERE account_id=?", (account_id,))
+            conn.execute("DELETE FROM installation WHERE key='owner_account_id' AND value=?", (account_id,))
+            conn.execute("DELETE FROM accounts WHERE account_id=?", (account_id,))   # sessions, preferences cascade
+        return Deletion(pending, released)
+
+    def pending_deletions(self) -> tuple[str, ...]:
+        with self._transaction() as conn:
+            return tuple(r[0] for r in conn.execute("SELECT profile_id FROM pending_deletions ORDER BY requested_at"))
+
+    def deletion_done(self, profile_id: str) -> None:
+        with self._transaction() as conn:
+            conn.execute("DELETE FROM pending_deletions WHERE profile_id=?", (profile_id,))
+
+    def is_pending(self, profile_id: str) -> bool:
+        with self._transaction() as conn:
+            return conn.execute("SELECT 1 FROM pending_deletions WHERE profile_id=?", (profile_id,)).fetchone() is not None
+
+    def claim_prune_run(self) -> bool:
+        """Whether this process should prune now: at most once an hour across
+        every process sharing this database, recorded under its lock."""
+        now = self._now()
+        with self._transaction() as conn:
+            row = conn.execute("SELECT value FROM installation WHERE key='last_prune_at'").fetchone()
+            if row is not None:
+                last = datetime.fromisoformat(row[0])
+                if last <= now < last + PRUNE_INTERVAL:
+                    return False
+            conn.execute(
+                "INSERT INTO installation(key, value) VALUES ('last_prune_at', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (now.isoformat(),),
+            )
+            return True
+
+    def prunable_guests(self, *, limit: int = PRUNE_BATCH) -> tuple[tuple[str, tuple[str, ...]], ...]:
+        """Guests nobody can reach any more, with their lists; empty when the
+        clock looks wrong (docs/ACCOUNTS.md, "Guest pruning")."""
+        now = self._now()
+        with self._transaction() as conn:
+            newest = conn.execute("SELECT MAX(last_seen_at) FROM sessions").fetchone()[0]
+            if newest is None:
+                return ()
+            newest_seen = datetime.fromisoformat(newest)
+            # Nobody seen in a day: a forward jump or a long idle. A session
+            # seen "in the future": a backward jump. Either way, do nothing.
+            if now - newest_seen > timedelta(days=1) or newest_seen > now + timedelta(minutes=5):
+                return ()
+            cutoff = (now - GUEST_IDLE_LIMIT).isoformat()
+            rows = conn.execute(
+                """SELECT a.account_id FROM accounts a
+                   WHERE a.kind='guest' AND a.created_at < ?
+                     AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.account_id=a.account_id
+                                     AND (s.expires_at > ? OR s.last_seen_at >= ?))
+                   ORDER BY a.created_at LIMIT ?""",
+                (cutoff, now.isoformat(), cutoff, limit),
+            ).fetchall()
+            return tuple(
+                (row[0], tuple(r[0] for r in conn.execute(
+                    "SELECT profile_id FROM profile_owners WHERE account_id=?", (row[0],)
+                )))
+                for row in rows
+            )
+
+
+class AccountService(_AccountManagement):
     def __init__(
         self,
         *,
@@ -303,14 +463,19 @@ class AccountService:
         An unreadable account database also reads as no session: the visitor
         sees the sample library rather than a server error.
         """
+        return self.session(token)[0]
+
+    def session(self, token: str | None) -> tuple[Account | None, bool]:
+        """The session's account, and whether its expiry was just renewed
+        (the caller then re-sends the cookie with a fresh lifetime)."""
         try:
             return self._account_for_session(token)
         except AccountError:
-            return None
+            return None, False
 
-    def _account_for_session(self, token: str | None) -> Account | None:
+    def _account_for_session(self, token: str | None) -> tuple[Account | None, bool]:
         if not token or len(token) > 200:
-            return None
+            return None, False
         digest = _token_hash(token)
         now = self._now()
         with self._transaction() as conn:
@@ -318,15 +483,19 @@ class AccountService:
                 "SELECT account_id, expires_at, last_seen_at FROM sessions WHERE token_hash=?", (digest,)
             ).fetchone()
             if row is None:
-                return None
+                return None, False
             if datetime.fromisoformat(row[1]) <= now:
                 conn.execute("DELETE FROM sessions WHERE token_hash=?", (digest,))
-                return None
-            if now - datetime.fromisoformat(row[2]) >= SESSION_TOUCH_INTERVAL:
-                # Expiry stays 30 days from sign-in, matching the cookie's
-                # own max-age; only the last-seen time moves.
-                conn.execute("UPDATE sessions SET last_seen_at=? WHERE token_hash=?", (now.isoformat(), digest))
-            return self._load(conn, row[0])
+                return None, False
+            renewed = now - datetime.fromisoformat(row[2]) >= SESSION_TOUCH_INTERVAL
+            if renewed:
+                # A session in use lives 30 days from its last use; the caller
+                # re-sends the cookie so the browser's copy lives as long.
+                conn.execute(
+                    "UPDATE sessions SET last_seen_at=?, expires_at=? WHERE token_hash=?",
+                    (now.isoformat(), (now + SESSION_LIFETIME).isoformat(), digest),
+                )
+            return self._load(conn, row[0]), renewed
 
     def sign_out(self, token: str | None) -> None:
         if not token or len(token) > 200:
@@ -392,9 +561,30 @@ class AccountService:
         # The hashing slot is taken before the attempt is counted: a "busy"
         # refusal must never count as a wrong password (final review).
         with _HashSlot():
-            return self._sign_in_holding_slot(email, password, current_token, dummy, client)
+            account_id = self._checked_credentials(email, password, dummy, client)
+        with self._transaction() as conn:
+            moved: tuple[str, ...] = ()
+            current = self._session_account_locked(conn, current_token)
+            if current is not None and current.kind == "guest" and current.account_id != account_id:
+                # Deleting the guest also ends every session it had.
+                moved = self._move_guest_locked(conn, current, account_id)
+            elif current_token:
+                conn.execute("DELETE FROM sessions WHERE token_hash=?", (_token_hash(current_token),))
+            token = self._new_session(conn, account_id)
+            return SignedIn(self._load(conn, account_id), token, moved)
 
-    def _sign_in_holding_slot(self, email: str, password: str, current_token: str | None, dummy: str, client: str) -> SignedIn:
+    def _checked_credentials(self, email: str, password: str, dummy: str, client: str) -> str:
+        return self._checked_credentials_with_hash(email, password, dummy, client)[0]
+
+    def _checked_credentials_with_hash(self, email: str, password: str, dummy: str, client: str) -> tuple[str, str]:
+        """The account ID and its stored hash when ``password`` is right,
+        counting every attempt.
+
+        The caller holds a hashing slot. Shared by sign-in, changing the
+        password and deleting the account, so each is throttled alike.
+        """
+        if not isinstance(password, str) or len(password) > PASSWORD_MAX:
+            raise AccountError("wrong-credentials")
         now = self._now()
         # Two counters (the table's key column holds both kinds): this email
         # from this visitor, and this email from everyone.
@@ -428,16 +618,47 @@ class AccountService:
         with self._transaction() as conn:
             for key, _limit in counters:
                 conn.execute("DELETE FROM login_failures WHERE email=?", (key,))
-            account_id = account[0]
-            moved: tuple[str, ...] = ()
-            current = self._session_account_locked(conn, current_token)
-            if current is not None and current.kind == "guest" and current.account_id != account_id:
-                # Deleting the guest also ends every session it had.
-                moved = self._move_guest_locked(conn, current, account_id)
-            elif current_token:
-                conn.execute("DELETE FROM sessions WHERE token_hash=?", (_token_hash(current_token),))
+        return account[0], account[1]
+
+    def _email_of(self, account_id: str) -> str:
+        with self._transaction() as conn:
+            account = self._load(conn, account_id)
+        if account is None:
+            raise AccountError("session-ended")
+        if not account.registered or not account.email:
+            raise AccountError("not-registered")
+        return account.email
+
+    def change_password(self, account_id: str, current: str, new: str, *, client: str = "") -> SignedIn:
+        """Replace the password; every session ends and one new one is issued."""
+        _check_password(new)
+        email = self._email_of(account_id)
+        dummy = _dummy_hash()
+        with _HashSlot():
+            checked = self._checked_credentials_with_hash(email, current, dummy, client)
+            if checked[0] != account_id:
+                raise AccountError("wrong-credentials")
+            password_hash = hash_password(new, slot_held=True)
+        with self._transaction() as conn:
+            # Only if the password is still the one just checked: a change
+            # made meanwhile by another request wins, and this one is refused.
+            changed = conn.execute(
+                "UPDATE accounts SET password_hash=?, updated_at=? WHERE account_id=? AND password_hash=?",
+                (password_hash, self._now().isoformat(), account_id, checked[1]),
+            ).rowcount
+            if not changed:
+                raise AccountError("wrong-credentials")
+            conn.execute("DELETE FROM sessions WHERE account_id=?", (account_id,))
             token = self._new_session(conn, account_id)
-            return SignedIn(self._load(conn, account_id), token, moved)
+            return SignedIn(self._load(conn, account_id), token)
+
+    def confirm_password(self, account_id: str, password: str, *, client: str = "") -> None:
+        """Check the password of a registered account, counted like a sign-in."""
+        email = self._email_of(account_id)
+        dummy = _dummy_hash()
+        with _HashSlot():
+            if self._checked_credentials(email, password, dummy, client) != account_id:
+                raise AccountError("wrong-credentials")
 
     def _move_guest_locked(self, conn, guest: Account, account_id: str) -> tuple[str, ...]:
         moved = tuple(r[0] for r in conn.execute(
@@ -518,7 +739,13 @@ class AccountService:
                 (account_id,),
             )
             owned = {r[0] for r in conn.execute("SELECT profile_id FROM profile_owners")}
-            claimed = tuple(sorted(i for i in set(unowned_profile_ids) if i not in owned))
+            pending = {r[0] for r in conn.execute("SELECT profile_id FROM pending_deletions")}
+            # Never a web list: an unowned imp_* is one being deleted, or a
+            # write that raced a deletion - someone's data, not the operator's.
+            claimed = tuple(sorted(
+                i for i in set(unowned_profile_ids)
+                if i not in owned and i not in pending and not is_web_import(i)
+            ))
             now = self._now().isoformat()
             for profile_id in claimed:
                 conn.execute(

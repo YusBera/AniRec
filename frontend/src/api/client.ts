@@ -15,7 +15,7 @@
  * `api.feed()` either way.
  */
 
-import type { AccountImports, AccountResult, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
+import type { AccountImports, AccountResult, PreferencesWrite, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
 import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
@@ -109,6 +109,11 @@ export const api = {
   signIn: (email: string, password: string) => request<AccountResult>("/api/account/sign-in", { method: "POST", body: JSON.stringify({ email, password }) }),
   signOut: () => request<AccountResult>("/api/account/sign-out", { method: "POST" }),
   imports: () => request<AccountImports>("/api/account/imports"),
+  changePassword: (currentPassword: string, newPassword: string) => request<AccountResult>("/api/account/password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
+  deleteAccount: (password: string | null) => request<AccountResult>("/api/account/delete", { method: "POST", body: JSON.stringify({ password }) }),
+  /** A same-origin download: the browser sends the session cookie itself. */
+  exportUrl: () => apiUrl("/api/account/export"),
+  savePreferences: (values: PreferencesWrite) => request<SettingsRead>("/api/workspace/preferences", { method: "POST", body: JSON.stringify(values) }),
   chooseImport: (profileId: string) => request<AccountImports>("/api/account/imports/active", { method: "POST", body: JSON.stringify({ profile_id: profileId }) }),
 
   operations: () => request<OperationList>("/api/operations"),

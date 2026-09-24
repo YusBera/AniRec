@@ -136,7 +136,7 @@ imports get `profile_id = "imp_" + 32 hex characters`, never a MAL-derived ID.
 
 - Cookie `anirec_session`: 32 random bytes, URL-safe; `HttpOnly`,
   `SameSite=Lax`, `Path=/`, `Secure` when the request arrived over HTTPS.
-  The session and the cookie both expire 30 days after sign-in.
+  30 days, renewed while used (see "Account management").
 - **Every sign-in, registration and sign-out issues a new token and deletes
   every other session of the account it leaves** (a guest's included), so a
   cookie planted before the reader signed in never reaches their account.
@@ -260,6 +260,79 @@ server error.
 - Settings: read-only, with the reason, for anyone but the owner.
 - 375px, keyboard and screen reader, as every surface.
 
+## Account management (phase 2)
+
+Early design review: 12 findings (3 blockers), applied below before code.
+
+**Reader preferences.** Three settings the web client really uses belong to
+each reader: adventurousness, minimum MAL score and include NSFW. For the
+installation owner they *are* the installation settings (so the desktop tool
+and the web rank the owner alike, and the refresh logic sees one set of
+filters); every other account keeps its own in the `preferences` table.
+Adventurousness and the minimum score default to the installation's values;
+NSFW defaults to off and is never inherited. Every operation an account
+starts, live Compare and `list-sync` use the reader's merged settings. Saving
+a change starts a rebuild of that reader's feed, because adventurousness acts
+only when a feed is built. `POST /api/workspace/preferences` (any account).
+Batch size, default sort, include Not interested, Keep in sync and Appearance
+are read only by the desktop tool: they stay installation settings, owner
+only (`POST /api/workspace/settings`), and are labelled as the desktop's.
+
+**Sessions renew while used.** Using a session (at most once an hour)
+extends it to 30 days from then and re-sends the cookie with the same value,
+so an active reader, guest or registered, is never signed out mid-use.
+
+**Change password** (`POST /api/account/password`, registered accounts):
+counted like a sign-in (per visitor, and per email and visitor, before the
+check); one hashing slot covers both the check and the new hash; the hash is
+replaced only if it is still the one checked; every session ends and this
+browser gets a new one, in the same transaction.
+
+**Delete account** (`POST /api/account/delete`; registered accounts give
+their password, counted like a sign-in; a guest gives none). Deletion is
+final for the reader at once and finished on disk afterwards:
+1. The operation registry closes the account's lists: refused if one has an
+   operation running (`operation-running`); no operation can start on a
+   closed list afterwards.
+2. One transaction: its web lists (`imp_*`) enter `pending_deletions`; lists
+   from before accounts (the desktop tool's, named from the console) are
+   *released* to no owner rather than deleted, as is any list the desktop
+   tool has active in `profile_state.json`; its ownership rows, preferences,
+   sessions, the owner row if it was the owner, and the account go.
+3. Each pending directory and its `tokens/` file are removed (a missing one
+   is fine) and its pending row cleared. Whatever fails stays pending.
+
+A sweep (below) retries pending deletions and removes any `imp_*` directory
+that no account owns and nothing has touched for an hour (a write that raced
+a deletion). The console's `owner` command never claims an `imp_*` list.
+
+**Export** (`GET /api/account/export`, `Cache-Control: no-store`, as is
+`/api/account`): built from the account's own lists at request time, never by
+walking directories. The account (kind, email, creation time), its
+preferences, and per list: username, Watch Later, Not interested, and the
+votes the reader can see (through the state service, not the raw file, whose
+older versions hold retired data), and the activity setting and events (at
+most the store's own cap). Never a password hash, a session or a MyAnimeList
+token.
+
+**Guest pruning.** A background thread, at startup and then hourly, with the
+last run recorded under a database lock so several processes do not repeat
+it; at most 20 guests a run. A guest is pruned when its newest `last_seen_at`
+is more than 37 days old (30 days plus a week of grace) and it has no
+unexpired session, and is deleted exactly as above; a guest with a busy list
+is skipped whole. A run is skipped when the clock looks wrong: when no
+session anywhere was seen in the last day (a forward jump or a long idle
+period), or when now is earlier than the newest `last_seen_at` (a backward
+jump).
+
+**Per-visitor limits.** Changing the password and deleting an account share
+the sign-in failure limits; export counts against a new per-visitor limit of
+20 an hour.
+
+**Password reset** needs email and waits for an SMTP configuration (phase 5).
+Until then a forgotten password means the account cannot be reached; the
+sign-in dialog says so.
+
 ## Known limits
 
 - Any other process on this machine receives cookies for `127.0.0.1`,
@@ -286,10 +359,9 @@ server error.
 2. **Account management.** Done (2026-09-24): switching between an
    account's lists, per-visitor limits, trusted proxy headers, an owner-only
    shutdown route, the MyAnimeList budget on lookup, Compare and title
-   look-ups. Still required before any hosted launch: change password
-   (revokes other sessions), delete account (and its imports), export,
-   reader preferences split from installation settings, pruning of expired
-   guest accounts' data.
+   look-ups. Then (see "Account management (phase 2)"): change password,
+   delete account, export, reader preferences split from installation
+   settings, pruning of expired guest accounts' data.
 3. **Google:** OpenID Connect authorization code flow with PKCE and `state`
    and `nonce`; the ID token is verified against Google's published keys. It
    needs a Google Cloud OAuth client that the owner creates; the code reads

@@ -23,6 +23,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/account/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Account
+         * @description Delete the account and every list it owns (docs/ACCOUNTS.md).
+         */
+        post: operations["delete_account_api_account_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export
+         * @description Everything this account holds, as one JSON file for its reader.
+         */
+        get: operations["export_api_account_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/account/imports": {
         parameters: {
             query?: never;
@@ -54,6 +94,23 @@ export interface paths {
          * @description Show another of this account's lists. Only its own (D-021).
          */
         post: operations["choose_import_api_account_imports_active_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Password */
+        post: operations["change_password_api_account_password_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -406,6 +463,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save Reader Preferences
+         * @description Any account's own preferences; the owner's are the installation's.
+         */
+        post: operations["save_reader_preferences_api_workspace_preferences_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace/profile": {
         parameters: {
             query?: never;
@@ -702,6 +779,11 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** DeleteRequest */
+        DeleteRequest: {
+            /** Password */
+            password?: string | null;
         };
         /** EraBucket */
         EraBucket: {
@@ -1271,6 +1353,25 @@ export interface components {
             /** Username */
             username?: string | null;
         };
+        /** PasswordChange */
+        PasswordChange: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
+        /**
+         * PreferencesWriteRequest
+         * @description The reader's own recommendation preferences (docs/ACCOUNTS.md).
+         */
+        PreferencesWriteRequest: {
+            /** Adventurousness */
+            adventurousness: number;
+            /** Include Nsfw */
+            include_nsfw: boolean;
+            /** Minimum Mal Score */
+            minimum_mal_score: number | null;
+        };
         /**
          * ProfileIdentity
          * @description Who this profile belongs to, and the four counts behind it.
@@ -1586,6 +1687,12 @@ export interface components {
              * @default false
              */
             can_edit: boolean;
+            /**
+             * Can Edit Preferences
+             * @description Whether this reader may save their own adventurousness, minimum score and NSFW.
+             * @default false
+             */
+            can_edit_preferences: boolean;
             /** Client Id Present */
             client_id_present: boolean;
             /**
@@ -1842,6 +1949,59 @@ export interface operations {
             };
         };
     };
+    delete_account_api_account_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_api_account_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_imports_api_account_imports_get: {
         parameters: {
             query?: never;
@@ -1882,6 +2042,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_api_account_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2497,6 +2690,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecommendationViewModelResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_reader_preferences_api_workspace_preferences_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferencesWriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsReadResponse"];
                 };
             };
             /** @description Validation Error */

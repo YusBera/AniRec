@@ -97,7 +97,7 @@ def test_preferences_save_preserves_secrets_and_unexposed_settings(tmp_path):
         headers = {'X-AniRec-Token': 'test-token'}
         sign_in_as_owner(client)
         payload = client.get('/api/workspace/settings', headers=headers).json()
-        for key in ('username', 'client_id_present', 'using_defaults', 'can_edit'):
+        for key in ('username', 'client_id_present', 'using_defaults', 'can_edit', 'can_edit_preferences'):
             payload.pop(key)
         payload.update(adventurousness=8, theme='oled', minimum_mal_score=None)
         assert client.post('/api/workspace/settings', json=payload).status_code == 401
@@ -124,7 +124,7 @@ def test_unreadable_settings_cannot_be_overwritten_with_defaults(tmp_path):
     with TestClient(app) as client:
         sign_in_as_owner(client)
         payload = client.get('/api/workspace/settings').json()
-        for key in ('username', 'client_id_present', 'using_defaults', 'can_edit'):
+        for key in ('username', 'client_id_present', 'using_defaults', 'can_edit', 'can_edit_preferences'):
             payload.pop(key)
         assert client.post('/api/workspace/settings', json=payload).status_code == 409
         assert service.path.read_text() == 'broken'

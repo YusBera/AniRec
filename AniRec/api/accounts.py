@@ -14,8 +14,10 @@ installation owner (``docs/ACCOUNTS.md``, "The installation owner"):
 from __future__ import annotations
 
 import argparse
+import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, Response
 from pydantic import Field
@@ -43,6 +45,8 @@ class ReaderScope:
     account: Account | None
     profile: UserProfile | None
     token: str | None
+    # The session's lifetime was just extended: re-send the cookie.
+    renewed: bool = False
 
     @property
     def profile_id(self) -> str | None:
@@ -55,7 +59,7 @@ def session_token(request: Request) -> str | None:
 
 def resolve_scope(services: ApiContainer, request: Request) -> ReaderScope:
     token = session_token(request)
-    account = services.accounts.account_for_session(token)
+    account, renewed = services.accounts.session(token)
     if account is None:
         return ReaderScope(None, None, None)
     profile = None
@@ -70,7 +74,36 @@ def resolve_scope(services: ApiContainer, request: Request) -> ReaderScope:
             profile = services.profiles.get_profile(profile_id)
         except (AniRecError, OSError, TypeError, ValueError):  # missing or unreadable: no import
             profile = None
-    return ReaderScope(account, profile, token)
+    return ReaderScope(account, profile, token, renewed)
+
+
+def renew_cookie(request: Request, response: Response, scope: ReaderScope, limits: "ClientLimits") -> None:
+    """A session in use lives on: send its cookie again with a full lifetime."""
+    if scope.renewed and scope.token:
+        set_session_cookie(request, response, scope.token, limits)
+
+
+def reader_pipeline(services: ApiContainer, scope: ReaderScope):
+    """The pipeline settings this reader's operations rank with.
+
+    The installation owner's preferences are the installation settings; any
+    other account's saved ones replace them. NSFW is never inherited: an
+    account that never chose it gets it off (docs/ACCOUNTS.md).
+    """
+    installation = services.settings.load().pipeline
+    account = scope.account
+    if account is None or is_installation_owner(services, scope):
+        return installation
+    try:
+        saved = services.accounts.preferences(account.account_id)
+    except AccountError:
+        saved = {}
+    return replace(
+        installation,
+        randomness_factor=int(saved.get("adventurousness", installation.randomness_factor)),
+        minimum_mean_score=saved.get("minimum_mal_score", installation.minimum_mean_score),
+        include_nsfw=bool(saved.get("include_nsfw", False)),
+    )
 
 
 def set_session_cookie(request: Request, response: Response, token: str, limits: ClientLimits) -> None:
@@ -135,6 +168,16 @@ class ActiveImportRequest(ApiModel):
     profile_id: str = Field(max_length=128)
 
 
+class PasswordChange(ApiModel):
+    current_password: str = Field(max_length=PASSWORD_MAX)
+    new_password: str = Field(max_length=PASSWORD_MAX)
+
+
+class DeleteRequest(ApiModel):
+    # Registered accounts only; a guest has no password.
+    password: str | None = Field(default=None, max_length=PASSWORD_MAX)
+
+
 class Credentials(ApiModel):
     email: str = Field(max_length=254)
     # Capped here, before any hashing happens (docs/ACCOUNTS.md, "Passwords").
@@ -153,7 +196,10 @@ def account_summary(services: ApiContainer, scope: ReaderScope) -> AccountSummar
     )
 
 
-def accounts_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
+NO_STORE = {"Cache-Control": "no-store"}
+
+
+def accounts_router(services: ApiContainer, limits: ClientLimits, maintenance) -> APIRouter:
     router = APIRouter(prefix="/api/account")
 
     def signed_in(request: Request, response: Response, signed: SignedIn) -> AccountResponse:
@@ -171,8 +217,11 @@ def accounts_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
         )
 
     @router.get("", response_model=AccountResponse)
-    def read_account(request: Request) -> AccountResponse:
-        return AccountResponse(account=account_summary(services, resolve_scope(services, request)))
+    def read_account(request: Request, response: Response) -> AccountResponse:
+        response.headers.update(NO_STORE)
+        scope = resolve_scope(services, request)
+        renew_cookie(request, response, scope, limits)
+        return AccountResponse(account=account_summary(services, scope))
 
     @router.post("/register", response_model=AccountResponse)
     def register(payload: Credentials, request: Request, response: Response) -> AccountResponse:
@@ -218,6 +267,92 @@ def accounts_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
         services.accounts.sign_out(session_token(request))
         clear_session_cookie(request, response, limits)
         return AccountResponse()
+
+    def counted(request: Request, check) -> None:
+        """A password check counted as a sign-in for this visitor."""
+        client = limits.client(request)
+        if limits.sign_in_failures.full(client):
+            raise AccountError("too-many-attempts")
+        try:
+            check(client)
+        except AccountError as error:
+            if error.reason == "wrong-credentials":
+                limits.sign_in_failures.take(client)
+            raise
+
+    @router.post("/password", response_model=AccountResponse)
+    def change_password(payload: PasswordChange, request: Request, response: Response) -> AccountResponse:
+        scope = resolve_scope(services, request)
+        if scope.account is None:
+            return AccountResponse(reason="signed-out")
+        if not scope.account.registered:
+            return AccountResponse(reason="not-registered")
+        result: list[SignedIn] = []
+        try:
+            counted(request, lambda client: result.append(services.accounts.change_password(
+                scope.account.account_id, payload.current_password, payload.new_password, client=client)))
+        except AccountError as error:
+            return AccountResponse(reason=error.reason)
+        return signed_in(request, response, result[0])
+
+    @router.post("/delete", response_model=AccountResponse)
+    def delete_account(payload: DeleteRequest, request: Request, response: Response) -> AccountResponse:
+        """Delete the account and every list it owns (docs/ACCOUNTS.md)."""
+        scope = resolve_scope(services, request)
+        account = scope.account
+        if account is None:
+            return AccountResponse(reason="signed-out")
+        try:
+            if account.registered:
+                counted(request, lambda client: services.accounts.confirm_password(
+                    account.account_id, payload.password or "", client=client))
+            maintenance.delete_account(account.account_id)
+        except AccountError as error:
+            return AccountResponse(reason=error.reason)
+        clear_session_cookie(request, response, limits)
+        return AccountResponse()
+
+    @router.get("/export")
+    def export(request: Request) -> Response:
+        """Everything this account holds, as one JSON file for its reader."""
+        scope = resolve_scope(services, request)
+        account = scope.account
+        if account is None:
+            return Response(status_code=401, headers=NO_STORE)
+        if not limits.exports.take(limits.client(request)):
+            return Response(status_code=429, headers=NO_STORE)
+        try:
+            details = services.accounts.account_details(account.account_id) or {}
+            preferences = services.accounts.preferences(account.account_id)
+            owned = services.accounts.owned_profile_ids(account.account_id)
+        except AccountError:
+            return Response(status_code=503, headers=NO_STORE)
+        from ..services.recommendation_event_service import RecommendationEventService
+
+        activity = RecommendationEventService(services.profiles.root_override)
+        lists = []
+        for profile_id in owned:
+            try:
+                profile = services.profiles.get_profile(profile_id)
+            except (AniRecError, OSError, TypeError, ValueError):
+                continue
+            state = services.recommendation_state.load(profile_id).to_storage_dict()
+            lists.append({
+                "username": profile.username,
+                "saved": state,
+                "activity": {**activity.status(profile_id), "events": activity.export(profile_id)},
+            })
+        body = {
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "account": details,
+            "preferences": preferences,
+            "lists": lists,
+        }
+        return Response(
+            content=json.dumps(body, indent=2, sort_keys=True, default=str),
+            media_type="application/json",
+            headers={**NO_STORE, "Content-Disposition": 'attachment; filename="anirec-export.json"'},
+        )
 
     def imports_of(scope: ReaderScope, reason: str | None = None) -> ImportsResponse:
         account = scope.account

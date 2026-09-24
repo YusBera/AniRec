@@ -7,6 +7,22 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Accounts: account management (D-021)
+
+Per-reader preferences (adventurousness, minimum score, NSFW; the owner's
+are the installation's), change password, delete account with pending
+deletions (the desktop tool's profiles released, not deleted), a JSON data
+export, sessions that renew while used, and an hourly sweep that finishes
+deletions and prunes guests unused for 37 days.
+
+*Verification:* early design review (12 findings, applied before code);
+`tests/test_account_management.py` 16; pytest 610 passed with the same
+pre-existing failures; `npm run ci` 134; Chromium at 375×812.
+
+*Left open:* password reset (needs SMTP), Google, passkeys.
+
+---
+
 ## 2026-09-24 - Accounts: hosted-launch gates (D-021)
 
 Switching between an account's own lists; per-visitor limits for new

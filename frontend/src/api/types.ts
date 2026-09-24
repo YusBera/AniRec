@@ -58,6 +58,8 @@ export type AccountSummary = Schemas["AccountSummary"];
 export type AccountResult = Schemas["AccountResponse"];
 /** The lists an account has imported, and the one shown (D-021). */
 export type AccountImports = Schemas["ImportsResponse"];
+/** The reader's own recommendation preferences (D-021). */
+export type PreferencesWrite = Schemas["PreferencesWriteRequest"];
 
 /** The lifecycle states an operation reports. Drawn from the schema's own union. */
 export type OperationState = OperationSnapshot["state"];

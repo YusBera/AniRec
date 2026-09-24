@@ -203,7 +203,7 @@ def test_the_api_never_reads_or_writes_the_machine_wide_active_profile(tmp_path,
 
 def _settings_payload(client):
     payload = client.get("/api/workspace/settings").json()
-    for key in ("username", "client_id_present", "using_defaults", "can_edit"):
+    for key in ("username", "client_id_present", "using_defaults", "can_edit", "can_edit_preferences"):
         payload.pop(key)
     return payload
 

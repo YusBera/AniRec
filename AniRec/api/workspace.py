@@ -8,7 +8,7 @@ from dataclasses import replace
 from threading import Lock
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import Field
 
 from ..core.mal_mapping import ANIME_FIELDS, anime_from_node, anime_from_row
@@ -27,7 +27,8 @@ from ..presentation.taste_profile import (
 from ..presentation.compatibility import (
     CompatibilityReport, CompatibilityUnavailable, SampleCompatibilityProvider,
 )
-from .accounts import ReaderScope, is_installation_owner, resolve_scope
+from ..services.account_service import AccountError
+from .accounts import ReaderScope, is_installation_owner, reader_pipeline, renew_cookie, resolve_scope
 from .container import ApiContainer
 from .limits import ClientLimits
 from .models import ApiModel, RecommendationViewModelResponse
@@ -65,6 +66,18 @@ class SettingsReadResponse(ApiModel):
         default=False,
         description="Whether this account owns the installation and may save these settings (D-021).",
     )
+    can_edit_preferences: bool = Field(
+        default=False,
+        description="Whether this reader may save their own adventurousness, minimum score and NSFW.",
+    )
+
+
+class PreferencesWriteRequest(ApiModel):
+    """The reader's own recommendation preferences (docs/ACCOUNTS.md)."""
+
+    adventurousness: int = Field(ge=1, le=10)
+    minimum_mal_score: float | None = Field(ge=0, le=10)
+    include_nsfw: bool
 
 
 class SettingsWriteRequest(ApiModel):
@@ -95,8 +108,10 @@ def workspace_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
     router = APIRouter(prefix="/api/workspace")
     settings_lock = Lock()
 
-    def reader(request: Request) -> ReaderScope:
-        return resolve_scope(services, request)
+    def reader(request: Request, response: Response) -> ReaderScope:
+        scope = resolve_scope(services, request)
+        renew_cookie(request, response, scope, limits)
+        return scope
 
     def owned(scope: ReaderScope, profile_id):
         """The directory of ``profile_id``, only when it is this reader's import now."""
@@ -184,7 +199,7 @@ def workspace_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
                 return CompareReadResponse(reason="busy")
             yours = CsvStorage().read(path, required_columns=("Anime ID", "Title", "User Score"))
             theirs = AnimeDataService(client=ComparisonClient()).fetch_completed_anime(name, client_id=client_id,
-                include_nsfw=services.settings.load().pipeline.include_nsfw)
+                include_nsfw=reader_pipeline(services, scope).include_nsfw)
             still_owned(request, profile_id)
             return CompareReadResponse(report=compare_completed(name, yours, theirs))
         provider = SampleCompatibilityProvider()
@@ -204,13 +219,15 @@ def workspace_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
     @router.get("/settings", response_model=SettingsReadResponse)
     def settings(scope: ReaderScope = Depends(reader)) -> SettingsReadResponse:
         saved = services.settings.load()
+        # The three reader preferences are this reader's (docs/ACCOUNTS.md).
+        mine = reader_pipeline(services, scope)
         return SettingsReadResponse(
-            adventurousness=saved.pipeline.randomness_factor,
+            adventurousness=mine.randomness_factor,
             batch_size=saved.pipeline.recommendation_count,
-            minimum_mal_score=saved.pipeline.minimum_mean_score,
+            minimum_mal_score=mine.minimum_mean_score,
             default_sort=saved.default_recommendation_sort,
             include_hidden=saved.include_hidden_recommendations,
-            include_nsfw=saved.pipeline.include_nsfw,
+            include_nsfw=mine.include_nsfw,
             background_sync=saved.background_sync_enabled,
             theme=saved.theme, gui_scale=saved.gui_scale,
             font_scale=saved.font_scale, show_covers=saved.show_covers,
@@ -218,7 +235,32 @@ def workspace_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
             username=None if scope.profile is None else scope.profile.username,
             using_defaults=services.settings.last_error is not None,
             can_edit=is_owner(scope),
+            can_edit_preferences=scope.account is not None,
         )
+
+    @router.post("/preferences", response_model=SettingsReadResponse)
+    def save_reader_preferences(payload: PreferencesWriteRequest, scope: ReaderScope = Depends(reader)) -> SettingsReadResponse:
+        """Any account's own preferences; the owner's are the installation's."""
+        if scope.account is None:
+            raise HTTPException(409, "Add your list or create an account to save preferences.")
+        if is_owner(scope):
+            with settings_lock:
+                saved = services.settings.load()
+                if services.settings.last_error:
+                    raise HTTPException(409, "Saved settings are unreadable. Repair them in the desktop app before saving.")
+                pipeline = replace(saved.pipeline, randomness_factor=payload.adventurousness,
+                    minimum_mean_score=payload.minimum_mal_score, include_nsfw=payload.include_nsfw)
+                services.settings.save_preferences(replace(saved, pipeline=pipeline))
+        else:
+            try:
+                services.accounts.save_preferences(scope.account.account_id, {
+                    "adventurousness": payload.adventurousness,
+                    "minimum_mal_score": payload.minimum_mal_score,
+                    "include_nsfw": payload.include_nsfw,
+                })
+            except AccountError as error:
+                raise HTTPException(409, "Your session ended. Sign in again.") from error
+        return settings(scope)
 
     @router.post("/settings", response_model=SettingsReadResponse)
     def save_settings(payload: SettingsWriteRequest, scope: ReaderScope = Depends(reader)) -> SettingsReadResponse:

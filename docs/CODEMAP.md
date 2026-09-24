@@ -24,6 +24,9 @@ file updates the matching row in the same change.
 | `POST /api/onboarding/mal-profile` (username in, the account's new import or a `reason` out; creates a guest account when there is none, D-021) | `AniRec/api/onboarding.py` |
 | `GET /api/account`, `POST /api/account/{register,sign-in,sign-out}` (D-021) | `AniRec/api/accounts.py` |
 | `GET /api/account/imports`, `POST /api/account/imports/active` (switch between an account's own lists) | `AniRec/api/accounts.py` |
+| `POST /api/account/password`, `POST /api/account/delete`, `GET /api/account/export` (account management) | `AniRec/api/accounts.py` |
+| Account deletion on disk, the hourly sweep (pending deletions, stray web lists, guest pruning) | `AniRec/api/account_maintenance.py` |
+| `POST /api/workspace/preferences` (the reader's own adventurousness, minimum score, NSFW); `reader_pipeline` merges them for every operation | `AniRec/api/workspace.py`, `AniRec/api/accounts.py` |
 | Per-visitor limits (new accounts, sign-in failures, MyAnimeList budget) and trusted proxies (`ANIREC_TRUSTED_PROXIES`) | `AniRec/api/limits.py` |
 | Reader scope: session cookie to account to owned import, used by every reader route (D-021) | `resolve_scope` in `AniRec/api/accounts.py` |
 | Operator console: `python -m AniRec.api.accounts owner <email>` names the installation owner and hands over unowned imports | `AniRec/api/accounts.py` |
@@ -113,6 +116,7 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Service polling and notifications (polls `/api/system/state`, `/api/operations`) | `frontend/src/workspace/Shell.tsx` |
 | First-time setup pop-up: MyAnimeList username, AniList/AniDB coming soon, newcomer path, look around (D-020) | `frontend/src/workspace/FirstRun.tsx` |
 | Create account / sign in dialog (D-021) | `frontend/src/workspace/AccountDialog.tsx` |
+| Settings → ACCOUNT: change password, download my data, delete account (D-021) | `frontend/src/workspace/AccountSection.tsx` |
 | My Library | `frontend/src/workspace/LibraryPage.tsx` |
 | Profile (reader block, THE READING, fact board, instrument) | `frontend/src/workspace/ProfilePage.tsx`, `ProfileSections.tsx`, `profileFacts.ts` |
 | Compare | `frontend/src/workspace/ComparePage.tsx` |
@@ -160,7 +164,8 @@ Per-account directory under the data root:
 
 Application-wide settings, including credentials, live in `config/settings.json`
 under the data root. Accounts, sessions (SHA-256 digests only), import
-ownership and the installation owner live in `config/accounts.sqlite3`
+ownership, reader preferences, pending deletions and the installation owner
+live in `config/accounts.sqlite3`
 (`account_service.py`, D-021). The per-import directories above are named
 `imp_<hex>` for web imports; `profile_state.json` (the machine-wide active
 profile) is used only by the deprecated desktop tool. No CSV carries a schema version; changing a column layout

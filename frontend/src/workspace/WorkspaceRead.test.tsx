@@ -69,32 +69,49 @@ it("keeps the selected friend focused during loading without showing stale score
   expect(selector).toHaveFocus();
 });
 
-it("saves preferences, keeps failed edits, and excludes account fields", async () => {
+it("saves desktop settings, keeps failed edits, and excludes account fields", async () => {
   const { SettingsPage } = await import("./SettingsPage");
-  const initial = { adventurousness: 5, batch_size: 10, minimum_mal_score: null, default_sort: "personal-match" as const, include_hidden: false, include_nsfw: false, background_sync: false, theme: "dark" as const, gui_scale: 1, font_scale: 1, show_covers: true, username: "reader", client_id_present: true, using_defaults: false, can_edit: true };
+  const initial = { adventurousness: 5, batch_size: 10, minimum_mal_score: null, default_sort: "personal-match" as const, include_hidden: false, include_nsfw: false, background_sync: false, theme: "dark" as const, gui_scale: 1, font_scale: 1, show_covers: true, username: "reader", client_id_present: true, using_defaults: false, can_edit: true, can_edit_preferences: true };
   vi.spyOn(api, "settings").mockResolvedValue(initial);
-  const save = vi.spyOn(api, "saveSettings").mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ ...initial, adventurousness: 8 });
+  const save = vi.spyOn(api, "saveSettings").mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ ...initial, batch_size: 20 });
   render(<SettingsPage />);
   expect(await screen.findByRole("option", { name: "Personal match" })).toBeInTheDocument();
   expect(screen.getByRole("option", { name: "MAL score" })).toBeInTheDocument();
   expect(screen.getByRole("option", { name: "Alphabetical" })).toBeInTheDocument();
   const user = userEvent.setup();
-  expect(screen.getAllByRole("heading", { level: 2 }).map(heading => heading.textContent)).toEqual(["RECOMMENDATION", "APPEARANCE", "PROFILES", "MYANIMELIST API", "LOCAL DATA", "DEVELOPER TOOLS"]);
+  expect(screen.getAllByRole("heading", { level: 2 }).map(heading => heading.textContent)).toEqual(["ACCOUNT", "RECOMMENDATION", "DESKTOP APP", "APPEARANCE", "PROFILES", "MYANIMELIST API", "LOCAL DATA", "DEVELOPER TOOLS"]);
   expect(screen.getByRole("checkbox", { name: "Include anime marked Not interested" })).not.toBeChecked();
   expect(screen.getByRole("checkbox", { name: "Check MyAnimeList for anime you have finished, while AniRec is open" })).not.toBeChecked();
   expect(screen.getByText("The web client is dark-only. The settings below are saved for the desktop app and do not change this page.")).toBeInTheDocument();
   expect(screen.getByText("Client ID: Configured.")).toBeInTheDocument();
   expect(screen.queryByRole("textbox", { name: /client id/i })).not.toBeInTheDocument();
-  const input = await screen.findByRole("slider", { name: "Adventurousness (1–10)" });
-  fireEvent.change(input, { target: { value: "8" } });
-  await user.click(screen.getByRole("button", { name: "Save preferences" }));
+  const input = screen.getByRole("spinbutton", { name: "Batch size" });
+  fireEvent.change(input, { target: { value: "20" } });
+  await user.click(screen.getByRole("button", { name: "Save desktop settings" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Your edits are kept");
-  expect(input).toHaveValue("8");
-  expect(save.mock.calls[0]![0]).not.toHaveProperty("username");
-  expect(save.mock.calls[0]![0]).not.toHaveProperty("client_id_present");
-  await user.click(screen.getByRole("button", { name: "Save preferences" }));
-  expect(await screen.findByText(/Preferences saved\./)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Save preferences" })).toBeDisabled();
+  expect(input).toHaveValue(20);
+  for (const key of ["username", "client_id_present", "can_edit", "can_edit_preferences"]) expect(save.mock.calls[0]![0]).not.toHaveProperty(key);
+  await user.click(screen.getByRole("button", { name: "Save desktop settings" }));
+  expect(await screen.findByText(/Desktop settings saved\./)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Save desktop settings" })).toBeDisabled();
+});
+
+it("saves a reader's own preferences and asks for their feed to be rebuilt", async () => {
+  const { SettingsPage } = await import("./SettingsPage");
+  const initial = { adventurousness: 5, batch_size: 10, minimum_mal_score: null, default_sort: "personal-match" as const, include_hidden: false, include_nsfw: false, background_sync: false, theme: "dark" as const, gui_scale: 1, font_scale: 1, show_covers: true, username: "reader", client_id_present: true, using_defaults: false, can_edit: false, can_edit_preferences: true };
+  vi.spyOn(api, "settings").mockResolvedValue(initial);
+  const save = vi.spyOn(api, "savePreferences").mockResolvedValue({ ...initial, adventurousness: 8 });
+  const rebuild = vi.fn();
+  render(<SettingsPage onPreferencesChanged={rebuild} />);
+  const input = await screen.findByRole("slider", { name: "Adventurousness (1–10)" });
+  expect(input).toBeEnabled();
+  fireEvent.change(input, { target: { value: "8" } });
+  await userEvent.setup().click(screen.getByRole("button", { name: "Save my preferences" }));
+  expect(save).toHaveBeenCalledWith({ adventurousness: 8, minimum_mal_score: null, include_nsfw: false });
+  expect(await screen.findByText("Saved. Your recommendations are being updated with them.")).toBeInTheDocument();
+  expect(rebuild).toHaveBeenCalledTimes(1);
+  // Not the owner: the desktop settings stay read-only.
+  expect(screen.getByRole("spinbutton", { name: "Batch size" })).toBeDisabled();
 });
 
 it("shows supplied profile sections and discloses unavailable history", async () => {

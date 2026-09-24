@@ -449,6 +449,28 @@ final review listed:
 - Still before a hosted launch: change password, delete account, export,
   reader preferences split from installation settings, guest pruning.
 
+**Account management (2026-09-24, D-021).** The last hosted-launch gates.
+- **Reader preferences:** adventurousness, minimum MAL score and NSFW are
+  each reader's (`preferences` table); the owner's are the installation's.
+  Every operation, live Compare and `list-sync` rank with the reader's
+  merged settings; saving a change rebuilds that reader's feed. Batch size,
+  default sort, Not interested, Keep in sync and Appearance are the desktop
+  tool's: a separate owner-only "DESKTOP APP" form.
+- **Change password**, **delete account** (pending-deletion model: final for
+  the reader at once, directories removed after; the desktop tool's
+  profiles are released, not deleted), **download my data** (JSON export).
+  All in Settings → ACCOUNT.
+- **Sessions renew while used**; an hourly background sweep finishes
+  pending deletions, removes stray web lists and prunes guests unused for
+  37 days, with clock guards.
+- Early design review: 12 findings (3 blockers), applied before code.
+- Tests: `tests/test_account_management.py` (16); frontend
+  `WorkspaceRead.test.tsx`, `Shell.test.tsx`. pytest 610 passed (same
+  pre-existing failures); `npm run ci` 134. Chromium at 375×812: Settings,
+  the delete dialog and the export.
+- **Next:** password reset once SMTP is wired (phase 5); Google and
+  passkeys (phases 3 and 4).
+
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in
 a container without `libEGL`; two `test_api_lifecycle` tests fail on Linux
