@@ -7,6 +7,24 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - PySide design port of the web client (D-016)
+
+Implemented both work packages from `CURRENT_TASK.md`. Discover, My Library
+and the Score Inspector take the desktop card, header, explorer views and
+inspector layout; the shell gains the numbered rail, SYSTEM readout, ACTIVITY
+console, BUILD line, sample banner and first run; Profile, Compare and
+Settings take the desktop structure and wording. Like and Dislike are gone
+from the web UI (D-015). Compare shows no percentage. The Score Inspector
+carries the existing honest `why` inside PERSONAL FIT.
+
+*Verification:* `npm run ci` (88 tests), `vite build`, non-Qt pytest, and
+Chromium captures at 1440×900 and 375px against a sample-only API.
+
+*Left open:* bundled fonts; D-015 Library feedback after watching; the choices
+listed under "Completion notes" in `CURRENT_TASK.md` await the user's review.
+
+---
+
 ## 2026-09-24 - Test suite repaired: two Goal 3 regressions, one audit false positive
 
 The full suite had 5 failures and 4 modules that could not be collected. All of

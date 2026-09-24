@@ -1,6 +1,6 @@
 # Current Task
 
-## Status: PySide design port — backend done, frontend not started
+## Status: PySide design port — implemented, awaiting the user's review
 
 Handoff written 2026-09-24 on branch `feat/pyside-design-port`. It branches
 from `codex/ui-v3-engine`.
@@ -29,12 +29,11 @@ Domain rules still outrank both clients.
 - **Reference captures.** 23 PySide states and the pre-port React states, each
   with structural notes, are in `docs/reference/` (read its README).
 
-### Not started
+### Done: both work packages (2026-09-24)
 
-**No frontend file has changed yet.** Two implementation agents were started
-and stopped at a usage limit before writing anything. Their work packages
-follow, complete. Run them in parallel as written (disjoint files), or one
-after the other.
+Packages A and B below are implemented in one change; see "Completion notes"
+at the end of this file. The package descriptions are kept as the record of
+what was asked.
 
 ## Decisions already made (do not reopen)
 
@@ -191,3 +190,45 @@ cd frontend && npm install && ANIREC_API=http://127.0.0.1:8771 npm run dev -- --
   disliked or scored, and record one observed on return.
 - **D-014:** the user's local-mode choice gates accounts.
 - A future state-service task must fix stale whole-state `save()` calls.
+
+## Completion notes (2026-09-24)
+
+**Changed.** Only `frontend/src/**` plus `docs/CODEMAP.md`. No API route,
+model or persisted format changed; the generated types still verify.
+- Discover: `DiscoverHeader.tsx` (DISCOVER // STATE, RUN ANALYSIS, TASTE
+  VECTOR), `RecommendationCard.tsx` (the PySide card), `FeedViews.tsx`
+  (Cards / List / Table), `ScoreInspector.tsx` (replaces
+  `RecommendationDetails.tsx`), and `DiscoverPage.tsx`.
+- Library: the same explorer, WATCH LATER then NOT INTERESTED tabs.
+- Shell: `Shell.tsx` (SYSTEM, ACTIVITY), `FirstRun.tsx`, `Workspace.tsx`.
+- Profile, Compare, Settings rewritten to the PySide structure and wording;
+  `profileFacts.ts` composes the "NOT ON YOUR MAL PROFILE" board.
+- Icons are copies of `AniRec/gui/resources/icons/ui/*.svg` under
+  `frontend/src/assets/`, applied as CSS masks.
+
+**Choices made where the spec was open** (reversible, not new decisions):
+- MAL readout says `CLIENT ID` / `NO CLIENT ID`, not the desktop's
+  `ONLINE` / `OFFLINE`: `/api/system/state` reports only whether a Client ID
+  is configured, not a live connection.
+- Not interested leaves the For You feed at once, as the desktop's "all"
+  collection does; "Show not interested" brings it back. On a profile feed
+  that re-reads the feed with `include_hidden`; the sample feed is never
+  refetched, so its in-memory decisions survive.
+- Activity impressions and positions are recorded from the Cards view only
+  (the event surface is `web_cards`); List and Table record nothing.
+- Library and Settings have no desktop channel legend; they use
+  "MY LIBRARY // COLLECTIONS" and "SETTINGS // CONFIGURATION".
+- Compare cards omit the verdict row: compared titles are finished ones.
+- KEEP IN SYNC and APPEARANCE say they apply to the desktop app; the web
+  client does not sync in the background and is dark-only.
+
+**Verification.** `npm run ci` (88 tests), `vite build`, the non-Qt pytest
+set, and Chromium captures at 1440×900 and 375×812 against a sample-only API
+(5 cards per row at 1440, poster 202×303; no horizontal overflow at 375; no
+visible control under 44px at 375).
+
+**Known limits.** The fonts in the token stacks are not bundled, so browsers
+without them fall back to system faces. The Qt test modules cannot import in
+a container without `libEGL`; two `test_api_lifecycle` tests fail on Linux
+(`os.kill` overflow in `single_instance.py`), unrelated to this change.
+
