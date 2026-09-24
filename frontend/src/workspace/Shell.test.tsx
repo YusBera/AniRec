@@ -6,7 +6,8 @@ import type { Feed, ProfileRead, SystemState, TasteProfile } from "../api/types"
 import { ComparePage } from "./ComparePage";
 import { boardFacts } from "./profileFacts";
 import { ProfilePage } from "./ProfilePage";
-import { ActivityConsole, MAX_LINES, readoutRows, renderMeter, useShellState } from "./Shell";
+import { MAX_NOTICES, operationNotice, useShellState } from "./Shell";
+import { Notifications } from "./TopBar";
 import { Workspace } from "./Workspace";
 
 const SYSTEM: SystemState = { profile: null, needs_setup: true, mal_client_id_present: false, active_operations: [] };
@@ -28,51 +29,53 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
-describe("SYSTEM readout", () => {
-  it("takes every value from the API and says unknown when the service did not answer", () => {
-    expect(readoutRows(null, false, null).map(([key, value]) => `${key} ${value}`)).toEqual(["ENGINE --", "SOURCE --", "PROFILE --", "MAL --"]);
-    expect(readoutRows(null, true, null)[0]!.slice(0, 2)).toEqual(["ENGINE", "OFFLINE"]);
-    const busy = { ...SYSTEM, profile: { profile_id: "p", username: "reader" }, mal_client_id_present: true,
-      active_operations: [{ id: "1", kind: "recommendation", profile_id: "p", state: "running" as const, event_count: 2 }] };
-    expect(readoutRows(busy, false, { ...SAMPLE_FEED, source: "profile" }).map(([key, value]) => `${key} ${value}`))
-      .toEqual(["ENGINE BUSY", "SOURCE LIVE", "PROFILE reader", "MAL CLIENT ID"]);
-    expect(readoutRows(SYSTEM, false, SAMPLE_FEED).map(([key, value]) => `${key} ${value}`))
-      .toEqual(["ENGINE READY", "SOURCE SAMPLE", "PROFILE NONE", "MAL NO CLIENT ID"]);
+describe("notifications (D-019)", () => {
+  it("words operation outcomes as a reader would, and says nothing for kinds they would not recognise", () => {
+    expect(operationNotice("refresh", "succeeded")).toEqual({ tone: "done", title: "Checked your MyAnimeList list", detail: "Your recommendations are up to date." });
+    expect(operationNotice("refresh", "failed", "Connection problem")).toEqual({ tone: "problem", title: "Checking your list didn't finish", detail: "Connection problem" });
+    expect(operationNotice("sync", "cancelled")).toMatchObject({ title: "Syncing your list was stopped" });
+    expect(operationNotice("refresh", "running")).toBeNull();
+    expect(operationNotice("api-test", "succeeded")).toBeNull();
   });
 
-  it("draws a bounded progress meter", () => {
-    expect(renderMeter(3, 5)).toBe("[||||||    ]  60%");
-    expect(renderMeter(9, 3)).toBe("[||||||||||] 100%");
-    expect(renderMeter(1, 0)).toBe("[          ]   0%");
-  });
-});
-
-describe("ACTIVITY console", () => {
   function Harness() {
     const shell = useShellState();
-    return <ActivityConsole lines={shell.lines} />;
+    return <Notifications notices={shell.notices} />;
   }
 
-  it("logs the service version and existing operations without inventing times for them", async () => {
+  it("announces an outcome seen while the page is open, never history from before it loaded", async () => {
     vi.spyOn(api, "health").mockResolvedValue({ status: "ok", version: "1.3.0" });
     vi.spyOn(api, "systemState").mockResolvedValue(SYSTEM);
-    vi.spyOn(api, "operations").mockResolvedValue({ operations: [{ id: "old", kind: "recommendation", profile_id: "p", state: "succeeded", event_count: 9 }] });
+    const operations = vi.spyOn(api, "operations").mockResolvedValue({ operations: [
+      { id: "old", kind: "recommendation", profile_id: "p", state: "succeeded", event_count: 9 },
+      { id: "now", kind: "refresh", profile_id: "p", state: "running", event_count: 1 },
+    ] });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     render(<Harness />);
-    const log = screen.getByRole("log", { name: "Activity" });
-    await waitFor(() => expect(log).toHaveTextContent("core 1.3.0 online"));
-    const history = within(log).getByText("recommendation · succeeded").closest("li")!;
-    expect(history).toHaveTextContent("--:--:--");
+    await waitFor(() => expect(operations).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Notifications" })).toBeInTheDocument();
+    operations.mockResolvedValue({ operations: [
+      { id: "old", kind: "recommendation", profile_id: "p", state: "succeeded", event_count: 9 },
+      { id: "now", kind: "refresh", profile_id: "p", state: "succeeded", event_count: 4 },
+    ] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3500); });
+    const bell = await screen.findByRole("button", { name: "Notifications, 1 new" });
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(bell);
+    const panel = screen.getByRole("region", { name: "Notifications" });
+    expect(within(panel).getByText("Checked your MyAnimeList list")).toBeInTheDocument();
+    expect(within(panel).queryByText(/rebuilt/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notifications" })).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("keeps at most MAX_LINES lines", () => {
-    const lines = Array.from({ length: MAX_LINES }, (_, id) => ({ id, time: null, tag: "ENGINE" as const, message: `line ${id}` }));
-    render(<ActivityConsole lines={lines} />);
-    expect(screen.getAllByRole("listitem")).toHaveLength(MAX_LINES);
-  });
-
-  it("says so when nothing has happened yet", () => {
-    render(<ActivityConsole lines={[]} />);
-    expect(screen.getByText("No activity recorded yet.")).toBeInTheDocument();
+  it("keeps at most MAX_NOTICES and says so when there is nothing", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<Notifications notices={[]} />);
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    expect(screen.getByText("You're all caught up.")).toBeInTheDocument();
+    expect(MAX_NOTICES).toBe(50);
+    const many = Array.from({ length: 12 }, (_, id) => ({ id, at: new Date(), tone: "info" as const, title: `Notice ${id}` }));
+    rerender(<Notifications notices={many} />);
+    expect(screen.getByRole("button", { name: "Notifications, 12 new" })).toBeInTheDocument();
   });
 });
 
@@ -85,15 +88,47 @@ describe("the shell", () => {
     vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   }
 
-  it("shows the numbered rail, the sample banner and the BUILD line from the API", async () => {
+  it("puts the pages in a top bar, and notifications and the account top right", async () => {
     stubShell({ ...SYSTEM, needs_setup: false });
+    const user = userEvent.setup();
     render(<Workspace />);
     const nav = screen.getByRole("navigation", { name: "Main navigation" });
-    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual(["01Discover", "02My Library", "03Profile", "04Compare", "05Settings"]);
-    expect(await screen.findByText("Sample data. These are bundled demonstration picks, not your own.")).toBeInTheDocument();
-    expect(await screen.findByText("BUILD 1.3.0")).toBeInTheDocument();
-    expect(screen.getByText("Source sample")).toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(within(nav).getAllByRole("link").map((link) => link.textContent)).toEqual(["Discover", "My Library", "Compare"]);
+    expect(screen.getByRole("link", { name: "AniRec home" })).toHaveAttribute("href", "#/discover");
+    // No control-panel chrome: no readout, console or build line on the page.
+    expect(screen.queryByText(/ENGINE|ACTIVITY|BUILD/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Notifications, 1 new" })).toBeInTheDocument();
+
+    const account = screen.getByRole("button", { name: "Account menu" });
+    await user.click(account);
+    const panel = screen.getByRole("region", { name: "Account" });
+    expect(within(panel).getByText("Guest")).toBeInTheDocument();
+    expect(within(panel).getByText("Exploring the sample library")).toBeInTheDocument();
+    expect(within(panel).getByRole("link", { name: "Your profile" })).toHaveAttribute("href", "#/profile");
+    expect(within(panel).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "#/settings");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("region", { name: "Account" })).not.toBeInTheDocument();
+    expect(account).toHaveFocus();
+  });
+
+  it("tells a newcomer once, in the bell, that the sample library is safe to try", async () => {
+    stubShell({ ...SYSTEM, needs_setup: false });
+    const user = userEvent.setup();
+    render(<Workspace />);
+    await user.click(await screen.findByRole("button", { name: "Notifications, 1 new" }));
+    expect(screen.getByText("You're exploring the sample library")).toBeInTheDocument();
+    expect(screen.getByText("Try anything. Nothing you do here is saved.")).toBeInTheDocument();
+    await user.click(document.body);
+    expect(screen.getByRole("button", { name: "Notifications" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("shows the reader's MyAnimeList picture when the profile has one", async () => {
+    stubShell({ ...SYSTEM, needs_setup: false, profile: { profile_id: "p", username: "reader" } });
+    vi.spyOn(api, "profile").mockResolvedValue({ profile: { identity: { username: "reader", avatar_url: "https://cdn.myanimelist.net/images/userimages/1.jpg" } } as never });
+    const { container } = render(<Workspace />);
+    const button = await screen.findByRole("button", { name: "Account menu for reader" });
+    await waitFor(() => expect(container.querySelector(".avatar-button img")).toHaveAttribute("src", "https://cdn.myanimelist.net/images/userimages/1.jpg"));
+    expect(button).toBeInTheDocument();
   });
 
   it("offers first run when setup is needed, and remembers the dismissal for the session", async () => {
@@ -109,7 +144,7 @@ describe("the shell", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     unmount();
     render(<Workspace />);
-    await screen.findByText("BUILD 1.3.0");
+    await screen.findByRole("note");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -117,7 +152,7 @@ describe("the shell", () => {
     stubShell({ ...SYSTEM, needs_setup: false });
     const { container } = render(<Workspace />);
     const banner = await screen.findByRole("note");
-    expect(banner).toHaveTextContent("Sample data. These are bundled demonstration picks, not your own.");
+    expect(banner).toHaveTextContent("You're exploring a sample library. Try anything; nothing here is saved.");
     expect(within(banner).queryByRole("button")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /connect/i })).not.toBeInTheDocument();
     expect(container.textContent).not.toMatch(/[぀-ヿ一-鿿]/);
@@ -179,12 +214,9 @@ describe("Compare", () => {
   });
 });
 
-describe("SYSTEM after a failed poll", () => {
-  it("shows unknown values, not the last good READY, once a later poll fails", () => {
-    const ready: SystemState = { profile: { profile_id: "p", username: "reader" }, needs_setup: false, mal_client_id_present: true, active_operations: [] };
-    const good = Object.fromEntries(readoutRows(ready, false, null).map(([key, value]) => [key, value]));
-    expect(good).toMatchObject({ ENGINE: "READY", PROFILE: "reader", MAL: "CLIENT ID" });
-    const failed = Object.fromEntries(readoutRows(ready, true, null).map(([key, value]) => [key, value]));
-    expect(failed).toMatchObject({ ENGINE: "OFFLINE", PROFILE: "--", MAL: "--" });
-  });
+it("moves the build number to Settings, where only someone troubleshooting looks", async () => {
+  const { SettingsPage } = await import("./SettingsPage");
+  vi.spyOn(api, "settings").mockRejectedValue(new Error("offline"));
+  render(<SettingsPage version="1.3.0" />);
+  expect(screen.getByText("AniRec version 1.3.0")).toBeInTheDocument();
 });

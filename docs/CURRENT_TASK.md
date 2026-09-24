@@ -309,6 +309,21 @@ findings were applied on this branch.
     that became empty leaves the old `user_history.csv` on disk, so such a
     feed rebuilds on every refresh.
 
+**Shell redesign (2026-09-24, D-019).** The left rail is gone. A top bar
+holds the name, the tabs (Discover, My Library, Compare), a notifications
+bell and the account picture, whose menu holds Your profile and Settings; on
+a phone the tabs are a bottom bar. The SYSTEM readout, ACTIVITY console and
+BUILD line are removed; the same real events become plain-language
+notifications, and the version is shown in Settings. The sample banner is
+reworded to reassure ("Try anything; nothing here is saved."). The package B
+items above for the rail, readout, console and BUILD footer are superseded.
+- Tests: `Shell.test.tsx` (top bar, account menu, bell, notifications from
+  operations, no history announced, version in Settings); `npm run ci` 105.
+- Next, same principle, not started: the Discover header's STATE readout,
+  the upper-case status line ("8 IN FEED · SAMPLE · 0 SAVED"), the "X // Y"
+  page headings and the second sample note on Discover still read like an
+  instrument panel.
+
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in
 a container without `libEGL`; two `test_api_lifecycle` tests fail on Linux

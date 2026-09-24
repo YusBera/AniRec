@@ -100,8 +100,9 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Concern | File |
 | --- | --- |
 | Entry point and provider wiring | `frontend/src/main.tsx` |
-| Workspace shell, hash routing, nav rail, sample banner | `frontend/src/workspace/Workspace.tsx` |
-| SYSTEM readout and ACTIVITY console (polls `/api/system/state`, `/api/operations`) | `frontend/src/workspace/Shell.tsx` |
+| Workspace shell, hash routing, sample banner | `frontend/src/workspace/Workspace.tsx` |
+| Top bar: tabs, notifications bell, account menu (D-019) | `frontend/src/workspace/TopBar.tsx` |
+| Service polling and notifications (polls `/api/system/state`, `/api/operations`) | `frontend/src/workspace/Shell.tsx` |
 | First run (Welcome, honest connect step; session-remembered) | `frontend/src/workspace/FirstRun.tsx` |
 | My Library | `frontend/src/workspace/LibraryPage.tsx` |
 | Profile (reader block, THE READING, fact board, instrument) | `frontend/src/workspace/ProfilePage.tsx`, `ProfileSections.tsx`, `profileFacts.ts` |

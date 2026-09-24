@@ -105,6 +105,35 @@ web-first.
 
 ---
 
+## D-019 - A newcomer's expectations decide where things go
+**2026-09-24 - Accepted (user decision). Revises D-016 for the shell.**
+
+Design questions are asked from a newcomer's side: "where would someone new
+look for their settings?", never "we built a panel, they should read it".
+Reading is the last thing a newcomer wants to do; they want to try things,
+and the site should feel safe to try, not like a developer's control panel.
+
+For the shell this means the layout people know from YouTube, Reddit,
+Google and GitHub:
+- a **top bar**: the name on the left (home), the pages as tabs
+  (Discover, My Library, Compare), and on the right the **notifications**
+  bell and the **account picture**;
+- the picture opens a menu with **Your profile** and **Settings**;
+- on a phone the tabs move to a bar along the bottom.
+
+The desktop's SYSTEM readout, ACTIVITY console and BUILD line leave the
+page. The real events they reported reach the bell in plain words (a refresh
+finished, failed or was stopped; the service stopped answering), and the
+version moves to Settings. Sample data stays visibly labelled on the page.
+
+D-016 still governs the surfaces inside the shell (the card, the views, the
+Score Inspector), subject to this principle.
+
+*Why:* familiar placement costs a newcomer nothing to learn, and a page full
+of machine state tells them the site is not for them.
+
+---
+
 ## D-018 - Feeds refresh automatically; pages continue the ranking
 **2026-09-24 - Accepted (user decision). Replaces "Recommend 5 more".**
 

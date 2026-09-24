@@ -7,6 +7,23 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Familiar shell: top bar, notifications, account menu (D-019)
+
+Replaced the desktop-style left rail with a top bar: tabs for Discover, My
+Library and Compare; a notifications bell and the account picture top right;
+Profile and Settings in the picture's menu; a bottom tab bar on phones. The
+SYSTEM readout, ACTIVITY console and BUILD line became notifications from
+real operation outcomes and service outages; the version moved to Settings.
+
+*Verification:* `npm run ci` (105 tests); Chromium at 1440×900 and 375×812
+against a sample-only API: no horizontal scroll, every top-bar control and
+menu link at least 44px.
+
+*Left open:* the Discover header and status line still read as an
+instrument panel (listed in `CURRENT_TASK.md`).
+
+---
+
 ## 2026-09-24 - Automatic refresh: final adversarial review (D-018)
 
 Reviewed commit 3010fd8 against five risks: digest parity between generation

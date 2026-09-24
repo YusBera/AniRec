@@ -116,11 +116,14 @@ function Preferences({ initial }: { initial: SettingsRead }) {
   </form>;
 }
 
-export function SettingsPage() {
+export function SettingsPage({ version = null }: { version?: string | null }) {
   const read = useRead(api.settings, "settings");
   return <main className="workspace-page">
     <ChannelHeading name="Settings" mark="CONFIGURATION" />
     <p className="workspace-intro">Manage recommendation behavior, local profiles, MyAnimeList API access, and appearance.</p>
     <ReadState {...read} />{read.result ? <Preferences initial={read.result} /> : null}
+    {/* The build line left the page chrome (D-019); it lives here, with the
+        other things only someone troubleshooting looks for. */}
+    <p className="settings-version">{version ? `AniRec version ${version}` : "AniRec version unavailable"}</p>
   </main>;
 }
