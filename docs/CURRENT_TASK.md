@@ -283,8 +283,31 @@ findings were applied on this branch.
     - every refreshed profile remembered per session;
     - a profile with no feed yet refreshes;
     - no reconnect advice.
-- Still minor and open: an automatic refresh that meets another tab's
-  running operation shows its 409 as a fault for that session.
+- **Final adversarial review (2026-09-24), fixed with a failing test first:**
+  - A feed the fallback ranked for this reader (the model loads but declines
+    them) read as "engine-changed" on every refresh, so it was rebuilt each
+    session. The snapshot now records which preferred engine declined
+    (`preferred-engine` row, outside the ranking identity), and the feed stays
+    current until that engine can load or changes version.
+  - A failed history fetch read as "inputs-changed" and rebuilt the feed
+    without history. The list is now judged against the saved history; the
+    saved history is not overwritten, and a feed ranked without history is
+    marked so the next working fetch rebuilds it.
+  - The digest now treats NaT and `<NA>` as the empty cell a CSV reads back.
+  - With session storage unwritable, the automatic refresh restarted after
+    every finished run. It is now also remembered in memory.
+  - An automatic refresh that meets another tab's running operation (409)
+    no longer shows a fault; a Refresh the reader pressed still reports it.
+  - `auth_timeout` advice ("start the connection again") is dropped like
+    `auth_error`'s (D-017).
+  - Confirmed as sound: a "current" refresh never overwrites the saved feed
+    (`save_merged` keeps the previous recommendations); "more" still refuses
+    a stale feed and continues with unique ranks; refresh is exclusive with
+    every feed-writing kind.
+  - Still open, minor: after a 409 the page does not reload the feed when the
+    other tab's run finishes; the next open or Refresh shows it. A history
+    that became empty leaves the old `user_history.csv` on disk, so such a
+    feed rebuilds on every refresh.
 
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in

@@ -7,6 +7,27 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Automatic refresh: final adversarial review (D-018)
+
+Reviewed commit 3010fd8 against five risks: digest parity between generation
+and refresh, engine identity including the fallback, "current" results never
+overwriting the feed, "more" and exclusivity, and the once-per-session client
+refresh. Fixed, each with a failing test first:
+- the per-reader fallback feed that rebuilt on every refresh;
+- a failed history fetch rebuilding the feed without history;
+- NaT and `<NA>` in the digest;
+- the client refresh loop when session storage cannot be written;
+- the 409 from another tab shown as a fault;
+- `auth_timeout` reconnect advice.
+
+*Verification:* non-Qt pytest, 447 passed (the two Linux-only
+`test_api_lifecycle` failures predate this work); `npm run ci`, 105 passed.
+
+*Left open:* no feed reload after another tab's run finishes; a history that
+became empty keeps an old `user_history.csv` and rebuilds each refresh.
+
+---
+
 ## 2026-09-24 - Automatic feed refresh and continuous pages (D-018)
 
 "Recommend 5 more" and the stale-feed "Generate a new feed" button are

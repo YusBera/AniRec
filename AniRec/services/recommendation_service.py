@@ -107,16 +107,37 @@ class RecommendationService:
         preferred engine is available again, and a model swap is noticed
         before anything is ranked.
         """
-        preferred = getattr(self._ranker, "preferred_engine", self._ranker)
+        preferred = self.preferred_identity()
+        if preferred is not None:
+            return preferred
+        return self.fallback_identity() or self._identity(self._preferred_engine())
+
+    def preferred_identity(self) -> tuple[str, str] | None:
+        """The preferred engine and version, or None when it cannot load.
+
+        Loading is not ranking: a loadable model can still decline one reader
+        (no usable history, nothing it covers), and then the fallback ranks.
+        """
+        preferred = self._preferred_engine()
         load = getattr(preferred, "eligibility_context", None)
         try:
             if callable(load):
                 load()
         except RankingEngineUnavailable:
-            fallback = getattr(self._ranker, "fallback_engine", None)
-            if fallback is not None:
-                return str(fallback.engine_id), str(fallback.engine_version)
-        return str(preferred.engine_id), str(preferred.engine_version)
+            return None
+        return self._identity(preferred)
+
+    def fallback_identity(self) -> tuple[str, str] | None:
+        """The engine a router falls back to, or None without a router."""
+        fallback = getattr(self._ranker, "fallback_engine", None)
+        return None if fallback is None else self._identity(fallback)
+
+    def _preferred_engine(self):
+        return getattr(self._ranker, "preferred_engine", self._ranker)
+
+    @staticmethod
+    def _identity(engine) -> tuple[str, str]:
+        return str(engine.engine_id), str(engine.engine_version)
 
     @property
     def last_ranking_metadata(self) -> RankingEngineMetadata | None:

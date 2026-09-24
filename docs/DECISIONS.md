@@ -146,6 +146,11 @@ starts one refresh by itself instead of showing a button.
 
 The Settings "Batch size" applies to the desktop app.
 
+*Clarified in review (2026-09-24):* a feed the fallback ranked stays current
+while the same preferred engine would decline it again; it is rebuilt when
+the preferred engine can load, or is a different version. A history fetch
+that fails is not a changed list: the feed is kept.
+
 *Why:* a batch button was an artefact of small, randomly sampled heuristic
 feeds. The sequence model ranks tens of thousands of titles
 deterministically, so the next picks are simply the next page of one

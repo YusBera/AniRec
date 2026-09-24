@@ -968,3 +968,83 @@ describe("automatic refresh review fixes", () => {
   });
 });
 
+
+describe("automatic refresh, final review", () => {
+  class Stream {
+    static instances: Stream[] = [];
+    listeners = new Map<string, Array<(event: Event) => void>>();
+    constructor(readonly url: string) { Stream.instances.push(this); }
+    addEventListener(type: string, listener: (event: Event) => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]); }
+    close() {}
+    emit(type: string, data: unknown) { for (const listener of this.listeners.get(type) ?? []) listener(new MessageEvent(type, { data: JSON.stringify(data) })); }
+  }
+  const feed: Feed = { ...FEED, source: "profile", ephemeral: false, state_profile_id: "p" };
+  function stub(start: () => Response) {
+    Stream.instances = [];
+    vi.stubGlobal("EventSource", Stream);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(feed), { headers: { "Content-Type": "application/json" } });
+      if (url.includes("/api/operations/") && init?.method === "POST") return start();
+      return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+  const refreshes = (fetchMock: ReturnType<typeof vi.fn>) => fetchMock.mock.calls
+    .filter(([input, init]) => (init as RequestInit | undefined)?.method === "POST" && String(input).endsWith("/refresh")).length;
+  const running = () => new Response(JSON.stringify({ id: `refresh-${Stream.instances.length}`, kind: "refresh", profile_id: "p", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
+
+  it("refreshes once even when session storage cannot be written, including after a failure", async () => {
+    sessionStorage.clear();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("blocked", "SecurityError"); });
+    const fetchMock = stub(running);
+    render(<DiscoverPage autoRefresh />);
+    await waitFor(() => expect(Stream.instances).toHaveLength(1));
+    act(() => Stream.instances[0]!.emit("finished", { state: "failed" }));
+    await screen.findByRole("heading", { name: "Death Note" });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(refreshes(fetchMock)).toBe(1);
+  });
+
+  it("stays quiet when the automatic refresh meets another tab's running operation", async () => {
+    sessionStorage.clear();
+    stub(() => new Response(JSON.stringify({ error: {
+      code: "invalid_request", title: "Operation is already running: refresh:p",
+      description: "Operation is already running: refresh:p", solution: "", retryable: false,
+    } }), { status: 409, headers: { "Content-Type": "application/json" } }));
+    render(<DiscoverPage autoRefresh />);
+    await screen.findByRole("heading", { name: "Death Note" });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("FAULT")).not.toBeInTheDocument();
+  });
+
+  it("still reports a 409 when the reader pressed Refresh", async () => {
+    sessionStorage.setItem("anirec.feedRefreshed", JSON.stringify(["p"]));
+    stub(() => new Response(JSON.stringify({ error: {
+      code: "invalid_request", title: "Operation is already running: refresh:p",
+      description: "Operation is already running: refresh:p", solution: "", retryable: false,
+    } }), { status: 409, headers: { "Content-Type": "application/json" } }));
+    const user = userEvent.setup();
+    render(<DiscoverPage autoRefresh />);
+    await user.click(await screen.findByRole("button", { name: "Refresh" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Another operation is already running");
+  });
+
+  it("drops reconnect advice for an authorization timeout too", async () => {
+    stub(running);
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(Stream.instances).toHaveLength(1));
+    act(() => Stream.instances[0]!.emit("error", {
+      code: "auth_timeout", title: "Account connection timed out",
+      description: "MyAnimeList authorization was not completed in time.",
+      solution: "Start the connection again and finish authorization in the browser.", retryable: true,
+    }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("MyAnimeList authorization was not completed in time.");
+    expect(alert).not.toHaveTextContent(/connection again/i);
+  });
+});

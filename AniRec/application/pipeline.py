@@ -130,6 +130,12 @@ SIGNAL_INPUT_DIGEST = "input-digest"
 SIGNAL_RANKING_ENGINE = "ranking-engine"
 SIGNAL_RANKING_ID = "ranking-id"
 SIGNAL_FILTERS = "eligibility-filters"
+# Only on a feed the fallback ranked: the preferred engine that declined it
+# ("id:version"), "unavailable" when it could not load, or
+# "history-unavailable" when the reader's history could not be fetched. Not
+# part of the ranking identity; a refresh reads it to tell "the same model
+# declined again" from "a different model could rank now" (D-018).
+SIGNAL_PREFERRED_ENGINE = "preferred-engine"
 # Files whose content decides a ranking; a sync or a regenerated step changes it.
 # What decides whether a ranking is still current: only what the reader did
 # (D-018). The catalogue and community columns in these files (mean score,
@@ -433,6 +439,7 @@ class PipelineOrchestrator:
             eligibility_audit=eligibility_audit,
             settings=settings,
         )
+        snapshot["preferred"] = self._declined_preferred(ranking_metadata, history)
         generated_paths = (
             *generated_paths,
             self._write_ranking_snapshot(directory, snapshot),
@@ -622,11 +629,17 @@ class PipelineOrchestrator:
         candidate_catalogue, completed, history = self._fetch_inputs(
             username, settings, token, credentials, progress_callback
         )
+        # A failed history fetch is not a changed list. Judge the list against
+        # the history already saved, so a transient failure neither rebuilds
+        # the feed without history nor overwrites the saved history.
+        judged_history = history
+        if history is None and self._recommendations.requires_user_history:
+            judged_history = self._read_user_history(directory)
         reason = self._refresh_reason(
             directory,
             settings,
             existing,
-            {"completed_anime.csv": completed, "user_history.csv": history},
+            {"completed_anime.csv": completed, "user_history.csv": judged_history},
         )
         if reason is None:
             sources = [
@@ -937,6 +950,8 @@ class PipelineOrchestrator:
                 (SIGNAL_RANKING_ID, snapshot["ranking_id"]),
             )
         ]
+        if snapshot.get("preferred"):
+            rows.append({"Signal": SIGNAL_PREFERRED_ENGINE, "Anime ID": None, "Value": None, "Text": snapshot["preferred"]})
         frame = pd.DataFrame(rows, columns=["Signal", "Anime ID", "Value", "Text"])
         path = self._storage.write(frame, directory / RANKING_SIGNALS_FILENAME)
         self._archive_ranking_snapshot(directory, snapshot["ranking_id"], frame)
@@ -981,6 +996,7 @@ class PipelineOrchestrator:
             "engine": None,
             "filters": None,
             "ranking_id": None,
+            "preferred": None,
         }
         for _index, row in frame.iterrows():
             signal = row.get("Signal")
@@ -1000,6 +1016,9 @@ class PipelineOrchestrator:
                 continue
             if signal == SIGNAL_FILTERS:
                 snapshot["filters"] = text
+                continue
+            if signal == SIGNAL_PREFERRED_ENGINE:
+                snapshot["preferred"] = text
                 continue
             mal_id = pd.to_numeric(row.get("Anime ID"), errors="coerce")
             if pd.isna(mal_id) or int(mal_id) <= 0:
@@ -1027,6 +1046,12 @@ class PipelineOrchestrator:
         """One spelling per value, so a CSV round trip does not look like an edit."""
         if value is None:
             return ""
+        try:
+            # NaN, None, NaT and <NA> all come back from a CSV as an empty cell.
+            if pd.isna(value):
+                return ""
+        except (TypeError, ValueError):
+            pass
         text = str(value).strip()
         if text.casefold() in {"true", "false"}:
             return text.casefold()
@@ -1115,10 +1140,43 @@ class PipelineOrchestrator:
             or any(item.ranking_id != snapshot["ranking_id"] for item in existing.recommendations)
         ):
             return "inputs-changed"
-        ranked_by = tuple(str(snapshot["engine"]).split(":")[:2])
+        return self._engine_change(snapshot)
+
+    def _engine_change(self, snapshot) -> str | None:
+        """"engine-changed" when a different engine would rank this feed now.
+
+        A feed the fallback ranked stays current while the same preferred
+        engine would decline it again (it could not load, or it declined this
+        reader); it is rebuilt when the preferred engine can load after all,
+        or is a different version. Comparing it with the preferred engine
+        alone made every refresh of such a feed a rebuild.
+        """
+        parts = str(snapshot["engine"]).split(":")
+        ranked_by = tuple(parts[:2])
+        if len(parts) > 2 and parts[2] == "fallback":
+            preferred = self._recommendations.preferred_identity()
+            declined_again = (
+                preferred is None
+                or snapshot.get("preferred") == ":".join(preferred)
+            )
+            if declined_again and ranked_by == self._recommendations.fallback_identity():
+                return None
+            return "engine-changed"
         if ranked_by != self._recommendations.engine_identity():
             return "engine-changed"
         return None
+
+    def _declined_preferred(self, metadata, history) -> str | None:
+        """What SIGNAL_PREFERRED_ENGINE records for a fallback-ranked feed."""
+        if metadata is None or not metadata.fallback_used:
+            return None
+        preferred = self._recommendations.preferred_identity()
+        if preferred is None:
+            return "unavailable"
+        if self._recommendations.requires_user_history and history is None:
+            # Declined only because the fetch failed: rebuild once it works.
+            return "history-unavailable"
+        return ":".join(preferred)
 
     @staticmethod
     def _engine_label(metadata, audit=None) -> str:

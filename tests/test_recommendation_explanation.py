@@ -1187,3 +1187,134 @@ def test_engine_identity_names_the_model_before_it_has_ranked(system_temp_dir):
     service = RecommendationService(ranker=FallbackRankingEngine(engine, HeuristicRankingEngine()))
 
     assert service.engine_identity() == ("sasrec-onnx", "abcdef123456")
+
+
+# -- refresh review (D-018): engine identity and unavailable history --------
+
+class _DecliningPreferred:
+    """A preferred engine that loads, then declines this reader, so the
+    fallback ranks. Mirrors a sequence model with no usable history."""
+
+    engine_id = "declining-model"
+    feature_schema_version = "test"
+
+    def __init__(self, version="v1", requires_history=False):
+        self.engine_version = version
+        self.requires_user_history = requires_history
+
+    def eligibility_context(self):
+        from AniRec.scoring.eligibility import EligibilityContext
+        return EligibilityContext()
+
+    def rank(self, _request):
+        from AniRec.scoring.engines import RankingEngineUnavailable
+        raise RankingEngineUnavailable("This reader has no usable history.")
+
+
+def _declining_service(version="v1", requires_history=False):
+    return RecommendationService(ranker=FallbackRankingEngine(
+        _DecliningPreferred(version, requires_history), HeuristicRankingEngine()
+    ))
+
+
+def test_a_fallback_feed_is_current_while_the_same_preferred_engine_declines(system_temp_dir):
+    """A per-reader fallback must not read as an engine change on every refresh."""
+    orchestrator = _orchestrator(system_temp_dir, _declining_service())
+    initial = _refresh(orchestrator, None)
+    assert initial.user_stats["ranking_fallback_used"] == 1
+
+    again = _refresh(orchestrator, initial)
+    assert again.user_stats["feed_refresh"] == "current"
+    assert again.recommendations == ()
+
+
+def test_a_fallback_feed_rebuilds_when_the_preferred_engine_changes(system_temp_dir):
+    initial = _refresh(_orchestrator(system_temp_dir, _declining_service("v1")), None)
+    upgraded = _orchestrator(system_temp_dir, _declining_service("v2"))
+    assert _refresh(upgraded, initial).user_stats["feed_refresh"] == "engine-changed"
+
+
+def test_a_fallback_feed_rebuilds_once_the_preferred_engine_can_load(system_temp_dir):
+    """D-018: a feed the fallback ranked because the model could not load is
+    rebuilt when it can."""
+    from AniRec.scoring.engines import RankingEngineUnavailable
+
+    class Unloadable(_DecliningPreferred):
+        def eligibility_context(self):
+            raise RankingEngineUnavailable("No bundle installed.")
+
+    unloadable = RecommendationService(ranker=FallbackRankingEngine(Unloadable(), HeuristicRankingEngine()))
+    initial = _refresh(_orchestrator(system_temp_dir, unloadable), None)
+    assert _refresh(_orchestrator(system_temp_dir, unloadable), initial).user_stats["feed_refresh"] == "current"
+    loadable = _orchestrator(system_temp_dir, _declining_service())
+    assert _refresh(loadable, initial).user_stats["feed_refresh"] == "engine-changed"
+
+
+def _refresh_history():
+    return pd.DataFrame([
+        {"Anime ID": mal_id, "Status": "completed", "User Score": score,
+         "Episodes Watched": 12, "Is Rewatching": False,
+         "Updated At": f"2026-09-{day:02d}T10:00:00+00:00"}
+        for day, (mal_id, score) in enumerate([(101, 10), (102, 9), (103, 7)], start=1)
+    ])
+
+
+def test_a_failed_history_fetch_keeps_the_feed_instead_of_rebuilding_without_history(system_temp_dir):
+    """A transient failure is not a changed list: it must not swap the feed
+    for one ranked without the reader's history."""
+    from AniRec.errors import NetworkError
+
+    history = {"fetch": _refresh_history}
+    def fetch_history(*_args, **_kwargs):
+        return history["fetch"]()
+
+    orchestrator = PipelineOrchestrator(
+        anime_data=AnimeDataService(
+            top_fetcher=lambda **_kwargs: _catalogue(),
+            completed_fetcher=lambda *_args, **_kwargs: _completed(),
+            history_fetcher=fetch_history,
+        ),
+        profiles=ProfileService(root_override=system_temp_dir / "app-data", clock=lambda: NOW),
+        recommendations=_declining_service(requires_history=True),
+        storage=CsvStorage(),
+        access_token_provider=lambda: "fake-access-token",
+        clock=lambda: NOW,
+    )
+    initial = _refresh(orchestrator, None)
+    directory = orchestrator._profiles.directory(orchestrator._profiles.resolve_profile("fixture-user").profile_id)
+    saved_history = (directory / "user_history.csv").read_bytes()
+
+    def fail():
+        raise NetworkError("offline")
+    history["fetch"] = fail
+    again = _refresh(orchestrator, initial)
+
+    assert again.user_stats["feed_refresh"] == "current"
+    assert again.recommendations == ()
+    assert (directory / "user_history.csv").read_bytes() == saved_history
+
+
+def test_the_refresh_digest_survives_a_csv_round_trip_of_missing_values(system_temp_dir):
+    """Fetched frames and the same frames read back from CSV digest alike,
+    including missing timestamps (NaT) and nullable integers (<NA>)."""
+    directory = system_temp_dir / "digest"
+    directory.mkdir()
+    for name in ("genre_importance.csv", "recommendation_candidates.csv"):
+        (directory / name).write_text("a\n1\n", encoding="utf-8")
+    history = pd.DataFrame({
+        "Anime ID": pd.array([1, 2], dtype="Int64"),
+        "Status": ["completed", None],
+        "User Score": pd.array([8, pd.NA], dtype="Int64"),
+        "Episodes Watched": [12.0, float("nan")],
+        "Is Rewatching": [False, True],
+        "Updated At": pd.to_datetime(["2026-09-01T10:00:00+00:00", None], utc=True),
+    })
+    completed = history[["Anime ID", "Status", "User Score"]]
+    frames = {"completed_anime.csv": completed, "user_history.csv": history}
+    CsvStorage().write_batch((
+        (completed, directory / "completed_anime.csv"),
+        (history, directory / "user_history.csv"),
+    ))
+    orchestrator = _orchestrator(system_temp_dir)
+
+    assert orchestrator._user_inputs_digest(directory, frames, None) == orchestrator._ranking_inputs_digest(directory, None)

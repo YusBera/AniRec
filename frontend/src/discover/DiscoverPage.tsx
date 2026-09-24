@@ -21,7 +21,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AniRecApiError, api } from "../api/client";
-import { useFeed, useOperation } from "../api/hooks";
+import { OPERATION_RUNNING, useFeed, useOperation } from "../api/hooks";
 import type { Feed, LocalState, RecommendationViewModel } from "../api/types";
 import { Icon } from "../assets/Icon";
 import { Controls } from "./Controls";
@@ -41,6 +41,9 @@ export const NO_PROFILE_REASON = "Recommendation lists need a profile.";
 // Connecting an account from the web client is not possible (user decision,
 // 2026-09-24), so no copy here offers or promises one.
 export const RUN_UNAVAILABLE = "Not available for the sample library.";
+/** Errors whose advice is to connect the account again, which the web
+ *  client cannot do (D-017). */
+const ACCOUNT_ERRORS = new Set(["auth_error", "auth_timeout"]);
 export const REFRESH_TITLE = "Check your MyAnimeList list and rebuild the feed if anything changed.";
 
 /** The profile a refresh already ran for in this browser session. */
@@ -244,9 +247,15 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
 
   // Opening a profile checks its MyAnimeList list once per session and
   // rebuilds the feed only if something changed, as the desktop does.
+  // Remembered in memory too: when session storage cannot be written, the
+  // storage alone forgot every attempt and each finished run started another.
+  const autoRefreshed = useRef(new Set<string>());
+  const autoStarted = useRef(false);
   useEffect(() => {
-    if (!autoRefresh || !profileId || busy || refreshedThisSession(profileId)) return;
+    if (!autoRefresh || !profileId || busy || autoRefreshed.current.has(profileId) || refreshedThisSession(profileId)) return;
+    autoRefreshed.current.add(profileId);
     rememberRefreshed(profileId);
+    autoStarted.current = true;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh, profileId, busy]);
@@ -263,6 +272,16 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
   }, [staleFeed, operation.status.kind]);
   useEffect(() => {
     if (operation.status.state === "succeeded") setRecoveryTried(false);
+  }, [operation.status.state]);
+  // An automatic refresh that meets a run another tab started is not a
+  // fault: that run is already bringing the feed up to date, and the shell
+  // shows it. A refresh the reader asked for still reports the refusal.
+  useEffect(() => {
+    const state = operation.status.state;
+    if (!autoStarted.current || (state !== "failed" && state !== "succeeded" && state !== "cancelled")) return;
+    autoStarted.current = false;
+    if (state === "failed" && operation.status.error?.code === OPERATION_RUNNING) operation.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operation.status.state]);
   const hiddenInFeed = feed ? feed.recommendations.some((m) => has(feed.state.hidden_mal_ids, m.mal_id)) : false;
   // Also exhausted when a reload returns no titles because every one is
@@ -354,7 +373,7 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
                   <strong>{opError.title}</strong>
                   {/* The service's advice for an account problem is to
                       reconnect, which the web client cannot do (D-017). */}
-                  <span>{[opError.description, opError.code === "auth_error" ? "" : opError.solution].filter(Boolean).join(" ")}</span>
+                  <span>{[opError.description, ACCOUNT_ERRORS.has(opError.code) ? "" : opError.solution].filter(Boolean).join(" ")}</span>
                 </div>
               ) : null}
             </div>

@@ -66,6 +66,8 @@ const LOST_STREAM: ApiError = {
   retryable: true,
 };
 
+export const OPERATION_RUNNING = "operation_running";
+
 /**
  * `OperationAlreadyRunningError` arrives as a 409 whose description starts
  * "Operation is already running". It is not a failed request, so it is worded
@@ -76,6 +78,8 @@ function startError(caught: unknown): ApiError {
   if (caught instanceof AniRecApiError && caught.status === 409 && /already running/i.test(caught.detail.description)) {
     return {
       ...caught.detail,
+      // A stable code, so a caller can tell this refusal from a failure.
+      code: OPERATION_RUNNING,
       title: "Another operation is already running",
       solution: "Wait for it to finish, then try again.",
       retryable: false,
