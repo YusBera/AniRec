@@ -52,6 +52,7 @@ export type SystemState = Schemas["SystemStateResponse"];
 export type OperationSnapshot = Schemas["OperationSnapshotResponse"];
 export type OperationStartRequest = Schemas["OperationStartRequest"];
 export type OperationList = Schemas["OperationListResponse"];
+export type MalImport = Schemas["MalImportResponse"];
 
 /** The lifecycle states an operation reports. Drawn from the schema's own union. */
 export type OperationState = OperationSnapshot["state"];

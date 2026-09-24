@@ -21,6 +21,7 @@ file updates the matching row in the same change.
 | `GET /api/workspace/profile` | `AniRec/api/workspace.py` |
 | `GET /api/workspace/compare` | `AniRec/api/workspace.py` |
 | `GET|POST /api/workspace/settings` | `AniRec/api/workspace.py` |
+| `POST /api/onboarding/mal-profile` (username in, active profile or a `reason` out) | `AniRec/api/onboarding.py` |
 
 Request and response models: `AniRec/api/models.py`. Error envelopes and
 exception handlers: `AniRec/api/app.py`. Token and origin enforcement:
@@ -72,7 +73,7 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Explicit taste feedback | `AniRec/services/taste_feedback_service.py` |
 | Result persistence | `AniRec/services/result_service.py` |
 | Sample library and demonstration payloads | `AniRec/services/sample_data_service.py` |
-| First-run flow | `AniRec/services/onboarding_service.py` |
+| First-run flow; public MyAnimeList import by username (D-020) | `AniRec/services/onboarding_service.py` |
 | Cover image fetch and cache | `AniRec/services/cover_image_service.py` |
 | Folder and cache management | `AniRec/services/data_management_service.py` |
 | Connection test | `AniRec/services/api_connection_service.py` |
@@ -103,7 +104,7 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Workspace shell, hash routing, sample banner | `frontend/src/workspace/Workspace.tsx` |
 | Top bar: tabs, notifications bell, account menu (D-019) | `frontend/src/workspace/TopBar.tsx` |
 | Service polling and notifications (polls `/api/system/state`, `/api/operations`) | `frontend/src/workspace/Shell.tsx` |
-| First run (Welcome, honest connect step; session-remembered) | `frontend/src/workspace/FirstRun.tsx` |
+| First-time setup pop-up: MyAnimeList username, AniList/AniDB coming soon, newcomer path, look around (D-020) | `frontend/src/workspace/FirstRun.tsx` |
 | My Library | `frontend/src/workspace/LibraryPage.tsx` |
 | Profile (reader block, THE READING, fact board, instrument) | `frontend/src/workspace/ProfilePage.tsx`, `ProfileSections.tsx`, `profileFacts.ts` |
 | Compare | `frontend/src/workspace/ComparePage.tsx` |

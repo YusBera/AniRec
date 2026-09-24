@@ -15,7 +15,7 @@
  * `api.feed()` either way.
  */
 
-import type { ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, OperationList, OperationSnapshot, SystemState } from "./types";
+import type { ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
 import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
@@ -98,6 +98,9 @@ export const api = {
   health: () => request<{ status: string; version: string }>("/api/health"),
 
   systemState: () => request<SystemState>("/api/system/state"),
+
+  /** First-time setup: start with a public MyAnimeList list (D-020). */
+  importMalProfile: (username: string) => request<MalImport>("/api/onboarding/mal-profile", { method: "POST", body: JSON.stringify({ username }) }),
 
   operations: () => request<OperationList>("/api/operations"),
   operation: (id: string) => request<OperationSnapshot>(`/api/operations/${encodeURIComponent(id)}`),

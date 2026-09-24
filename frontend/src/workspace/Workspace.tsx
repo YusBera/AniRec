@@ -72,7 +72,8 @@ export function Workspace() {
 
   return <div className="workspace">
     <a className="skip-link" href="#workspace-content">Skip to content</a>
-    <TopBar page={page} system={shell.system} feed={feed} notices={shell.notices} avatarUrl={avatarUrl} />
+    <TopBar page={page} system={shell.system} feed={feed} notices={shell.notices} avatarUrl={avatarUrl}
+      onSetUp={() => setFirstRun("welcome")} />
     <div className="workspace-content" ref={content} id="workspace-content" tabIndex={-1}>
       {/* No "Connect my account" here: connecting an account from the web
           client is not possible (user decision, 2026-09-24). */}
@@ -86,6 +87,12 @@ export function Workspace() {
       <div hidden={page !== "compare"}>{visited.has("compare") ? <ComparePage /> : null}</div>
       <div hidden={page !== "settings"}>{visited.has("settings") ? <SettingsPage version={shell.version} /> : null}</div>
     </div>
-    {firstRun ? <FirstRun onClose={() => setFirstRun(null)} /> : null}
+    {firstRun ? <FirstRun clientIdPresent={!!shell.system?.mal_client_id_present}
+      onImported={(profile) => {
+        shell.notify({ tone: "done", title: `Added ${profile.username}'s MyAnimeList list`, detail: "AniRec is reading it now; your recommendations follow." });
+        // The new active profile starts the automatic refresh (D-018).
+        shell.nudge();
+      }}
+      onClose={() => setFirstRun(null)} /> : null}
   </div>;
 }

@@ -74,6 +74,21 @@ class OnboardingService:
         except (AniRecError, ConfigError, OSError, TypeError, ValueError):
             return True
 
+    def import_public_mal_profile(self, reference: str, *, cancellation=None):
+        """Start with a public MyAnimeList list, read by username (D-020).
+
+        The Client ID is this installation's own setting; the visitor never
+        supplies one. The list is validated before anything is written, the
+        profile becomes the active one, and setup is marked complete. A
+        failure leaves no profile and no completion flag behind.
+        """
+        client_id = (self.settings.load().client_id or "").strip()
+        if not client_id:
+            raise ConfigError("MyAnimeList import is not set up for this installation.")
+        profile = self.profiles.add_public_profile(reference, client_id, cancellation=cancellation)
+        self.mark_complete()
+        return profile
+
     def mark_complete(self) -> Path:
         payload = {
             "schema_version": ONBOARDING_SCHEMA_VERSION,

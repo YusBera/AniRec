@@ -331,6 +331,23 @@ items above for the rail, readout, console and BUILD footer are superseded.
   upper-case legends ("THE READING", "NOT ON YOUR MAL PROFILE", "THE
   INSTRUMENT") and Settings' upper-case group titles.
 
+**First-time setup (2026-09-24, D-020).** A two-column pop-up: "Welcome to
+AniRec" (accent) and "your personal anime recommender" on the left; on the
+right a MyAnimeList username field with Continue, AniList and AniDB marked
+"Coming soon", "I'm new to anime" (not active yet), and "Just look around".
+- Backend: `POST /api/onboarding/mal-profile` (`AniRec/api/onboarding.py`)
+  calls `OnboardingService.import_public_mal_profile`, which validates the
+  public list with the installation's Client ID, makes it active and marks
+  setup complete. Failures return a `reason`; nothing is created. Tests:
+  `tests/test_onboarding_api.py` (13).
+- Frontend: `FirstRun.tsx` rewritten; a guest can reopen it from the account
+  menu ("Set up your profile"). A successful import notifies and nudges the
+  shell, so the automatic refresh (D-018) builds the first feed. Tests in
+  `Shell.test.tsx`; `npm run ci` 112.
+- **Next: the newcomer poster picker.** Needs decisions first (see D-020):
+  a non-MAL local profile, how picks become history, and a model check with
+  a real bundle.
+
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in
 a container without `libEGL`; two `test_api_lifecycle` tests fail on Linux

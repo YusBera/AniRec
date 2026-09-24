@@ -9,6 +9,7 @@ import { ProfilePage } from "./ProfilePage";
 import { MAX_NOTICES, operationNotice, useShellState } from "./Shell";
 import { Notifications } from "./TopBar";
 import { Workspace } from "./Workspace";
+import { FirstRun, importProblem } from "./FirstRun";
 
 const SYSTEM: SystemState = { profile: null, needs_setup: true, mal_client_id_present: false, active_operations: [] };
 const SAMPLE_FEED = {
@@ -131,21 +132,29 @@ describe("the shell", () => {
     expect(button).toBeInTheDocument();
   });
 
-  it("offers first run when setup is needed, and remembers the dismissal for the session", async () => {
-    stubShell(SYSTEM);
+  it("offers first-time setup when needed, and remembers closing it for the session", async () => {
+    stubShell({ ...SYSTEM, mal_client_id_present: true });
     const user = userEvent.setup();
     const { unmount } = render(<Workspace />);
-    const dialog = await screen.findByRole("dialog", { name: "Welcome" });
-    expect(within(dialog).getByText("No account needed. Nothing is saved.")).toBeInTheDocument();
-    // Connecting an account from the web is not possible: no step offers it.
-    expect(within(dialog).queryByRole("button", { name: "Next" })).not.toBeInTheDocument();
-    expect(dialog).not.toHaveTextContent(/connect|desktop|install|download/i);
-    await user.click(within(dialog).getByRole("button", { name: "Look around with sample data" }));
+    const dialog = await screen.findByRole("dialog", { name: "Welcome to AniRec" });
+    expect(within(dialog).getByText("your personal anime recommender")).toBeInTheDocument();
+    // Never a Client ID, a login or a desktop app.
+    expect(dialog).not.toHaveTextContent(/client id|log ?in|sign ?in|desktop|install|download/i);
+    await user.click(within(dialog).getByRole("button", { name: "Just look around" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     unmount();
     render(<Workspace />);
     await screen.findByRole("note");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("lets a guest reopen setup from the account menu", async () => {
+    stubShell({ ...SYSTEM, needs_setup: false, mal_client_id_present: true });
+    const user = userEvent.setup();
+    render(<Workspace />);
+    await user.click(await screen.findByRole("button", { name: "Account menu" }));
+    await user.click(screen.getByRole("button", { name: "Set up your profile" }));
+    expect(await screen.findByRole("dialog", { name: "Welcome to AniRec" })).toBeInTheDocument();
   });
 
   it("labels the sample library without offering to connect an account, and shows no Japanese marks", async () => {
@@ -220,3 +229,67 @@ it("moves the build number to Settings, where only someone troubleshooting looks
   render(<SettingsPage version="1.3.0" />);
   expect(screen.getByText("AniRec version 1.3.0")).toBeInTheDocument();
 });
+
+describe("first-time setup (D-020)", () => {
+  const renderSetup = (clientIdPresent = true) => {
+    const onImported = vi.fn();
+    const onClose = vi.fn();
+    render(<FirstRun clientIdPresent={clientIdPresent} onImported={onImported} onClose={onClose} />);
+    return { onImported, onClose, dialog: screen.getByRole("dialog", { name: "Welcome to AniRec" }) };
+  };
+
+  it("lays out MyAnimeList as a field, AniList and AniDB as coming soon, and the newcomer path as not active yet", () => {
+    const { dialog } = renderSetup();
+    expect(within(dialog).getByRole("textbox", { name: "MyAnimeList" })).toHaveAttribute("placeholder", "Your username");
+    expect(within(dialog).getAllByText("Coming soon")).toHaveLength(2);
+    expect(within(dialog).queryByRole("textbox", { name: /AniList|AniDB/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "I'm new to anime" })).toHaveAttribute("aria-disabled", "true");
+    expect(within(dialog).getByRole("button", { name: "Just look around" })).toBeInTheDocument();
+  });
+
+  it("starts from a public list: sends only the username, closes, and hands the new profile on", async () => {
+    const importer = vi.spyOn(api, "importMalProfile").mockResolvedValue({ profile: { profile_id: "p", username: "reader_01" }, reason: null });
+    const { onImported, onClose, dialog } = renderSetup();
+    const user = userEvent.setup();
+    await user.type(within(dialog).getByRole("textbox", { name: "MyAnimeList" }), "reader_01");
+    await user.click(within(dialog).getByRole("button", { name: "Continue with MyAnimeList" }));
+    expect(importer).toHaveBeenCalledWith("reader_01");
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith({ profile_id: "p", username: "reader_01" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("says in plain words why a list could not be read, and keeps the reader in the field", async () => {
+    vi.spyOn(api, "importMalProfile").mockResolvedValue({ profile: null, reason: "private-list" });
+    const { onImported, dialog } = renderSetup();
+    const user = userEvent.setup();
+    const field = within(dialog).getByRole("textbox", { name: "MyAnimeList" });
+    await user.type(field, "shy_reader");
+    await user.keyboard("{Enter}");
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("shy_reader's anime list isn't public, so AniRec can't read it.");
+    expect(field).toHaveFocus();
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(onImported).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the newcomer path is pressed before it exists", async () => {
+    const importer = vi.spyOn(api, "importMalProfile");
+    const { onClose, dialog } = renderSetup();
+    await userEvent.setup().click(within(dialog).getByRole("button", { name: "I'm new to anime" }));
+    expect(importer).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("says so when this installation cannot read MyAnimeList lists, instead of a field that fails", () => {
+    const { dialog } = renderSetup(false);
+    expect(within(dialog).getByRole("textbox", { name: "MyAnimeList" })).toBeDisabled();
+    expect(dialog).toHaveTextContent("MyAnimeList import isn't set up for this AniRec installation yet.");
+  });
+
+  it("words every reason the service can give", () => {
+    for (const reason of ["invalid-username", "client-id-required", "user-not-found", "private-list", "rate-limited", "network", "unavailable"]) {
+      expect(importProblem(reason, "x")).not.toMatch(/undefined|reason|HTTP/);
+    }
+    expect(importProblem("user-not-found", "nobody_here")).toContain("nobody_here");
+  });
+});
+

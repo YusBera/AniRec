@@ -52,6 +52,7 @@ from ..services.recommendation_event_service import (
 )
 from .container import ApiContainer, build_container
 from .workspace import workspace_router
+from .onboarding import onboarding_router
 from .models import (
     ActivityStatus, ActivitySetting, ActivityEvent, ActivityReceipt,
     Catalogue,
@@ -182,6 +183,7 @@ def create_app(
     app.state.operations = operations
     app.state.token_required = bool(resolved_token)
     app.include_router(workspace_router(services))
+    app.include_router(onboarding_router(services))
 
     if resolved_token:
         app.add_middleware(TokenAuthMiddleware, token=resolved_token)

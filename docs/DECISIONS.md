@@ -105,6 +105,33 @@ web-first.
 
 ---
 
+## D-020 - First-time setup starts from a MyAnimeList username
+**2026-09-24 - Accepted (user decision). Revises the first bullet of D-017.**
+
+The first-time setup pop-up asks how to start:
+- **MyAnimeList:** the visitor types a username (or profile URL). AniRec
+  reads the public list with this installation's own Client ID, makes it the
+  active profile and ends setup. The visitor never enters a Client ID and is
+  never sent to a MyAnimeList login; those parts of D-017 stand. A private
+  list, an unknown user or an unreachable service is answered in plain words
+  (`reason`), and nothing is created. Without a configured Client ID the
+  field says the import is not set up here.
+- **AniList, AniDB:** named and marked "Coming soon", not interactive.
+- **I'm new to anime:** shown, not active yet. It will be a short poster
+  picker ("tap a few that look interesting", with Skip). Open before it is
+  built: a local profile that is not a MyAnimeList list (profiles are keyed
+  by MAL username today), how picks enter the history the model reads, and
+  a check that the model ranks sensibly from picked-but-unwatched titles.
+- **Just look around:** the labelled sample library; nothing is saved.
+
+This is the local, single-reader product. A hosted deployment still needs
+D-014's accounts, so that one reader's import can never select another's data.
+
+*Why:* a username is all a newcomer has to hand; asking for API credentials or
+a login first is the control-panel experience D-019 rules out.
+
+---
+
 ## D-019 - A newcomer's expectations decide where things go
 **2026-09-24 - Accepted (user decision). Revises D-016 for the shell.**
 

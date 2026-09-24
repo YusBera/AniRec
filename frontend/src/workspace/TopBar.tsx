@@ -100,7 +100,7 @@ export function useAvatar(system: SystemState | null): string | null {
   return url;
 }
 
-export function Account({ system, feed, avatarUrl }: { system: SystemState | null; feed: Feed | null; avatarUrl: string | null }) {
+export function Account({ system, feed, avatarUrl, onSetUp }: { system: SystemState | null; feed: Feed | null; avatarUrl: string | null; onSetUp?: () => void }) {
   const [failed, setFailed] = useState<string | null>(null);
   const name = system?.profile?.username ?? null;
   const letters = name ? name.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2).toLocaleUpperCase() : null;
@@ -117,6 +117,7 @@ export function Account({ system, feed, avatarUrl }: { system: SystemState | nul
         <div><p className="account-name">{name ?? "Guest"}</p><p className="account-context">{context}</p></div>
       </div>
       <ul className="account-links">
+        {!name && onSetUp ? <li><button type="button" onClick={() => { close(); onSetUp(); }}><Icon name="nav-library" />Set up your profile</button></li> : null}
         <li><a href="#/profile" onClick={close}><Icon name="profile" />Your profile</a></li>
         <li><a href="#/settings" onClick={close}><Icon name="nav-settings" />Settings</a></li>
       </ul>
@@ -137,8 +138,8 @@ function PersonIcon() {
   </svg>;
 }
 
-export function TopBar({ page, system, feed, notices, avatarUrl }: {
-  page: string; system: SystemState | null; feed: Feed | null; notices: Notice[]; avatarUrl: string | null;
+export function TopBar({ page, system, feed, notices, avatarUrl, onSetUp }: {
+  page: string; system: SystemState | null; feed: Feed | null; notices: Notice[]; avatarUrl: string | null; onSetUp?: () => void;
 }) {
   return <header className="topbar">
     <a className="brand" href="#/discover" aria-label="AniRec home">AniRec</a>
@@ -149,7 +150,7 @@ export function TopBar({ page, system, feed, notices, avatarUrl }: {
     </nav>
     <div className="topbar-end">
       <Notifications notices={notices} />
-      <Account system={system} feed={feed} avatarUrl={avatarUrl} />
+      <Account system={system} feed={feed} avatarUrl={avatarUrl} onSetUp={onSetUp} />
     </div>
   </header>;
 }

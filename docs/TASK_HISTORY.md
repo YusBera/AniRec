@@ -7,6 +7,23 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - First-time setup from a MyAnimeList username (D-020)
+
+Added the setup pop-up and a username-only public-list import:
+`POST /api/onboarding/mal-profile` and
+`OnboardingService.import_public_mal_profile`. AniList and AniDB are shown
+as coming soon; "I'm new to anime" is shown but not active.
+
+*Verification:* `tests/test_onboarding_api.py` 13 passed; non-Qt pytest 460
+passed (the two Linux-only `test_api_lifecycle` failures predate this);
+`npm run ci` 112 passed; Chromium at 1440×900 and 375×812, no horizontal
+scroll, every control at least 44px. The import was not run against the real
+MyAnimeList API from this environment.
+
+*Left open:* the newcomer poster picker and its profile and model questions.
+
+---
+
 ## 2026-09-24 - Familiar shell: top bar, notifications, account menu (D-019)
 
 Replaced the desktop-style left rail with a top bar: tabs for Discover, My

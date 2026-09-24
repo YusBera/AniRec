@@ -103,6 +103,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/onboarding/mal-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Mal Profile */
+        post: operations["import_mal_profile_api_onboarding_mal_profile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/operations": {
         parameters: {
             query?: never;
@@ -989,6 +1006,26 @@ export interface components {
             /** Watch Later Mal Ids */
             watch_later_mal_ids: number[];
         };
+        /** MalImportRequest */
+        MalImportRequest: {
+            /**
+             * Username
+             * @description A MyAnimeList username or https://myanimelist.net/profile/... URL.
+             */
+            username: string;
+        };
+        /**
+         * MalImportResponse
+         * @description The new active profile, or why there is none.
+         */
+        MalImportResponse: {
+            profile?: components["schemas"]["ProfileSummary"] | null;
+            /**
+             * Reason
+             * @description invalid-username, client-id-required, user-not-found, private-list, rate-limited, network or unavailable.
+             */
+            reason?: string | null;
+        };
         /**
          * OperationAcceptedResponse
          * @description What starting an operation returns: a snapshot, at HTTP 202.
@@ -1802,6 +1839,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    import_mal_profile_api_onboarding_mal_profile_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MalImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MalImportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
