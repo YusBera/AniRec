@@ -7,6 +7,19 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Profile fact icons redrawn for a single glance
+
+The 17 icons on Profile's "NOT ON YOUR MAL PROFILE" board
+(`frontend/src/assets/shell/fact-*.svg`) now use familiar symbols in the same
+24px, 2px square-stroke style: thumbs down (hype kill), diamond (deep cut),
+replay (rewatched), broken heart (nemesis), shield with check (trusted),
+scales (divisive), calendar (era), snowflake / sprout / sun / leaf (seasons),
+people (community sync), star (rating bias), opposite arrows (contrarian),
+checked circle (completion), trending line (mainstream), question mark
+(unknown). File names are unchanged; `npm run ci` workspace tests pass.
+
+---
+
 ## 2026-09-24 - Accounts: account management (D-021)
 
 Per-reader preferences (adventurousness, minimum score, NSFW; the owner's
