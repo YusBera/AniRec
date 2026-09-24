@@ -16,6 +16,7 @@ file updates the matching row in the same change.
 | `GET|POST|DELETE /api/discover/activity`, `POST /api/discover/activity/settings` | `AniRec/api/app.py` |
 | `GET /api/operations`, `GET|DELETE /api/operations/{id}`, `GET /api/operations/{id}/events` | `AniRec/api/app.py` |
 | `POST /api/operations/{kind}` | `AniRec/api/app.py`, handlers in `_build_handler` |
+| Feed refresh (`refresh` kind: sync, then rebuild only if missing, stale or a different engine; D-018) | `PipelineOrchestrator.run_refresh` / `_refresh_reason` in `AniRec/application/pipeline.py`; `RecommendationService.engine_identity` |
 | `GET /api/workspace/library`, `POST /api/workspace/library/resolve` | `AniRec/api/workspace.py` |
 | `GET /api/workspace/profile` | `AniRec/api/workspace.py` |
 | `GET /api/workspace/compare` | `AniRec/api/workspace.py` |

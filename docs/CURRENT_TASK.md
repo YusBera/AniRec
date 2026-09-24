@@ -256,6 +256,36 @@ findings were applied on this branch.
   - Some off-scale pixel values remain in component CSS.
   - Each card has three tab stops for one action.
 
+**Automatic refresh (2026-09-24, D-018).**
+- Backend:
+  - a `refresh` operation (`run_refresh`) that syncs, then rebuilds only for
+    a missing feed, changed inputs or filters, or a different engine;
+  - `_snapshot_is_current` is now shared with "more";
+  - `run_step` takes the server-bound profile, as the other entry points do;
+  - `engine_identity` names the engine that would rank now.
+- Frontend:
+  - "Recommend 5 more" is gone;
+  - 50 per page, with "Next page" continuing the ranking;
+  - an automatic refresh once per session, plus a small Refresh button;
+  - a stale "more" refusal triggers one refresh.
+- Tests: 6 backend tests (`test_recommendation_explanation.py`, "automatic
+  refresh") and the frontend tests updated and added.
+- **Review round 2 (NO-GO, then fixed):**
+  - The engine version comes from the manifest, so a restart is not a change.
+  - The digest covers only the reader's own list data plus the generated
+    files, so community drift no longer rebuilds the feed.
+  - A rebuild runs the full run's own `_generate_feed`.
+  - Frontend:
+    - honest wording after a failed recovery;
+    - the page holding the first new pick;
+    - no duplicate "next" control;
+    - an accessible name that matches the visible label;
+    - every refreshed profile remembered per session;
+    - a profile with no feed yet refreshes;
+    - no reconnect advice.
+- Still minor and open: an automatic refresh that meets another tab's
+  running operation shows its 409 as a fault for that session.
+
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in
 a container without `libEGL`; two `test_api_lifecycle` tests fail on Linux

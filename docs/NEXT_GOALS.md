@@ -126,10 +126,11 @@ Recorded 2026-09-24. Not ordered goals yet; each needs scoping before work.
    - A request queue with automatic retry on HTTP 429, so a burst of imports
      waits in line instead of failing.
    - MAL XML export upload as a fallback that uses no API calls.
-3. **How feeds are produced.** Not from a Discover button (D-017). Decide
-   when a feed is generated, for example on import or on a schedule, and what
-   replaces a saved feed that predates the current model. Today such a feed
-   shows "Personal match unavailable" on every card.
+3. **How feeds are produced.** Decided in D-018: an automatic refresh when a
+   profile opens, a small Refresh button, and pages that continue the
+   ranking. A feed that predates the current model is rebuilt on the first
+   refresh. Still open for hosting: a scheduled refresh without an open
+   browser, and the import queue (item 2).
 4. **Sparse-history state.** Below the evidence threshold, say the system does
    not know enough yet (`DOMAIN_RULES.md`, "Scoring Honesty").
 5. **Hosting and security.**

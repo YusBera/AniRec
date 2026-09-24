@@ -89,6 +89,7 @@ SUPPORTED_KINDS = frozenset(
         "sync",
         "recommendation",
         "more-recommendations",
+        "refresh",
         "list-sync",
         "profile-lookup",
         "api-test",
@@ -111,7 +112,11 @@ EMPTY_CATALOGUE = Catalogue(genres=(), studios=(), years=(), statuses=())
 # Operations that write a profile's saved feed. Two of them overlapping for one
 # profile would let the later save overwrite the earlier (a "more" batch
 # computed from an older feed replacing a newer one), so they run one at a time.
-FEED_WRITING_KINDS = ("sync", "recommendation", "more-recommendations")
+FEED_WRITING_KINDS = ("sync", "recommendation", "more-recommendations", "refresh")
+
+# How many picks a web refresh generates, and how many the web client shows
+# per page; the next page continues the same ranking (D-018).
+WEB_FEED_BATCH = 50
 
 
 def operation_key(kind: str, profile_id: str) -> str:
@@ -640,6 +645,22 @@ def _build_handler(
             ))
 
         return run_full
+
+    if kind == "refresh":
+        count = max(1, int(payload.count or WEB_FEED_BATCH))
+
+        def run_refresh(token: CancellationToken, report) -> Any:
+            return persisted(services.orchestrator.run_refresh(
+                username,
+                settings.pipeline,
+                existing=services.results.load(profile_id),
+                count=count,
+                progress_callback=report,
+                cancellation_token=token,
+                **binding,
+            ))
+
+        return run_refresh
 
     if kind == "more-recommendations":
         count = max(1, int(payload.count or 5))

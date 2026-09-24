@@ -658,3 +658,6 @@
 
 /* The "+n" overflow tag (gui/metadata_tags.py): neutral, not a genre colour. */
 .card-tag.more { color: var(--text-muted); border-color: var(--border-strong); }
+
+/* The small manual refresh (D-018): icon and label on one line. */
+.refresh-feed { display: inline-flex; align-items: center; gap: var(--space-xs); }

@@ -345,7 +345,7 @@ describe("DiscoverPage", () => {
     fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => { complete = resolve; }));
     await user.click(within(first).getByRole("button", { name: "Save for later" }));
     expect(within(second).getByRole("button", { name: "Save for later" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Recommend 5 more" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled();
     await act(async () => complete(new Response(JSON.stringify({ state: { ...FEED.state, watch_later_mal_ids: [1535] } }))));
     await waitFor(() => expect(within(second).getByRole("button", { name: "Save for later" })).toBeEnabled());
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ state: { ...FEED.state, watch_later_mal_ids: [1535, 9253] } })));
@@ -355,7 +355,7 @@ describe("DiscoverPage", () => {
   });
 
   it("paginates a growing feed without mounting every recommendation", async () => {
-    const recommendations = Array.from({ length: 25 }, (_, index) => ({
+    const recommendations = Array.from({ length: 60 }, (_, index) => ({
       ...FEED.recommendations[0]!, mal_id: 10_000 + index,
       display_title: `Title ${index + 1}`, rank: index + 1,
       fit_rank: null, fit_pool_size: null, fit_top_percent: null, ranking_id: null, why: null,
@@ -364,14 +364,14 @@ describe("DiscoverPage", () => {
     const user = userEvent.setup();
     render(<DiscoverPage />);
     expect(await screen.findByRole("heading", { name: "Title 1" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Title 21" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Title 51" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Next recommendations page" }));
-    expect(screen.getByRole("heading", { name: "Title 21" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Title 51" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Title 1" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Recommendations" })).toHaveFocus();
   });
 
-  it("offers a full new feed when More refuses a stale ranking", async () => {
+  it("rebuilds the feed by itself when continuing refuses a stale ranking", async () => {
     class FakeEventSource {
       static instances: FakeEventSource[] = [];
       listeners = new Map<string, Array<(event: Event) => void>>();
@@ -390,14 +390,16 @@ describe("DiscoverPage", () => {
       const url = String(input);
       if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(profileFeed), { headers: { "Content-Type": "application/json" } });
       if (url.endsWith("/api/discover/activity")) return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
-      if (url.includes("/api/operations/")) return new Response(JSON.stringify({ id: url.endsWith("/recommendation") ? "full-1" : "more-1" }), { headers: { "Content-Type": "application/json" } });
+      if (url.includes("/api/operations/")) return new Response(JSON.stringify({ id: url.endsWith("/refresh") ? "refresh-1" : "more-1" }), { headers: { "Content-Type": "application/json" } });
       return new Response("{}", { headers: { "Content-Type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<DiscoverPage />);
-    await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
+    await user.click(await screen.findByRole("button", { name: "Next page, load the next 50 recommendations" }));
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const operations = () => fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes("/api/operations/") && !url.includes("/events"));
+    expect(operations().at(-1)).toMatch(/\/api\/operations\/more-recommendations$/);
     act(() => FakeEventSource.instances[0]!.emit("error", {
       code: "stale_ranking",
       title: "Feed is out of date",
@@ -405,16 +407,16 @@ describe("DiscoverPage", () => {
       solution: "Generate a new feed.",
       retryable: false,
     }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Generate a new feed");
+    await waitFor(() => expect(operations().at(-1)).toMatch(/\/api\/operations\/refresh$/));
+    expect(screen.queryByRole("button", { name: "Generate a new feed" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("article")).toHaveLength(2);
-    await user.click(screen.getByRole("button", { name: "Generate a new feed" }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/operations/recommendation"))).toBe(true));
   });
 
   it("disables generation when there is no profile to generate for", async () => {
     stubFetch();
     render(<DiscoverPage />);
-    expect(await screen.findByRole("button", { name: "Recommend 5 more" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Refresh" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Recommend 5 more" })).not.toBeInTheDocument();
   });
 
   it("shows the backend's own error model and a retry only when retryable", async () => {
@@ -474,7 +476,7 @@ it("loads saved metadata outside the feed and retains honest missing-score state
 });
 
 it("paginates saved titles in Library and resets to the first page when searching", async () => {
-  const recommendations = Array.from({ length: 25 }, (_, index) => ({
+  const recommendations = Array.from({ length: 60 }, (_, index) => ({
     ...FEED.recommendations[0]!, mal_id: 20_000 + index,
     display_title: `Saved ${index + 1}`, rank: index + 1,
     fit_rank: null, fit_pool_size: null, fit_top_percent: null, ranking_id: null, why: null,
@@ -483,9 +485,9 @@ it("paginates saved titles in Library and resets to the first page when searchin
   const user = userEvent.setup();
   render(<LibraryPage feed={feed} pending={false} onVote={vi.fn()} onDetails={vi.fn()} />);
   expect(screen.getByRole("heading", { name: "Saved 1" })).toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "Saved 21" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Saved 51" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Next saved titles page" }));
-  expect(screen.getByRole("heading", { name: "Saved 21" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Saved 51" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: /Watch Later/ })).toHaveFocus();
   await user.type(screen.getByRole("searchbox", { name: "Find a saved title" }), "Saved 1");
   expect(screen.getByRole("heading", { name: "Saved 1" })).toBeInTheDocument();
@@ -493,13 +495,13 @@ it("paginates saved titles in Library and resets to the first page when searchin
 });
 
 it("paginates unresolved saved IDs instead of mounting the whole missing list", async () => {
-  const ids = Array.from({ length: 25 }, (_, index) => 30_000 + index);
+  const ids = Array.from({ length: 60 }, (_, index) => 30_000 + index);
   const feed: Feed = { ...FEED, recommendations: [], state: { ...FEED.state, watch_later_mal_ids: ids } };
   render(<LibraryPage feed={feed} pending={false} onVote={vi.fn()} onDetails={vi.fn()} />);
   expect(screen.getByText(/MAL #30000/)).toBeInTheDocument();
-  expect(screen.queryByText(/MAL #30024/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/MAL #30059/)).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: /Next unresolved saved ids page/i }));
-  expect(screen.getByText(/MAL #30024/)).toBeInTheDocument();
+  expect(screen.getByText(/MAL #30059/)).toBeInTheDocument();
 });
 
 describe("the PySide card and header", () => {
@@ -539,18 +541,19 @@ describe("the PySide card and header", () => {
       .toBe("LISTS SAVED · 1 SAVED · 0 SET ASIDE");
   });
 
-  it("offers no RUN ANALYSIS or connect action, and disables more picks on the sample feed with the reason", async () => {
+  it("offers no RUN ANALYSIS, More or connect action, and disables Refresh on the sample feed with the reason", async () => {
     stubFetch();
     render(<DiscoverPage />);
-    const more = await screen.findByRole("button", { name: "Recommend 5 more" });
-    expect(more).toBeDisabled();
-    expect(more).toHaveAttribute("title", "Not available for the sample library.");
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    expect(refresh).toBeDisabled();
+    expect(refresh).toHaveAttribute("title", "Not available for the sample library.");
+    expect(screen.queryByRole("button", { name: /Recommend/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /RUN ANALYSIS/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/connect/i)).not.toBeInTheDocument();
     expect(screen.getByText("READY")).toBeInTheDocument();
   });
 
-  it("runs more picks, shows BUSY with the stream's progress, and reloads the feed when it succeeds", async () => {
+  it("refreshes, shows BUSY with the stream's progress, and reloads the feed when it succeeds", async () => {
     class FakeEventSource {
       static instances: FakeEventSource[] = [];
       listeners = new Map<string, Array<(event: Event) => void>>();
@@ -564,13 +567,13 @@ describe("the PySide card and header", () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(profileFeed), { headers: { "Content-Type": "application/json" } });
-      if (url.endsWith("/api/operations/more-recommendations")) return new Response(JSON.stringify({ id: "run-1", kind: "more-recommendations", profile_id: "test-profile", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
+      if (url.endsWith("/api/operations/refresh")) return new Response(JSON.stringify({ id: "run-1", kind: "refresh", profile_id: "test-profile", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
       return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
     render(<DiscoverPage />);
-    await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
+    await user.click(await screen.findByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     act(() => FakeEventSource.instances[0]!.emit("progress", { stage_id: "fetch", message: "Fetch completed anime", current: 1, total: 4, cancellable: true }));
@@ -596,7 +599,7 @@ describe("the PySide card and header", () => {
     }));
     const user = userEvent.setup();
     render(<DiscoverPage />);
-    await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
+    await user.click(await screen.findByRole("button", { name: "Refresh" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Another operation is already running");
     expect(alert).toHaveTextContent("Operation is already running: recommendation:test-profile");
@@ -617,7 +620,7 @@ describe("the PySide card and header", () => {
     }));
     const user = userEvent.setup();
     render(<DiscoverPage />);
-    await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
+    await user.click(await screen.findByRole("button", { name: "Refresh" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("No active profile. Complete setup first.");
     expect(alert).not.toHaveTextContent("Another operation");
@@ -763,7 +766,7 @@ describe("design-port review fixes", () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(profileFeed), { headers: { "Content-Type": "application/json" } });
-        if (url.endsWith("/api/operations/more-recommendations")) return new Response(JSON.stringify({ id: "run-1", kind: "more-recommendations", profile_id: "test-profile", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
+        if (url.endsWith("/api/operations/refresh")) return new Response(JSON.stringify({ id: "run-1", kind: "refresh", profile_id: "test-profile", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
         if (url.endsWith("/api/operations/run-1")) return operation();
         return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
       });
@@ -772,24 +775,24 @@ describe("design-port review fixes", () => {
     }
 
     it("reads the operation's own outcome and reloads when it had finished", async () => {
-      const fetchMock = stub(() => new Response(JSON.stringify({ id: "run-1", kind: "more-recommendations", profile_id: "test-profile", state: "succeeded", event_count: 3 }), { headers: { "Content-Type": "application/json" } }));
+      const fetchMock = stub(() => new Response(JSON.stringify({ id: "run-1", kind: "refresh", profile_id: "test-profile", state: "succeeded", event_count: 3 }), { headers: { "Content-Type": "application/json" } }));
       const user = userEvent.setup();
       render(<DiscoverPage />);
-      await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
+      await user.click(await screen.findByRole("button", { name: "Refresh" }));
       await waitFor(() => expect(ClosingEventSource.instances).toHaveLength(1));
       const feedCalls = () => fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/discover/feed")).length;
       const before = feedCalls();
       act(() => ClosingEventSource.instances[0]!.drop());
       await waitFor(() => expect(feedCalls()).toBe(before + 1));
       expect(await screen.findByText("READY")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Recommend 5 more" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled();
     });
 
     it("stops claiming to run, and says the outcome is unknown, when the service cannot answer", async () => {
       stub(() => new Response("{}", { status: 404 }));
       const user = userEvent.setup();
       render(<DiscoverPage />);
-      await user.click(await screen.findByRole("button", { name: "Recommend 5 more" }));
+      await user.click(await screen.findByRole("button", { name: "Refresh" }));
       await waitFor(() => expect(ClosingEventSource.instances).toHaveLength(1));
       act(() => ClosingEventSource.instances[0]!.drop());
       expect(await screen.findByRole("alert")).toHaveTextContent("Lost contact with the running operation");
@@ -798,3 +801,170 @@ describe("design-port review fixes", () => {
     });
   });
 });
+
+describe("automatic refresh and continuous pages (D-018)", () => {
+  class ScriptedEventSource {
+    static instances: ScriptedEventSource[] = [];
+    listeners = new Map<string, Array<(event: Event) => void>>();
+    constructor(readonly url: string) { ScriptedEventSource.instances.push(this); }
+    addEventListener(type: string, listener: (event: Event) => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]); }
+    close() {}
+    emit(type: string, data: unknown) { for (const listener of this.listeners.get(type) ?? []) listener(new MessageEvent(type, { data: JSON.stringify(data) })); }
+  }
+  const titles = (count: number) => Array.from({ length: count }, (_, index) => ({
+    ...FEED.recommendations[0]!, mal_id: 40_000 + index, display_title: `Pick ${index + 1}`, rank: index + 1,
+    fit_rank: index + 1, fit_pool_size: 22_000, fit_top_percent: null, ranking_id: "r".repeat(64), why: null,
+  }));
+
+  function stubProfile(feeds: Feed[]) {
+    ScriptedEventSource.instances = [];
+    vi.stubGlobal("EventSource", ScriptedEventSource);
+    let read = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/discover/feed")) {
+        const feed = feeds[Math.min(read, feeds.length - 1)]!;
+        read += 1;
+        return new Response(JSON.stringify(feed), { headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/operations/") && init?.method === "POST") {
+        const kind = url.split("/").at(-1);
+        return new Response(JSON.stringify({ id: `${kind}-1`, kind, profile_id: "p", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+  const profileFeed = (count: number): Feed => ({ ...FEED, source: "profile", ephemeral: false, state_profile_id: "p", recommendations: titles(count) });
+  const posted = (fetchMock: ReturnType<typeof vi.fn>) => fetchMock.mock.calls
+    .filter(([, init]) => (init as RequestInit | undefined)?.method === "POST")
+    .map(([input, init]) => [String(input).split("/").at(-1), JSON.parse(String((init as RequestInit).body ?? "{}"))]);
+
+  it("continues the ranking with the next 50 from the last page and lands on the new page", async () => {
+    const fetchMock = stubProfile([profileFeed(50), profileFeed(100)]);
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    expect(await screen.findByRole("heading", { name: "Pick 50" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next page, load the next 50 recommendations" }));
+    await waitFor(() => expect(ScriptedEventSource.instances).toHaveLength(1));
+    expect(posted(fetchMock).at(-1)).toEqual(["more-recommendations", expect.objectContaining({ count: 50 })]);
+    act(() => ScriptedEventSource.instances[0]!.emit("finished", { state: "succeeded" }));
+    expect(await screen.findByRole("heading", { name: "Pick 51" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pick 1" })).not.toBeInTheDocument();
+  });
+
+  it("refreshes a profile's feed once per session when the workspace opens it, never the sample", async () => {
+    sessionStorage.clear();
+    const fetchMock = stubProfile([profileFeed(3)]);
+    const { unmount } = render(<DiscoverPage autoRefresh />);
+    await waitFor(() => expect(posted(fetchMock)).toEqual([["refresh", expect.objectContaining({ count: 50 })]]));
+    act(() => ScriptedEventSource.instances[0]!.emit("finished", { state: "succeeded" }));
+    unmount();
+    render(<DiscoverPage autoRefresh />);
+    await screen.findByRole("heading", { name: "Pick 1" });
+    expect(posted(fetchMock)).toHaveLength(1);
+
+    sessionStorage.clear();
+    const sampleFetch = stubProfile([FEED]);
+    render(<DiscoverPage autoRefresh />);
+    await screen.findAllByRole("article");
+    expect(posted(sampleFetch)).toEqual([]);
+  });
+});
+
+describe("automatic refresh review fixes", () => {
+  class Source {
+    static instances: Source[] = [];
+    listeners = new Map<string, Array<(event: Event) => void>>();
+    constructor(readonly url: string) { Source.instances.push(this); }
+    addEventListener(type: string, listener: (event: Event) => void) { this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]); }
+    close() {}
+    emit(type: string, data: unknown) { for (const listener of this.listeners.get(type) ?? []) listener(new MessageEvent(type, { data: JSON.stringify(data) })); }
+  }
+  const picks = (count: number) => Array.from({ length: count }, (_, index) => ({
+    ...FEED.recommendations[0]!, mal_id: 50_000 + index, display_title: `Pick ${index + 1}`, rank: index + 1,
+    fit_rank: index + 1, fit_pool_size: 22_000, fit_top_percent: null, ranking_id: "r".repeat(64), why: null,
+  }));
+  const profileFeed = (count: number): Feed => ({ ...FEED, source: "profile", ephemeral: false, state_profile_id: "p", recommendations: picks(count) });
+  function stub(feeds: Feed[]) {
+    Source.instances = [];
+    vi.stubGlobal("EventSource", Source);
+    let read = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/discover/feed")) {
+        const feed = feeds[Math.min(read, feeds.length - 1)]!;
+        read += 1;
+        return new Response(JSON.stringify(feed), { headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/operations/") && init?.method === "POST") {
+        const kind = url.split("/").at(-1);
+        return new Response(JSON.stringify({ id: `${kind}-${Source.instances.length}`, kind, profile_id: "p", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+  const kinds = (fetchMock: ReturnType<typeof vi.fn>) => fetchMock.mock.calls
+    .filter(([, init]) => (init as RequestInit | undefined)?.method === "POST")
+    .map(([input]) => String(input).split("/").at(-1));
+  const stale = { code: "invalid_request", title: "Feed is out of date", description: "Generate a new feed to see more recommendations.", solution: "", retryable: false };
+
+  it("lands on the page holding the first new pick when fewer than a full last page were shown", async () => {
+    stub([profileFeed(73), profileFeed(123)]);
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await screen.findByRole("heading", { name: "Pick 1" });
+    await user.click(screen.getByRole("button", { name: "Next recommendations page" }));
+    await user.click(screen.getByRole("button", { name: "Next page, load the next 50 recommendations" }));
+    await waitFor(() => expect(Source.instances).toHaveLength(1));
+    act(() => Source.instances[0]!.emit("finished", { state: "succeeded" }));
+    expect(await screen.findByRole("heading", { name: "Pick 74" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pick 51" })).toBeInTheDocument();
+  });
+
+  it("rebuilds once on a stale refusal, then reports a second refusal in the service's own words", async () => {
+    const fetchMock = stub([profileFeed(3)]);
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: "Next page, load the next 50 recommendations" }));
+    await waitFor(() => expect(Source.instances).toHaveLength(1));
+    act(() => Source.instances[0]!.emit("error", stale));
+    await waitFor(() => expect(kinds(fetchMock)).toEqual(["more-recommendations", "refresh"]));
+    await waitFor(() => expect(Source.instances).toHaveLength(2));
+    act(() => Source.instances[1]!.emit("finished", { state: "failed" }));
+    await user.click(screen.getByRole("button", { name: "Next page, load the next 50 recommendations" }));
+    await waitFor(() => expect(Source.instances).toHaveLength(3));
+    act(() => Source.instances[2]!.emit("error", stale));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Feed is out of date");
+    expect(alert).not.toHaveTextContent("rebuilding");
+    expect(kinds(fetchMock)).toEqual(["more-recommendations", "refresh", "more-recommendations"]);
+  });
+
+  it("refreshes an active profile that has no feed yet, although the sample library is shown", async () => {
+    sessionStorage.clear();
+    const fetchMock = stub([FEED]);
+    render(<DiscoverPage autoRefresh activeProfileId="p" />);
+    await waitFor(() => expect(kinds(fetchMock)).toEqual(["refresh"]));
+  });
+
+  it("does not repeat a reconnect advice the web client cannot follow", async () => {
+    stub([profileFeed(3)]);
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(Source.instances).toHaveLength(1));
+    act(() => Source.instances[0]!.emit("error", {
+      code: "auth_error", title: "Account connection problem",
+      description: "The MyAnimeList connection is unavailable or no longer valid.",
+      solution: "Reconnect your MyAnimeList account and retry the operation.", retryable: true,
+    }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The MyAnimeList connection is unavailable or no longer valid.");
+    expect(alert).not.toHaveTextContent(/reconnect/i);
+  });
+});
+

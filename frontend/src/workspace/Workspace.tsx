@@ -87,7 +87,8 @@ export function Workspace() {
         <p>Sample data. These are bundled demonstration picks, not your own.</p>
       </div> : null}
       <DiscoverPage surface={page === "discover" || page === "library" ? page : "inactive"}
-        onFeedChange={onFeedChange} onOperationStarted={shell.nudge} />
+        onFeedChange={onFeedChange} onOperationStarted={shell.nudge} autoRefresh
+        activeProfileId={shell.system?.profile?.profile_id ?? null} />
       <div hidden={page !== "profile"}>{visited.has("profile") ? <ProfilePage /> : null}</div>
       <div hidden={page !== "compare"}>{visited.has("compare") ? <ComparePage /> : null}</div>
       <div hidden={page !== "settings"}>{visited.has("settings") ? <SettingsPage /> : null}</div>

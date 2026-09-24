@@ -68,7 +68,7 @@ function Preferences({ initial }: { initial: SettingsRead }) {
               <output aria-hidden="true">{draft.adventurousness}</output>
             </div>
           </Row>
-          <Row legend="BATCH SIZE"><input type="number" required min={1} max={150} aria-label="Batch size" value={draft.batch_size} onChange={e => set("batch_size", Number(e.target.value))} /></Row>
+          <Row legend="BATCH SIZE" hint="Applies to the desktop app. The web client shows 50 per page and continues the same ranking on the next page."><input type="number" required min={1} max={150} aria-label="Batch size" value={draft.batch_size} onChange={e => set("batch_size", Number(e.target.value))} /></Row>
           <Row legend="MIN MAL SCORE" hint="Leave blank for any score.">
             <input type="number" min={0} max={10} step="0.1" aria-label="Minimum MAL score" placeholder="Any" value={draft.minimum_mal_score ?? ""} onChange={e => set("minimum_mal_score", e.target.value === "" ? null : Number(e.target.value))} />
           </Row>

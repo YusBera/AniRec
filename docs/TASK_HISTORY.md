@@ -7,6 +7,44 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Automatic feed refresh and continuous pages (D-018)
+
+"Recommend 5 more" and the stale-feed "Generate a new feed" button are
+replaced.
+- **Refresh:** a `refresh` operation, run automatically once per session and
+  from a small Refresh button. It syncs the list, then rebuilds the feed only
+  when it is missing, stale, or ranked by a different engine.
+- **Pages:** 50 per page, and "Next page" continues the same ranking with the
+  next 50.
+- **Shared check:** "more" and refresh now use one currency check
+  (`_snapshot_is_current`).
+
+*Verification:*
+- 6 new pipeline and API tests:
+  - a missing feed is generated;
+  - a current feed is kept untouched and still continuable;
+  - a changed list is rebuilt;
+  - an engine change is rebuilt;
+  - a pre-snapshot feed is rebuilt;
+  - the API accepts the kind.
+- Frontend tests:
+  - "Next page" continues and lands on the new page;
+  - the automatic refresh runs once per session, never on the sample feed;
+  - a stale refusal triggers a refresh.
+- `npm run ci` and the full `pytest`.
+
+A review found three blockers, all fixed before commit:
+- a restart read the model version as "unloaded";
+- daily community drift in the list changed the digest;
+- the rebuild did not rank like a full run.
+
+Tests pin each one:
+- a bundle-backed engine is named before ranking;
+- community drift stays "current";
+- a rebuilt feed equals `run_full` with the recommendation graph.
+
+---
+
 ## 2026-09-24 - Review of the PySide design port (PR #5)
 
 Applied the user's decisions (D-017) and the review's findings; details are in

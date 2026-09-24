@@ -26,6 +26,7 @@ try:
         FallbackRankingEngine,
         HeuristicRankingEngine,
         OnnxSequenceRankingEngine,
+        RankingEngineUnavailable,
     )
     from ..scoring.eligibility import (
         EligibilityAudit,
@@ -61,6 +62,7 @@ except ImportError:  # Compatibility with the S01 top-level test import path.
         FallbackRankingEngine,
         HeuristicRankingEngine,
         OnnxSequenceRankingEngine,
+        RankingEngineUnavailable,
     )
     from scoring.eligibility import (
         EligibilityAudit,
@@ -95,6 +97,26 @@ class RecommendationService:
         self._eligibility_policy = eligibility_policy or FinalEligibilityPolicy()
         self._last_ranking_metadata: RankingEngineMetadata | None = None
         self._last_eligibility_audit: EligibilityAudit | None = None
+
+    def engine_identity(self) -> tuple[str, str]:
+        """The engine and version that would rank a feed now.
+
+        With a fallback router that is the preferred engine when it can load,
+        and the fallback when it cannot. It is compared against the engine a
+        saved feed records, so a feed ranked by a fallback is rebuilt once the
+        preferred engine is available again, and a model swap is noticed
+        before anything is ranked.
+        """
+        preferred = getattr(self._ranker, "preferred_engine", self._ranker)
+        load = getattr(preferred, "eligibility_context", None)
+        try:
+            if callable(load):
+                load()
+        except RankingEngineUnavailable:
+            fallback = getattr(self._ranker, "fallback_engine", None)
+            if fallback is not None:
+                return str(fallback.engine_id), str(fallback.engine_version)
+        return str(preferred.engine_id), str(preferred.engine_version)
 
     @property
     def last_ranking_metadata(self) -> RankingEngineMetadata | None:

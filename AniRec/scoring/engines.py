@@ -204,7 +204,11 @@ class OnnxSequenceRankingEngine:
 
     @property
     def engine_version(self) -> str:
-        if not self._loaded:
+        # The manifest names the checkpoint as soon as the bundle is read; the
+        # model session is not needed for that. Reporting "unloaded" until
+        # the first ranking made every refresh after a restart look like a
+        # model change (D-018).
+        if not self._bundle_loaded:
             return "unloaded"
         checkpoint = self._manifest.get("checkpoint", {})
         return str(checkpoint.get("sha256") or "unknown")[:12]
@@ -783,6 +787,14 @@ class FallbackRankingEngine:
     def __init__(self, preferred: RankingEngine, fallback: RankingEngine) -> None:
         self._preferred = preferred
         self._fallback = fallback
+
+    @property
+    def preferred_engine(self) -> RankingEngine:
+        return self._preferred
+
+    @property
+    def fallback_engine(self) -> RankingEngine:
+        return self._fallback
 
     @property
     def requires_user_history(self) -> bool:

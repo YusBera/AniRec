@@ -105,6 +105,55 @@ web-first.
 
 ---
 
+## D-018 - Feeds refresh automatically; pages continue the ranking
+**2026-09-24 - Accepted (user decision). Replaces "Recommend 5 more".**
+
+**Refresh.** The web client never asks the reader to generate a feed. The
+`refresh` operation runs:
+- automatically, once per browser session, when a profile's feed opens;
+- from a small **Refresh** button.
+
+It fetches what a full run fetches, once, then rebuilds the feed only when
+one of these holds:
+- there is no feed, including a profile whose feed has never been built
+  (it is shown the sample library until then);
+- **the reader's own list data** changed: titles, statuses, scores, episodes
+  watched, rewatching or update times. The same holds for feedback,
+  eligibility filters, or the generated candidates and taste profile. "More"
+  uses the same digest. Daily drift in community columns (mean score,
+  scorer counts, pictures) deliberately does not count;
+- a different engine would rank now (`engine_identity`, read from the bundle
+  manifest, so a restart is not a change). This includes a feed ranked by
+  the fallback once the preferred model loads again.
+
+**What a rebuild runs:** the full run's own generation (`_generate_feed`),
+so a rebuilt feed ranks exactly as a full run does:
+- taste learned from real ratings;
+- fresh similar-viewer and franchise signals;
+- one snapshot.
+
+**What a refresh costs:** the reader's list and history, usually two paged
+MyAnimeList requests with a model bundle. A rebuild also refreshes the
+similar-viewer signal, which fetches only seeds not yet in the profile's
+graph cache. Otherwise the list data is saved as a sync saves it, and the
+feed, its ranking and its timestamps stay exactly as they were.
+
+**Pages.** A refresh generates 50 titles, and the web client shows 50 per
+page. "Next page" on the last loaded page continues the same ranking with
+the next 50 (the existing `more-recommendations` operation), and the reader
+lands on the first new page. If "more" refuses a stale feed, the client
+starts one refresh by itself instead of showing a button.
+
+The Settings "Batch size" applies to the desktop app.
+
+*Why:* a batch button was an artefact of small, randomly sampled heuristic
+feeds. The sequence model ranks tens of thousands of titles
+deterministically, so the next picks are simply the next page of one
+ranking. Refreshing on open, and only when something changed, removes the
+stale-feed dead end and keeps every page on one ranking.
+
+---
+
 ## D-017 - What the web client does not port
 **2026-09-24 - Accepted (user decisions, made while reviewing PR #5).**
 
@@ -113,10 +162,8 @@ The web client leaves out:
 - **Connecting a MyAnimeList account.** No Client ID entry and no OAuth step,
   and no copy that offers or promises a connection. A later username-only
   import (D-014) would be a separate decision.
-- **RUN ANALYSIS.** Feeds are not generated from a Discover button. The only
-  way to start a full generation is the recovery action shown when "more"
-  refuses a stale feed. How feeds are produced is open (NEXT_GOALS, "Before
-  a public launch").
+- **RUN ANALYSIS.** Feeds are not generated from a Discover button. They
+  refresh automatically (D-018).
 - **The Discover taste vector.** The feed is ranked by a sequence model that
   never sees genres, so "You tend to enjoy ..." above it would read as the
   feed's reason (D-012). The reader's taste is described on Profile. The API

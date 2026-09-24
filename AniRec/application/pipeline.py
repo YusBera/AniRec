@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import threading
 from dataclasses import replace
 from collections.abc import Callable
@@ -130,12 +131,21 @@ SIGNAL_RANKING_ENGINE = "ranking-engine"
 SIGNAL_RANKING_ID = "ranking-id"
 SIGNAL_FILTERS = "eligibility-filters"
 # Files whose content decides a ranking; a sync or a regenerated step changes it.
-RANKING_INPUT_FILES = (
-    "genre_importance.csv",
-    "recommendation_candidates.csv",
-    "completed_anime.csv",
-    "user_history.csv",
+# What decides whether a ranking is still current: only what the reader did
+# (D-018). The catalogue and community columns in these files (mean score,
+# scorer counts, pictures) drift every day; hashing whole files made nearly
+# every sync look like a change and swapped the feed under the reader.
+USER_INPUT_COLUMNS = (
+    ("completed_anime.csv", ("Anime ID", "Status", "User Score")),
+    (
+        "user_history.csv",
+        ("Anime ID", "Status", "User Score", "Episodes Watched", "Is Rewatching", "Updated At"),
+    ),
 )
+# Files a ranking is computed from that only a generation writes: hashed byte
+# for byte, so a changed (or tampered) candidate pool or taste profile still
+# makes "more" refuse, while a sync, which never writes them, cannot churn them.
+GENERATED_INPUT_FILES = ("genre_importance.csv", "recommendation_candidates.csv")
 STALE_FEED_MESSAGE = (
     "Your MyAnimeList data, feedback, filters or saved candidates changed "
     "since this feed was generated. Generate a new feed to see more "
@@ -281,7 +291,26 @@ class PipelineOrchestrator:
         directory = self._profiles.directory(profile.profile_id, create=True)
         started_at = self._timestamp()
         credentials = self._checked_credentials(token, access_token_provider)
+        candidate_catalogue, completed, history = self._fetch_inputs(
+            username, settings, token, credentials, progress_callback
+        )
+        return self._generate_feed(
+            profile,
+            directory,
+            settings,
+            token,
+            credentials,
+            progress_callback,
+            candidate_catalogue=candidate_catalogue,
+            completed=completed,
+            history=history,
+            genre_adjustments=genre_adjustments,
+            excluded_mal_ids=excluded_mal_ids,
+            started_at=started_at,
+        )
 
+    def _fetch_inputs(self, username, settings, token, credentials, progress_callback):
+        """Steps 1 and 2 of a full run: the catalogue, the list and its history."""
         self._emit(progress_callback, "fetch_top", 1, 6)
         token.raise_if_cancelled()
         candidate_catalogue = self._load_candidate_catalogue(
@@ -302,7 +331,31 @@ class PipelineOrchestrator:
             username, settings, credentials, token
         )
         token.raise_if_cancelled()
+        return candidate_catalogue, completed, history
 
+    def _generate_feed(
+        self,
+        profile,
+        directory: Path,
+        settings: PipelineSettings,
+        token: CancellationToken,
+        credentials,
+        progress_callback,
+        *,
+        candidate_catalogue: pd.DataFrame,
+        completed: pd.DataFrame,
+        history,
+        genre_adjustments,
+        excluded_mal_ids,
+        started_at,
+        extra_user_stats: dict | None = None,
+    ) -> PipelineResult:
+        """Steps 3 to 6 of a full run, from already fetched inputs.
+
+        A full run and a refresh rebuild both come here, so a rebuilt feed is
+        ranked exactly as a full run ranks it: taste learned from real
+        ratings, fresh similar-viewer and franchise signals, one snapshot.
+        """
         self._emit(progress_callback, "impute_scores", 3, 6)
         token.raise_if_cancelled()
         imputed = self._recommendations.impute_missing_scores(completed)
@@ -400,10 +453,13 @@ class PipelineOrchestrator:
                     candidate_catalogue
                 ),
                 "recommendation_count": len(ranked),
+                # A new feed: no batch has been added to it yet.
+                "added_recommendation_count": 0,
                 **self._ranking_user_stats(
                     ranking_metadata,
                     eligibility_audit,
                 ),
+                **(extra_user_stats or {}),
             },
             generated_files=tuple(str(path) for path in generated_paths),
             started_at=started_at,
@@ -446,18 +502,9 @@ class PipelineOrchestrator:
         candidate_catalogue = self._read_candidate_catalogue(directory)
         fallback_candidates = candidates
         snapshot = self._read_ranking_snapshot(directory)
-        if (
-            snapshot is None
-            or snapshot["digest"] != self._ranking_inputs_digest(directory, genre_adjustments)
-            or snapshot["filters"] != self._filters_label(settings)
-            or any(
-                item.ranking_id != snapshot["ranking_id"]
-                for item in existing_recommendations
-            )
+        if not self._snapshot_is_current(
+            directory, settings, existing_recommendations, genre_adjustments, snapshot
         ):
-            # Either the inputs changed, or the feed on screen is not the one
-            # this snapshot ranked (an older feed, or a snapshot written for a
-            # feed that was never saved).
             raise DataError(STALE_FEED_MESSAGE)
         collaborative = snapshot["collaborative"]
         franchise_ids = snapshot["franchise"]
@@ -543,6 +590,70 @@ class PipelineOrchestrator:
             completed_at=self._timestamp(),
         )
 
+    def run_refresh(
+        self,
+        username: str,
+        settings: PipelineSettings,
+        *,
+        existing: PipelineResult | None,
+        count: int,
+        progress_callback: Callable[[PipelineProgress], None] | None = None,
+        cancellation_token: CancellationToken | None = None,
+        profile_override: UserProfile | None = None,
+        access_token_provider: Callable[[], str] | None = None,
+    ) -> PipelineResult:
+        """Bring the saved feed up to date (D-018).
+
+        Fetches exactly what a full run fetches, once. The feed is rebuilt when
+        there is none, when the reader's own list data, feedback or filters
+        changed, or when a different engine would rank now. The rebuild is the
+        full run's own generation, so it ranks exactly as a full run does.
+        Otherwise the fresh list data is saved as a sync saves it, and the
+        result carries no recommendations and no timestamps, so the saved feed
+        and its ranking stay exactly as they were.
+        """
+        token = cancellation_token or CancellationToken()
+        profile = profile_override or self._profiles.resolve_profile(username)
+        if profile.username.casefold() != username.strip().casefold():
+            raise DataError("The selected profile does not match the requested MAL username.")
+        directory = self._profiles.directory(profile.profile_id, create=True)
+        started_at = self._timestamp()
+        credentials = self._checked_credentials(token, access_token_provider)
+        candidate_catalogue, completed, history = self._fetch_inputs(
+            username, settings, token, credentials, progress_callback
+        )
+        reason = self._refresh_reason(
+            directory,
+            settings,
+            existing,
+            {"completed_anime.csv": completed, "user_history.csv": history},
+        )
+        if reason is None:
+            sources = [
+                (candidate_catalogue, directory / CANDIDATE_CATALOGUE_FILENAME),
+                (completed, directory / "completed_anime.csv"),
+            ]
+            if history is not None and not history.empty:
+                sources.append((history, directory / "user_history.csv"))
+            self._storage.write_batch(tuple(sources), cancellation_check=token.raise_if_cancelled)
+            self._profiles.mark_synced(profile)
+            return PipelineResult(user_stats={"feed_refresh": "current"})
+        return self._generate_feed(
+            profile,
+            directory,
+            replace(settings, recommendation_count=max(1, int(count))),
+            token,
+            credentials,
+            progress_callback,
+            candidate_catalogue=candidate_catalogue,
+            completed=completed,
+            history=history,
+            genre_adjustments=None,
+            excluded_mal_ids=None,
+            started_at=started_at,
+            extra_user_stats={"feed_refresh": reason},
+        )
+
     def run_step(
         self,
         step_id: str,
@@ -553,6 +664,7 @@ class PipelineOrchestrator:
         cancellation_token: CancellationToken | None = None,
         excluded_mal_ids: set[int] | frozenset[int] | None = None,
         genre_adjustments: dict[str, float] | None = None,
+        profile_override: UserProfile | None = None,
     ) -> PipelineResult:
         """Run one step. ``excluded_mal_ids`` (hidden titles) and
         ``genre_adjustments`` apply to "generate_recommendations" exactly as
@@ -561,7 +673,9 @@ class PipelineOrchestrator:
             raise ValueError(f"Unknown pipeline step: {step_id}")
 
         token = cancellation_token or CancellationToken()
-        profile = self._profiles.resolve_profile(username)
+        profile = profile_override or self._profiles.resolve_profile(username)
+        if profile.username.casefold() != username.strip().casefold():
+            raise DataError("The selected profile does not match the requested MAL username.")
         directory = self._profiles.directory(profile.profile_id, create=True)
         started_at = self._timestamp()
         self._emit(progress_callback, step_id, 1, 1)
@@ -909,14 +1023,41 @@ class PipelineOrchestrator:
         return snapshot
 
     @staticmethod
-    def _ranking_inputs_digest(directory: Path, genre_adjustments) -> str:
-        """Content digest of every input that decides the feed's ranking."""
+    def _canonical(value) -> str:
+        """One spelling per value, so a CSV round trip does not look like an edit."""
+        if value is None:
+            return ""
+        text = str(value).strip()
+        if text.casefold() in {"true", "false"}:
+            return text.casefold()
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+        if math.isnan(number):
+            return ""
+        return str(int(number)) if number.is_integer() else repr(number)
+
+    def _user_inputs_digest(self, directory: Path, frames: dict, genre_adjustments) -> str:
+        """Digest of the reader's own list data, the generated ranking inputs,
+        and the reader's feedback."""
         digest = hashlib.sha256()
-        for name in RANKING_INPUT_FILES:
+        for name in GENERATED_INPUT_FILES:
             path = directory / name
             digest.update(name.encode("utf-8") + b"\0")
             digest.update(path.read_bytes() if path.exists() else b"<absent>")
             digest.update(b"\0")
+        for name, columns in USER_INPUT_COLUMNS:
+            frame = frames.get(name)
+            digest.update(name.encode("utf-8") + b"\0")
+            if frame is None or frame.empty:
+                digest.update(b"<absent>\0")
+                continue
+            rows = sorted(
+                tuple(self._canonical(row.get(column)) for column in columns)
+                for row in frame.to_dict("records")
+            )
+            digest.update(json.dumps(rows).encode("utf-8") + b"\0")
         adjustments = sorted(
             (str(genre).strip().casefold(), round(float(value), 9))
             for genre, value in (genre_adjustments or {}).items()
@@ -924,6 +1065,60 @@ class PipelineOrchestrator:
         )
         digest.update(json.dumps(adjustments).encode("utf-8"))
         return digest.hexdigest()
+
+    def _ranking_inputs_digest(self, directory: Path, genre_adjustments) -> str:
+        """The same digest, read back from the profile's saved files."""
+        frames = {
+            name: pd.read_csv(directory / name) if (directory / name).exists() else None
+            for name, _columns in USER_INPUT_COLUMNS
+        }
+        return self._user_inputs_digest(directory, frames, genre_adjustments)
+
+    def _snapshot_is_current(
+        self, directory: Path, settings: PipelineSettings, recommendations,
+        genre_adjustments, snapshot,
+    ) -> bool:
+        """Whether ``recommendations`` are still exactly what their snapshot ranked.
+
+        False when the inputs or the eligibility filters changed, or when the
+        feed is not the one this snapshot ranked (an older feed, or a snapshot
+        written for a feed that was never saved). "More" refuses to continue
+        such a feed; a refresh rebuilds it. One definition serves both.
+        """
+        return (
+            snapshot is not None
+            and snapshot["digest"] == self._ranking_inputs_digest(directory, genre_adjustments)
+            and snapshot["filters"] == self._filters_label(settings)
+            and all(item.ranking_id == snapshot["ranking_id"] for item in recommendations)
+        )
+
+    def _refresh_reason(
+        self,
+        directory: Path,
+        settings: PipelineSettings,
+        existing: PipelineResult | None,
+        fetched: dict,
+    ) -> str | None:
+        """Why the saved feed must be rebuilt, or None when it is current.
+
+        ``fetched`` is the list data just read from MyAnimeList, judged before
+        anything is written, with the same digest the snapshot recorded.
+        """
+        if existing is None or not existing.recommendations:
+            return "missing"
+        snapshot = self._read_ranking_snapshot(directory)
+        if (
+            snapshot is None
+            # The web client feeds no taste adjustments (D-013), so none here.
+            or snapshot["digest"] != self._user_inputs_digest(directory, fetched, None)
+            or snapshot["filters"] != self._filters_label(settings)
+            or any(item.ranking_id != snapshot["ranking_id"] for item in existing.recommendations)
+        ):
+            return "inputs-changed"
+        ranked_by = tuple(str(snapshot["engine"]).split(":")[:2])
+        if ranked_by != self._recommendations.engine_identity():
+            return "engine-changed"
+        return None
 
     @staticmethod
     def _engine_label(metadata, audit=None) -> str:

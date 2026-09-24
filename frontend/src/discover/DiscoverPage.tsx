@@ -41,6 +41,22 @@ export const NO_PROFILE_REASON = "Recommendation lists need a profile.";
 // Connecting an account from the web client is not possible (user decision,
 // 2026-09-24), so no copy here offers or promises one.
 export const RUN_UNAVAILABLE = "Not available for the sample library.";
+export const REFRESH_TITLE = "Check your MyAnimeList list and rebuild the feed if anything changed.";
+
+/** The profile a refresh already ran for in this browser session. */
+const REFRESHED_KEY = "anirec.feedRefreshed";
+function refreshedProfiles(): string[] {
+  try {
+    const stored: unknown = JSON.parse(sessionStorage.getItem(REFRESHED_KEY) ?? "[]");
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
+  } catch { return []; }
+}
+function refreshedThisSession(profileId: string): boolean {
+  return refreshedProfiles().includes(profileId);
+}
+function rememberRefreshed(profileId: string) {
+  try { sessionStorage.setItem(REFRESHED_KEY, JSON.stringify([...refreshedProfiles(), profileId])); } catch { /* private mode: refresh again next load */ }
+}
 
 interface Inspecting {
   malId: number | null;
@@ -58,8 +74,14 @@ export function feedbackSummary(feed: Feed): string {
   return `LISTS SAVED · ${saved} SAVED · ${setAside} SET ASIDE`;
 }
 
-export function DiscoverPage({ surface = "discover", onFeedChange, onOperationStarted }: {
+export function DiscoverPage({ surface = "discover", onFeedChange, onOperationStarted, autoRefresh = false, activeProfileId = null }: {
   surface?: "discover" | "library" | "inactive";
+  /** The service's active profile. A profile with no feed yet is served the
+   *  sample library, so this, not the feed, says whether a refresh can run. */
+  activeProfileId?: string | null;
+  /** Refresh the profile's feed once per session when it is opened (D-018).
+   *  The workspace turns this on; a bare page in a test does not. */
+  autoRefresh?: boolean;
   /** Lets the shell report SOURCE and the sample banner from the same feed. */
   onFeedChange?: (feed: Feed | null) => void;
   /** Lets the shell refresh ENGINE and ACTIVITY as soon as a run starts. */
@@ -83,10 +105,13 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
   const [feedbackError, setFeedbackError] = useState<{ message: string; retryable: boolean; vote: [number, Decision, boolean] } | null>(null);
   const controlsId = useId();
 
+  // The page "Next page" asked for while it continues the ranking.
+  const advanceTo = useRef<number | null>(null);
   const operation = useOperation((finished) => {
     // A successful run replaces the feed; a cancel or failure leaves what is
     // on screen alone rather than blanking it.
     if (finished === "succeeded") void reload({ quiet: true });
+    else advanceTo.current = null;
   });
 
   // A reloaded feed is a new ranking: an inspector still showing the old
@@ -112,7 +137,10 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
   const busy = operation.status.state === "running";
   const pending = saving || busy;
   const decisionsUnavailable = feed && !feed.ephemeral && !feed.state_profile_id ? NO_PROFILE_REASON : undefined;
+  // Continuing needs the profile's own feed; refreshing needs only a profile.
   const runUnavailable = !feed || feed.ephemeral || !feed.state_profile_id ? RUN_UNAVAILABLE : null;
+  const profileId = feed && !feed.ephemeral ? feed.state_profile_id : activeProfileId;
+  const refreshUnavailable = profileId ? null : RUN_UNAVAILABLE;
 
   const inspect = (model: RecommendationViewModel, list: RecommendationViewModel[]) => {
     if (surface === "discover") activity.record(model, "detail_open");
@@ -177,7 +205,18 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
     () => (feed ? filterAndSort(feed.recommendations.filter((m) => showHidden || !has(feed.state.hidden_mal_ids, m.mal_id)), filters, sortMode) : []),
     [feed, filters, sortMode, showHidden],
   );
-  useEffect(() => setPage(0), [feed?.activity_feed_id]);
+  // A new feed starts at page 1, except while "Next page" is continuing the
+  // ranking: then the reader lands on the first new page once it arrives.
+  useEffect(() => { if (advanceTo.current === null) setPage(0); }, [feed?.activity_feed_id]);
+  // While continuing, votes are locked, so the next feed read is the one the
+  // continuation produced: land on the page holding its first new pick if it
+  // grew, and stop waiting either way.
+  useEffect(() => {
+    if (advanceTo.current === null) return;
+    if (visible.length > advanceTo.current * PAGE_SIZE) setPage(advanceTo.current);
+    advanceTo.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feed]);
   const currentPage = Math.min(page, Math.max(0, Math.ceil(visible.length / PAGE_SIZE) - 1));
   const pageItems = visible.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const changePage = (next: number) => {
@@ -195,6 +234,36 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
   const start = (kind: string, payload: Record<string, unknown> = {}) => {
     void operation.start(kind, payload).then(() => onOperationStarted?.());
   };
+  const refresh = () => start("refresh", { count: PAGE_SIZE });
+  const loadMore = () => {
+    // The page holding the first new pick: with 73 shown, pick 74 is on page 2.
+    advanceTo.current = Math.floor(visible.length / PAGE_SIZE);
+    start("more-recommendations", { count: PAGE_SIZE });
+  };
+  const loadingMore = busy && operation.status.kind === "more-recommendations";
+
+  // Opening a profile checks its MyAnimeList list once per session and
+  // rebuilds the feed only if something changed, as the desktop does.
+  useEffect(() => {
+    if (!autoRefresh || !profileId || busy || refreshedThisSession(profileId)) return;
+    rememberRefreshed(profileId);
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh, profileId, busy]);
+
+  // "More" refuses a feed whose inputs changed since it was ranked. Rebuild
+  // it once instead of offering a button; a second refusal is shown as is.
+  const [recoveryTried, setRecoveryTried] = useState(false);
+  useEffect(() => {
+    if (!staleFeed || operation.status.kind !== "more-recommendations" || recoveryTried) return;
+    setRecoveryTried(true);
+    advanceTo.current = null;
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staleFeed, operation.status.kind]);
+  useEffect(() => {
+    if (operation.status.state === "succeeded") setRecoveryTried(false);
+  }, [operation.status.state]);
   const hiddenInFeed = feed ? feed.recommendations.some((m) => has(feed.state.hidden_mal_ids, m.mal_id)) : false;
   // Also exhausted when a reload returns no titles because every one is
   // marked Not interested (the server then reports them only in hidden_count).
@@ -233,9 +302,9 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
                 {busy ? (
                   <button type="button" className="btn" onClick={() => void operation.cancel()}>Cancel</button>
                 ) : (
-                  <button type="button" className="btn" disabled={!!runUnavailable || saving}
-                    title={runUnavailable ?? "Generate five more unseen picks from the same ranking."}
-                    onClick={() => start("more-recommendations", { count: 5 })}>Recommend 5 more</button>
+                  <button type="button" className="btn refresh-feed" disabled={!!refreshUnavailable || saving}
+                    title={refreshUnavailable ?? REFRESH_TITLE} onClick={refresh}>
+                    <Icon name="refresh" />Refresh</button>
                 )}
                 {!feed.ephemeral ? <details className="menu">
                   <summary className="btn" title={activity.enabled ? "Saved locally only; retained for up to 90 days and 50,000 events" : "Optional recommendation activity stored on this device only"}>Activity</summary>
@@ -273,16 +342,19 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
                   <span className="lbl">{progress?.total ? `${progress.current}/${progress.total}` : ""}</span>
                 </div>
               ) : null}
-              {opError ? staleFeed ? (
+              {/* Before the one automatic rebuild starts, say so; after it,
+                  a refusal or failure is shown in the service's own words. */}
+              {opError ? staleFeed && !recoveryTried ? (
                 <div className="operation-error" role="alert">
-                  <strong>{opError.title}</strong>
-                  <span>{[opError.description, opError.solution].filter(Boolean).join(" ")}</span>
-                  <button type="button" className="btn" disabled={saving} onClick={() => start("recommendation")}>Generate a new feed</button>
+                  <strong>This feed is out of date</strong>
+                  <span>AniRec is rebuilding it now.</span>
                 </div>
               ) : (
                 <div className="operation-error" role="alert">
                   <strong>{opError.title}</strong>
-                  <span>{[opError.description, opError.solution].filter(Boolean).join(" ")}</span>
+                  {/* The service's advice for an account problem is to
+                      reconnect, which the web client cannot do (D-017). */}
+                  <span>{[opError.description, opError.code === "auth_error" ? "" : opError.solution].filter(Boolean).join(" ")}</span>
                 </div>
               ) : null}
             </div>
@@ -304,10 +376,10 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
               {visible.length === 0 ? (
                 exhausted ? (
                   <EmptyPanel icon="folder-watch-later" title="You’re all caught up"
-                    message="Every current pick has been dealt with. Generate 10 fresh anime, or revisit what you saved for later.">
+                    message="Every current pick has been dealt with. Continue with the next picks, or revisit what you saved for later.">
                     {feed.state.watch_later_mal_ids.length ? <a className="btn" href="#/library">Review saved anime</a> : null}
                     <button type="button" className="btn primary" disabled={!!runUnavailable || pending} title={runUnavailable ?? undefined}
-                      onClick={() => start("more-recommendations", { count: 10 })}>Recommend 10 new anime</button>
+                      onClick={loadMore}>Show the next {PAGE_SIZE}</button>
                   </EmptyPanel>
                 ) : isActive(filters) ? (
                   <EmptyPanel icon="search" title="No matches found"
@@ -324,7 +396,10 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
                   trackActivity={surface === "discover" && view === "cards"}
                   onDetails={(model) => inspect(model, visible)} onExternal={external} onVote={vote} />
               )}
-              <PageControls page={currentPage} total={visible.length} onPageChange={changePage} label="Recommendations" />
+              <PageControls page={currentPage} total={visible.length} onPageChange={changePage} label="Recommendations"
+                onLoadMore={feed && !feed.ephemeral && feed.state_profile_id ? loadMore : undefined}
+                loadMoreUnavailable={busy && !loadingMore ? "Another operation is running." : saving ? "A decision is being saved." : null}
+                loadingMore={loadingMore} />
             </section>
           </>
         ) : state === "loading" ? (
