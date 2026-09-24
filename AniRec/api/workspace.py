@@ -27,6 +27,7 @@ from ..presentation.taste_profile import (
 from ..presentation.compatibility import (
     CompatibilityReport, CompatibilityUnavailable, SampleCompatibilityProvider,
 )
+from ..services.account_service import AccountError
 from .accounts import ReaderScope, resolve_scope
 from .container import ApiContainer
 from .models import ApiModel, RecommendationViewModelResponse
@@ -195,8 +196,12 @@ def workspace_router(services: ApiContainer) -> APIRouter:
 
     def is_owner(scope: ReaderScope) -> bool:
         account = scope.account
-        return (account is not None and account.registered
-                and services.accounts.owner_account_id() == account.account_id)
+        if account is None or not account.registered:
+            return False
+        try:
+            return services.accounts.owner_account_id() == account.account_id
+        except AccountError:
+            return False
 
     @router.get("/settings", response_model=SettingsReadResponse)
     def settings(scope: ReaderScope = Depends(reader)) -> SettingsReadResponse:

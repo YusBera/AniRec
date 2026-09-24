@@ -56,8 +56,8 @@ A guest session that is never registered expires. Its data is kept, unreachable,
 until a later phase prunes it; nothing is deleted in phase 1. **Pruning is a
 launch gate for any hosted deployment** (phase 2).
 
-Guest creation and imports are capped process-wide (20 new guests and 30
-imports per hour); past the cap the reason is `busy`. Each import costs a
+New accounts (guest or registered) and imports are each capped process-wide
+at 30 per hour; past the cap the reason is `busy`. Each import costs a
 MyAnimeList call made with the installation's Client ID, so an unbounded
 stream of them would spend the installation's rate limit.
 
@@ -110,7 +110,7 @@ imports get `profile_id = "imp_" + 32 hex characters`, never a MAL-derived ID.
 
 - Cookie `anirec_session`: 32 random bytes, URL-safe; `HttpOnly`,
   `SameSite=Lax`, `Path=/`, `Secure` when the request arrived over HTTPS.
-  30-day expiry, extended when used (at most once an hour, to limit writes).
+  The session and the cookie both expire 30 days after sign-in.
 - **Every sign-in, registration and sign-out issues a new token and deletes
   every other session of the account it leaves** (a guest's included), so a
   cookie planted before the reader signed in never reaches their account.
@@ -241,6 +241,16 @@ server error.
 - Registering reveals whether an email already has an account.
 - `Secure` is set only when the request itself arrived over HTTPS; behind a
   reverse proxy that needs trusted proxy headers (a hosted-launch gate).
+- The per-hour caps and the per-minute sign-in failure window are
+  process-wide, so a stream of junk registrations or wrong passwords can
+  block everyone for that window. Acceptable locally; a hosted launch needs
+  per-client limits (phase 2).
+- `POST /api/system/shutdown` is origin-checked but open to any visitor, and
+  `profile-lookup` and live Compare spend the installation's Client ID with
+  no cap. Both are hosted-launch gates (phase 2).
+- Imports a guest brings to an account that already has an active one are
+  kept but not reachable until import switching exists (phase 2); the
+  sign-in notice says so.
 - The desktop shell (Tauri) does not exist yet. Its webview origin is
   cross-site to the API, so a `SameSite=Lax` cookie would not reach it; it
   will need the session in a header, decided when that shell is built.
@@ -248,9 +258,11 @@ server error.
 ## Later phases
 
 2. **Account management:** change password (revokes other sessions), delete
-   account (and its imports), export, reader preferences split from
-   installation settings, pruning of expired guest accounts' data, trusted
-   proxy headers. Required before any hosted launch.
+   account (and its imports), export, switching between an account's
+   imports, reader preferences split from installation settings, pruning of
+   expired guest accounts' data, trusted proxy headers, per-client rate
+   limits, an owner-only shutdown route, caps on lookup and Compare. Required
+   before any hosted launch.
 3. **Google:** OpenID Connect authorization code flow with PKCE and `state`
    and `nonce`; the ID token is verified against Google's published keys. It
    needs a Google Cloud OAuth client that the owner creates; the code reads

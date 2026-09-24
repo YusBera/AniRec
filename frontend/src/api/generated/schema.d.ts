@@ -412,6 +412,12 @@ export interface components {
         AccountResponse: {
             account?: components["schemas"]["AccountSummary"] | null;
             /**
+             * Moved Imports
+             * @description Lists a guest brought along when signing in to this account.
+             * @default 0
+             */
+            moved_imports: number;
+            /**
              * Reason
              * @description invalid-email, weak-password, password-too-long, email-taken, wrong-credentials, too-many-attempts, already-signed-in, busy or unavailable.
              */

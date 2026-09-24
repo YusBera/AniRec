@@ -36,8 +36,8 @@ from ..infrastructure.paths import config_dir
 
 SESSION_COOKIE = "anirec_session"
 SESSION_LIFETIME = timedelta(days=30)
-# A used session is extended at most this often, so reads do not turn into a
-# write on every request.
+# A session's last-seen time is written at most this often, so reads do not
+# turn into a write on every request.
 SESSION_TOUCH_INTERVAL = timedelta(hours=1)
 PASSWORD_MIN = 8
 PASSWORD_MAX = 256
@@ -103,16 +103,27 @@ def _b64(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
 
 
-def _scrypt(password: str, salt: bytes, log_n: int, r: int, p: int) -> bytes:
-    if not _HASH_SLOTS.acquire(blocking=False):
-        raise AccountError("busy")
-    try:
+class _HashSlot:
+    """One of the two hashing slots, taken without waiting, or ``busy``."""
+
+    def __enter__(self) -> None:
+        if not _HASH_SLOTS.acquire(blocking=False):
+            raise AccountError("busy")
+
+    def __exit__(self, *_exc) -> None:
+        _HASH_SLOTS.release()
+
+
+def _scrypt(password: str, salt: bytes, log_n: int, r: int, p: int, *, slot_held: bool = False) -> bytes:
+    def run() -> bytes:
         return hashlib.scrypt(
             unicodedata.normalize("NFKC", password).encode("utf-8"), salt=salt,
             n=2**log_n, r=r, p=p, maxmem=_SCRYPT_MAXMEM, dklen=32,
         )
-    finally:
-        _HASH_SLOTS.release()
+    if slot_held:
+        return run()
+    with _HashSlot():
+        return run()
 
 
 def hash_password(password: str, *, salt: bytes | None = None) -> str:
@@ -121,12 +132,12 @@ def hash_password(password: str, *, salt: bytes | None = None) -> str:
     return f"scrypt${_SCRYPT_LOG_N}${_SCRYPT_R}${_SCRYPT_P}${_b64(salt)}${_b64(key)}"
 
 
-def verify_password(password: str, stored: str) -> bool:
+def verify_password(password: str, stored: str, *, slot_held: bool = False) -> bool:
     try:
         scheme, log_n, r, p, salt, expected = stored.split("$")
         if scheme != "scrypt" or int(log_n) > 20:
             return False
-        key = _scrypt(password, base64.b64decode(salt), int(log_n), int(r), int(p))
+        key = _scrypt(password, base64.b64decode(salt), int(log_n), int(r), int(p), slot_held=slot_held)
     except (ValueError, TypeError):
         return False
     return hmac.compare_digest(key, base64.b64decode(expected))
@@ -269,7 +280,11 @@ class AccountService:
         return conn
 
     def _transaction(self) -> "_Transaction":
-        return _Transaction(self._connect())
+        try:
+            return _Transaction(self._connect())
+        except sqlite3.Error as error:
+            # Locked, corrupt or unreadable: a refusal, never a server error.
+            raise AccountError("unavailable") from error
 
     def _now(self) -> datetime:
         return self._clock().astimezone(timezone.utc)
@@ -317,7 +332,17 @@ class AccountService:
     # -- sessions -------------------------------------------------------------
 
     def account_for_session(self, token: str | None) -> Account | None:
-        """The account a session cookie names, or ``None`` for no valid session."""
+        """The account a session cookie names, or ``None`` for no valid session.
+
+        An unreadable account database also reads as no session: the visitor
+        sees the sample library rather than a server error.
+        """
+        try:
+            return self._account_for_session(token)
+        except AccountError:
+            return None
+
+    def _account_for_session(self, token: str | None) -> Account | None:
         if not token or len(token) > 200:
             return None
         digest = _token_hash(token)
@@ -332,10 +357,9 @@ class AccountService:
                 conn.execute("DELETE FROM sessions WHERE token_hash=?", (digest,))
                 return None
             if now - datetime.fromisoformat(row[2]) >= SESSION_TOUCH_INTERVAL:
-                conn.execute(
-                    "UPDATE sessions SET last_seen_at=?, expires_at=? WHERE token_hash=?",
-                    (now.isoformat(), (now + SESSION_LIFETIME).isoformat(), digest),
-                )
+                # Expiry stays 30 days from sign-in, matching the cookie's
+                # own max-age; only the last-seen time moves.
+                conn.execute("UPDATE sessions SET last_seen_at=? WHERE token_hash=?", (now.isoformat(), digest))
             return self._load(conn, row[0])
 
     def sign_out(self, token: str | None) -> None:
@@ -404,6 +428,13 @@ class AccountService:
             raise AccountError("wrong-credentials") from None
         if self._failures.full():
             raise AccountError("too-many-attempts")
+        dummy = _dummy_hash()   # computed once, before a slot is held
+        # The hashing slot is taken before the attempt is counted: a "busy"
+        # refusal must never count as a wrong password (final review).
+        with _HashSlot():
+            return self._sign_in_holding_slot(email, password, current_token, dummy)
+
+    def _sign_in_holding_slot(self, email: str, password: str, current_token: str | None, dummy: str) -> SignedIn:
         now = self._now()
         # The attempt is counted before the password is checked, in one
         # locked transaction, so parallel guesses cannot all see a low count.
@@ -424,7 +455,7 @@ class AccountService:
             ).fetchone()
         # Hashing happens outside the write lock: it is the slow part. An
         # unknown email is checked against a dummy hash to take the same time.
-        valid = verify_password(password, account[1] if account else _dummy_hash()) and account is not None
+        valid = verify_password(password, account[1] if account else dummy, slot_held=True) and account is not None
         if not valid:
             self._failures.take()
             raise AccountError("wrong-credentials")
@@ -540,9 +571,18 @@ class _Transaction:
         self._conn = conn
 
     def __enter__(self) -> sqlite3.Connection:
-        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            self._conn.execute("BEGIN IMMEDIATE")
+        except sqlite3.Error as error:
+            self._conn.close()
+            raise AccountError("unavailable") from error
         return self._conn
 
-    def __exit__(self, kind, _value, _traceback) -> None:
+    def __exit__(self, kind, value, _traceback) -> None:
         with closing(self._conn):
-            self._conn.execute("ROLLBACK" if kind else "COMMIT")
+            try:
+                self._conn.execute("ROLLBACK" if kind else "COMMIT")
+            except sqlite3.Error as error:
+                raise AccountError("unavailable") from error
+        if isinstance(value, sqlite3.Error):
+            raise AccountError("unavailable") from value

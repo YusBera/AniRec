@@ -222,3 +222,36 @@ def test_the_console_names_the_owner_and_gives_them_every_unowned_import(tmp_pat
     with pytest.raises(AccountError) as unknown:
         accounts.set_owner("nobody@example.com", [])
     assert unknown.value.reason == "no-such-account"
+
+
+def test_a_busy_refusal_is_not_counted_as_a_failed_attempt(tmp_path, monkeypatch):
+    import AniRec.services.account_service as module
+
+    accounts = _service(tmp_path)
+    accounts.register("reader@example.com", "a long password")
+
+    class Full:
+        def acquire(self, blocking=True):
+            return False
+
+        def release(self):
+            raise AssertionError("released a slot never taken")
+
+    real = module._HASH_SLOTS
+    monkeypatch.setattr(module, "_HASH_SLOTS", Full())
+    for _ in range(FAILURE_LIMIT + 2):
+        with pytest.raises(AccountError) as busy:
+            accounts.sign_in("reader@example.com", "a long password")
+        assert busy.value.reason == "busy"
+    monkeypatch.setattr(module, "_HASH_SLOTS", real)
+    assert accounts.sign_in("reader@example.com", "a long password").account.registered
+
+
+def test_an_unreadable_account_database_is_an_account_error_and_leaks_nothing(tmp_path):
+    accounts = _service(tmp_path)
+    accounts.path.parent.mkdir(parents=True, exist_ok=True)
+    accounts.path.write_bytes(b"this is not a database" * 100)
+    with pytest.raises(AccountError) as refused:
+        accounts.register("reader@example.com", "a long password")
+    assert refused.value.reason == "unavailable"
+    assert accounts.account_for_session("anything") is None

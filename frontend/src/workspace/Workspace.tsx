@@ -133,11 +133,15 @@ export function Workspace() {
       onClose={() => setFirstRun(null)}
       onSignIn={() => setAccountDialog("sign-in")} /> : null}
     {accountDialog ? <AccountDialog mode={accountDialog}
-      onDone={(signed, mode) => {
+      onDone={(signed, mode, moved) => {
         accountChanged();
         shell.notify(mode === "register"
           ? { tone: "done", title: "Account created", detail: signed.has_import ? "Your list and Watch Later are saved to it." : "Add your MyAnimeList list from the account menu." }
-          : { tone: "done", title: "Signed in", detail: signed.email ?? "" });
+          : { tone: "done", title: "Signed in", detail: moved
+            ? "The list you added before signing in is kept with your account. Switching between lists comes in a later update."
+            : signed.email ?? "" });
+        // The menu item that opened the dialog is gone; start from the page.
+        content.current?.focus();
       }}
       onClose={() => setAccountDialog(null)} /> : null}
   </div>;

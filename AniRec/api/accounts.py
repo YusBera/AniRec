@@ -59,7 +59,12 @@ def resolve_scope(services: ApiContainer, request: Request) -> ReaderScope:
         return ReaderScope(None, None, None)
     profile = None
     profile_id = account.active_profile_id
-    if profile_id and services.accounts.owns(account.account_id, profile_id):
+    try:
+        owned = bool(profile_id) and services.accounts.owns(account.account_id, profile_id)
+    except AccountError:
+        # The account database became unreadable mid-request: act anonymous.
+        return ReaderScope(None, None, None)
+    if owned:
         try:
             profile = services.profiles.get_profile(profile_id)
         except (AniRecError, OSError, TypeError, ValueError):  # missing or unreadable: no import
@@ -88,6 +93,9 @@ def clear_session_cookie(request: Request, response: Response) -> None:
 
 class AccountResponse(ApiModel):
     account: AccountSummary | None = None
+    moved_imports: int = Field(
+        default=0, description="Lists a guest brought along when signing in to this account."
+    )
     reason: str | None = Field(
         default=None,
         description=(
@@ -107,11 +115,15 @@ def account_summary(services: ApiContainer, scope: ReaderScope) -> AccountSummar
     account = scope.account
     if account is None:
         return None
+    try:
+        owner = services.accounts.owner_account_id()
+    except AccountError:
+        owner = None
     return AccountSummary(
         kind=account.kind,
         email=account.email if account.registered else None,
         has_import=scope.profile is not None,
-        installation_owner=account.registered and services.accounts.owner_account_id() == account.account_id,
+        installation_owner=account.registered and owner == account.account_id,
     )
 
 
@@ -127,7 +139,10 @@ def accounts_router(services: ApiContainer) -> APIRouter:
                 profile = services.profiles.get_profile(signed.account.active_profile_id)
             except (AniRecError, OSError, TypeError, ValueError):
                 profile = None
-        return AccountResponse(account=account_summary(services, ReaderScope(signed.account, profile, signed.token)))
+        return AccountResponse(
+            account=account_summary(services, ReaderScope(signed.account, profile, signed.token)),
+            moved_imports=len(signed.moved_profile_ids),
+        )
 
     @router.get("", response_model=AccountResponse)
     def read_account(request: Request) -> AccountResponse:

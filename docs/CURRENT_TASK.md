@@ -181,7 +181,9 @@ Do not change the `common.tsx` exports (`PAGE_SIZE`, `PageControls`).
 ```bash
 python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m AniRec.api --port 8771 --root-override /tmp/anirec-sample   # empty root = labelled sample data
-cd frontend && npm install && ANIREC_API=http://127.0.0.1:8771 npm run dev -- --port 5174
+cd frontend && npm install && ANIREC_API=http://127.0.0.1:8771 npm run dev -- --port 5173
+# Writes are Origin-checked (D-021): another dev port needs
+# ANIREC_ALLOWED_ORIGIN=http://127.0.0.1:<port> set for the API.
 ```
 
 ## After this task
@@ -392,7 +394,24 @@ limits and later phases: `docs/ACCOUNTS.md`.
   before code.
 - Tests: `test_account_service.py`, `test_account_api.py`, onboarding and
   the older API tests moved to signed-in readers (`tests/account_helpers.py`);
-  frontend `Shell.test.tsx`. `npm run ci` 125.
+  frontend `Shell.test.tsx`. `npm run ci` 126; pytest 577 passed (the 7
+  failures and 39 Qt collection errors predate this change).
+- **Final adversarial review: GO.** It found no cross-account path and no
+  session fixation. Fixed, each with a failing test first:
+  - a `busy` hash refusal was counted as a wrong password and could lock out
+    the right one; the hashing slot is now taken before the attempt counts;
+  - an unreadable `accounts.sqlite3` made every route a 500, the sample feed
+    included; it now reads as no session, and account routes answer
+    `unavailable`;
+  - the documented dev port (5174) could not write; the docs use 5173 and
+    name `ANIREC_ALLOWED_ORIGIN`.
+  - Nits: the session no longer claims a sliding expiry the cookie does not
+    have; a guest's list moved into an account that has one is named in the
+    sign-in notice (`moved_imports`); the shell forgets the previous
+    account at once; the password field shares the live region; focus
+    returns to the page after signing in; one loose test assertion.
+  - Recorded as hosted-launch gates in `ACCOUNTS.md`: process-wide caps,
+    the open shutdown route, uncapped lookup and Compare, import switching.
 - **Next:** phase 2 (account management, reader preferences split from
   installation settings, guest pruning) is required before any hosted launch;
   then Google (needs an OAuth client the owner creates), passkeys (needs

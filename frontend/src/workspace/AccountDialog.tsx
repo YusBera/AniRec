@@ -49,7 +49,7 @@ const COPY: Record<AccountMode, { title: string; lead: string; submit: string; b
 
 export function AccountDialog({ mode: initialMode, onDone, onClose }: {
   mode: AccountMode;
-  onDone: (account: AccountSummary, mode: AccountMode) => void;
+  onDone: (account: AccountSummary, mode: AccountMode, movedImports: number) => void;
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -65,7 +65,7 @@ export function AccountDialog({ mode: initialMode, onDone, onClose }: {
   const [shown, setShown] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
-  const done = useRef<AccountSummary | null>(null);
+  const done = useRef<{ account: AccountSummary; moved: number } | null>(null);
   const copy = COPY[mode];
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export function AccountDialog({ mode: initialMode, onDone, onClose }: {
     try {
       const result = mode === "register" ? await api.register(email.trim(), password) : await api.signIn(email.trim(), password);
       if (result.account) {
-        done.current = result.account;
+        done.current = { account: result.account, moved: result.moved_imports ?? 0 };
         setPassword("");
         dialog.current?.close();
         return;
@@ -100,7 +100,7 @@ export function AccountDialog({ mode: initialMode, onDone, onClose }: {
   return <dialog ref={dialog} className="account-dialog" aria-labelledby={heading}
     onClose={() => {
       if (dialog.current?.open) return;
-      if (done.current) onDone(done.current, mode);
+      if (done.current) onDone(done.current.account, mode, done.current.moved);
       onClose();
     }}>
     <h2 id={heading}>{copy.title}</h2>
@@ -114,7 +114,8 @@ export function AccountDialog({ mode: initialMode, onDone, onClose }: {
       <div className="password-field">
         <input id={passwordId} type={shown ? "text" : "password"} required maxLength={256}
           autoComplete={mode === "register" ? "new-password" : "current-password"}
-          value={password} disabled={busy} aria-describedby={mode === "register" ? hintId : undefined}
+          value={password} disabled={busy} aria-invalid={problem ? true : undefined}
+          aria-describedby={mode === "register" ? `${hintId} ${statusId}` : statusId}
           onChange={(event) => { setPassword(event.target.value); setProblem(""); }} />
         <button type="button" className="btn show-password" aria-pressed={shown} onClick={() => setShown((value) => !value)}>
           {shown ? "Hide" : "Show"}<span className="visually-hidden"> password</span>

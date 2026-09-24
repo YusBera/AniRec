@@ -163,6 +163,7 @@ export function useShellState() {
     streams.current.clear();
     errors.current.clear();
     seen.current = null;
+    setSystem(null);   // the previous account's name and picture go at once
     setNotices([]);
     kick.current();
   }, []);

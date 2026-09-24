@@ -50,6 +50,7 @@ from ..services.recommendation_event_service import (
     activity_model_version,
     feed_fingerprint,
 )
+from ..services.account_service import AccountError
 from .accounts import ReaderScope, account_summary, accounts_router, resolve_scope
 from .container import ApiContainer, build_container
 from .request_guard import RequestGuardMiddleware, allowed_hosts_from_environment
@@ -214,9 +215,12 @@ def create_app(
 
     def visible(record, scope: ReaderScope) -> bool:
         """An operation is seen only by the account that owns its import now."""
-        return scope.account is not None and services.accounts.owns(
-            scope.account.account_id, record.profile_id
-        )
+        if scope.account is None:
+            return False
+        try:
+            return services.accounts.owns(scope.account.account_id, record.profile_id)
+        except AccountError:
+            return False
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_request: Request, error: StarletteHTTPException) -> JSONResponse:

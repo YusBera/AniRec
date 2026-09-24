@@ -61,9 +61,9 @@ def test_signing_in_and_out(tmp_path):
     with TestClient(app) as client:
         _post(client, "/api/account/register", CREDENTIALS)
         _post(client, "/api/account/sign-out")
-        assert client.get("/api/account").json() == {"account": None, "reason": None}
+        assert client.get("/api/account").json() == {"account": None, "reason": None, "moved_imports": 0}
         wrong = _post(client, "/api/account/sign-in", {**CREDENTIALS, "password": "not the password"})
-        assert wrong.json() == {"account": None, "reason": "wrong-credentials"}
+        assert wrong.json() == {"account": None, "reason": "wrong-credentials", "moved_imports": 0}
         assert _post(client, "/api/account/sign-in", CREDENTIALS).json()["account"]["kind"] == "registered"
 
 
@@ -90,8 +90,10 @@ def test_a_write_from_another_site_is_refused(tmp_path, headers):
         response = client.post("/api/account/register", json=CREDENTIALS, headers=headers)
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "forbidden_origin"
-    with pytest.raises(Exception):
+    from AniRec.services.account_service import AccountError
+    with pytest.raises(AccountError) as refused:
         services.accounts.sign_in(CREDENTIALS["email"], CREDENTIALS["password"])
+    assert refused.value.reason == "wrong-credentials"   # no account was created
 
 
 def test_an_unknown_host_is_refused_even_for_reads(tmp_path, monkeypatch):
@@ -136,7 +138,7 @@ def test_a_guest_signing_in_keeps_their_import_and_its_operations(tmp_path):
         key = f"api-test:{imported['profile_id']}"
         app.state.operations.start(key, "api-test", imported["profile_id"], lambda _t, _r: {"ok": True})
         app.state.operations.shutdown()
-        _post(reader, "/api/account/sign-in", CREDENTIALS)
+        assert _post(reader, "/api/account/sign-in", CREDENTIALS).json()["moved_imports"] == 1
         assert reader.get("/api/system/state").json()["profile"]["profile_id"] == imported["profile_id"]
         assert reader.get(f"/api/operations/{key}").status_code == 200
 
@@ -240,3 +242,15 @@ def test_the_console_names_the_owner_and_hands_over_pre_account_profiles(tmp_pat
     assert state["account"]["installation_owner"] is True
     assert "mal-123" in capsys.readouterr().out
     assert main(["--root", str(tmp_path), "owner", "nobody@example.com"]) == 1
+
+
+def test_an_unreadable_account_database_never_becomes_a_server_error(tmp_path):
+    app, services = _app(tmp_path)
+    services.accounts.path.parent.mkdir(parents=True, exist_ok=True)
+    services.accounts.path.write_bytes(b"this is not a database" * 100)
+    with TestClient(app) as client:
+        client.cookies.set(SESSION_COOKIE, "some-token")
+        assert client.get("/api/discover/feed").json()["source"] == "sample"
+        assert client.get("/api/system/state").json()["account"] is None
+        assert _post(client, "/api/account/register", CREDENTIALS).json() == {"account": None, "reason": "unavailable", "moved_imports": 0}
+        assert _post(client, "/api/account/sign-in", CREDENTIALS).json() == {"account": None, "reason": "unavailable", "moved_imports": 0}

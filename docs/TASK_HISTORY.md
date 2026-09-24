@@ -7,6 +7,29 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-24 - Accounts, phase 1: every import belongs to an account (D-021)
+
+The user reported that anyone could import any MyAnimeList username and then
+see and change the saved decisions of whoever had imported it before. AniRec
+accounts (email and password, guest accounts that upgrade on registration)
+now own every import; every reader route derives its scope from the session;
+writes are Origin-checked and every request Host-checked; installation
+settings belong to an owner named from the console. Design and phase plan:
+`docs/ACCOUNTS.md`.
+
+*Verification:* early design review (13 findings, applied before code) and a
+final adversarial review (GO; three should-fix findings fixed with failing
+tests first). pytest 577 passed, with the same 7 failures and 39 Qt
+collection errors as before the change; `npm run ci` 126 passed; Chromium at
+1440×900 and 375×812: account creation end to end, no horizontal scroll, no
+dialog control under 44px.
+
+*Left open:* phase 2 (account management, import switching, preference
+split, guest pruning, per-client limits) before any hosted launch; Google,
+passkeys and email after it.
+
+---
+
 ## 2026-09-24 - First-time setup from a MyAnimeList username (D-020)
 
 Added the setup pop-up and a username-only public-list import:

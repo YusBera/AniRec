@@ -399,7 +399,7 @@ describe("accounts (D-021)", () => {
   it("creates the account from the reminder and reloads the pages for it", async () => {
     vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
     stubShell({ ...WITH_LIST, account: GUEST });
-    const register = vi.spyOn(api, "register").mockResolvedValue({ account: { ...READER }, reason: null });
+    const register = vi.spyOn(api, "register").mockResolvedValue({ account: { ...READER }, reason: null, moved_imports: 0 });
     const user = userEvent.setup();
     render(<Workspace />);
     const feedCalls = (api.feed as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
@@ -427,7 +427,7 @@ describe("accounts (D-021)", () => {
 describe("the account dialog (D-021)", () => {
   it("says in words why signing in failed, keeps the password private, and can show it", async () => {
     const { AccountDialog } = await import("./AccountDialog");
-    vi.spyOn(api, "signIn").mockResolvedValue({ account: null, reason: "wrong-credentials" });
+    vi.spyOn(api, "signIn").mockResolvedValue({ account: null, reason: "wrong-credentials", moved_imports: 0 });
     const onDone = vi.fn();
     render(<AccountDialog mode="sign-in" onDone={onDone} onClose={vi.fn()} />);
     const dialog = screen.getByRole("dialog", { name: "Welcome back" });
@@ -485,7 +485,7 @@ it("forgets the previous reader's notifications when someone signs out (D-021)",
   vi.spyOn(api, "operations").mockResolvedValue({ operations: [] });
   vi.spyOn(api, "feed").mockResolvedValue(SAMPLE_FEED);
   vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
-  vi.spyOn(api, "signOut").mockResolvedValue({ account: null, reason: null });
+  vi.spyOn(api, "signOut").mockResolvedValue({ account: null, reason: null, moved_imports: 0 });
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   const user = userEvent.setup();
   render(<Workspace />);
@@ -497,4 +497,26 @@ it("forgets the previous reader's notifications when someone signs out (D-021)",
   await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
   await waitFor(() => expect(screen.getByText("Signed out")).toBeInTheDocument());
   expect(screen.queryByText("You're exploring the sample library")).not.toBeInTheDocument();
+});
+
+it("says where a guest's list went when they sign in to an account that already has one (D-021)", async () => {
+  vi.spyOn(api, "health").mockResolvedValue({ status: "ok", version: "1.3.0" });
+  vi.spyOn(api, "systemState").mockResolvedValue({ ...SYSTEM, needs_setup: false, profile: { profile_id: "imp_1", username: "reader_01" },
+    account: { kind: "guest", email: null, has_import: true, installation_owner: false } });
+  vi.spyOn(api, "operations").mockResolvedValue({ operations: [] });
+  vi.spyOn(api, "feed").mockResolvedValue(SAMPLE_FEED);
+  vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
+  vi.spyOn(api, "signIn").mockResolvedValue({ account: { kind: "registered", email: "reader@example.com", has_import: true, installation_owner: false }, reason: null, moved_imports: 1 });
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  const user = userEvent.setup();
+  render(<Workspace />);
+  await user.click(await screen.findByRole("button", { name: /^Account menu/ }));
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+  const dialog = await screen.findByRole("dialog", { name: "Welcome back" });
+  await user.type(within(dialog).getByLabelText("Email"), "reader@example.com");
+  await user.type(within(dialog).getByLabelText("Password"), "a long password");
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await user.click(screen.getByRole("button", { name: /^Notifications/ }));
+  expect(screen.getByText(/The list you added before signing in is kept with your account/)).toBeInTheDocument();
 });
