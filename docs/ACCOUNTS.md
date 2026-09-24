@@ -64,20 +64,24 @@ for a route without a reason field).
 
 | Limit | Per visitor | Counts |
 | --- | --- | --- |
-| New accounts | 10 an hour | a guest created by an import, a registration that is not a guest upgrade |
+| New accounts | 10 an hour | a guest created by an import, a successful registration that is not a guest upgrade (a refused one spends nothing) |
 | Sign-in failures | 20 a minute | wrong passwords, across every email (password spraying) |
-| MyAnimeList budget | 60 an hour | imports, `profile-lookup`, live Compare, Library title look-ups: each spends the installation's Client ID |
+| MyAnimeList budget | 60 an hour | imports, `profile-lookup`, `api-test`, `list-sync`, live Compare, Library title look-ups: each spends the installation's Client ID |
 
-The per-email lockout below stays in the account service. At most 10,000
-visitors are tracked; the least recently seen is forgotten first.
+`sync` and `refresh` are not counted: they read only the reader's own list,
+and run one at a time per list. An IPv6 visitor is counted by its /64 (one
+host usually holds a whole /64). At most 10,000 visitors are tracked; the
+least recently seen is forgotten first.
 
 **Who the visitor is.** AniRec binds to loopback, so a hosted deployment sits
 behind a reverse proxy and every request would come from the proxy's address.
-`ANIREC_TRUSTED_PROXIES` (comma-separated addresses) names the proxies whose
-`X-Forwarded-For` and `X-Forwarded-Proto` are believed. The visitor is the
-right-most `X-Forwarded-For` address that is not a trusted proxy (anything to
-its left was written by the client), and the cookie is `Secure` when the
-trusted proxy reports `https`. From any other peer those headers are
+`ANIREC_TRUSTED_PROXIES` (comma-separated addresses or CIDR ranges, in any
+spelling) names the proxies whose `X-Forwarded-For` and `X-Forwarded-Proto`
+are believed. Every header line is read, joined in order, so a proxy that
+appends its own line cannot be overruled by one the client sent. The visitor
+is the right-most `X-Forwarded-For` address that is not a trusted proxy
+(anything to its left was written by the client), and the cookie is `Secure`
+when the right-most `X-Forwarded-Proto` is `https`. From any other peer those headers are
 ignored.
 
 ## Storage
@@ -113,10 +117,13 @@ imports get `profile_id = "imp_" + 32 hex characters`, never a MAL-derived ID.
   hash, so response time does not reveal which emails exist.
 - Each attempt is counted *before* the password is checked, in one
   `BEGIN IMMEDIATE` transaction, so parallel guesses cannot all see a low
-  count; success clears the count. After 5 failures for one email (known or
-  not, so the lockout reveals nothing), attempts are refused for 15 minutes
-  with `too-many-attempts`. Across all emails, one visitor's failures are
-  limited per minute (see "Per-visitor limits").
+  count; success clears the count. After 5 failures for one email from one
+  visitor (known email or not, so the lockout reveals nothing), that visitor
+  is refused for that email for 15 minutes with `too-many-attempts`; another
+  visitor, the reader included, is not. After 50 failures for one email from
+  everyone together (guessing spread across many addresses), everyone is
+  refused for it for 15 minutes. Across all emails, one visitor's failures
+  are limited per minute (see "Per-visitor limits").
 - Registration with an email that already has an account says so ("An
   account with this email already exists. Sign in instead."). This reveals
   that the email is registered; avoiding that needs email verification, which
@@ -265,6 +272,9 @@ server error.
   school, a carrier NAT) share one allowance; an attacker with many
   addresses gets many. The MyAnimeList budget has no installation-wide
   ceiling yet.
+- An attacker with 50 addresses can still lock one account for 15 minutes
+  at a time (the account-wide ceiling). Email verification with a sign-in
+  link would remove this (phase 5).
 - The limit tables live in the process: a restart clears them, and several
   worker processes would each keep their own.
 - The desktop shell (Tauri) does not exist yet. Its webview origin is

@@ -114,6 +114,9 @@ EMPTY_LOCAL_STATE = LocalState(
 EMPTY_CATALOGUE = Catalogue(genres=(), studios=(), years=(), statuses=())
 
 
+# Operations that spend the visitor's MyAnimeList budget when started.
+BUDGETED_KINDS = frozenset({"profile-lookup", "api-test", "list-sync"})
+
 # Operations that write a profile's saved feed. Two of them overlapping for one
 # profile would let the later save overwrite the earlier (a "more" batch
 # computed from an older feed replacing a newer one), so they run one at a time.
@@ -562,17 +565,19 @@ def create_app(
             raise HTTPException(status_code=409, detail="Active profile changed. Reload this view.")
         profile_id = profile.profile_id
         username = profile.username
-        # A lookup reads anyone's public list with this installation's Client
-        # ID; it shares the visitor's MyAnimeList budget (limits.py).
-        if kind == "profile-lookup" and not client_limits.mal_calls.take(client_limits.client(request)):
-            raise HTTPException(
-                status_code=429,
-                detail="AniRec is limiting MyAnimeList look-ups for a while. Try again later.",
-            )
         try:
             key = operation_key(kind, profile_id)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        # Kinds a visitor can repeat at will that call MyAnimeList with this
+        # installation's Client ID share the visitor's budget (limits.py).
+        # sync and refresh read only the reader's own list and run one at a
+        # time per list, so they are not counted (docs/ACCOUNTS.md).
+        if kind in BUDGETED_KINDS and not client_limits.mal_calls.take(client_limits.client(request)):
+            raise HTTPException(
+                status_code=429,
+                detail="AniRec is limiting MyAnimeList look-ups for a while. Try again later.",
+            )
 
         handler = _build_handler(services, kind, payload, username, profile_id, profile=profile)
         exclusive_with = (

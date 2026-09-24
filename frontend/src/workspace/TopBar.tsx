@@ -108,7 +108,7 @@ export type AccountAction = "register" | "sign-in" | "sign-out" | "list-changed"
  * Discover, My Library and Profile show. Only the account's own lists are
  * listed, and the server refuses any other (D-021).
  */
-function ListSwitcher({ onChanged, onClose }: { onChanged: () => void; onClose: () => void }) {
+function ListSwitcher({ onChanged, onClose }: { onChanged: (username: string) => void; onClose: () => void }) {
   const [lists, setLists] = useState<AccountImports | null>(null);
   const [problem, setProblem] = useState("");
   useEffect(() => {
@@ -118,13 +118,13 @@ function ListSwitcher({ onChanged, onClose }: { onChanged: () => void; onClose: 
   }, []);
   const imports = lists?.imports ?? [];
   if (imports.length < 2) return null;
-  const choose = async (profileId: string) => {
+  const choose = async (profileId: string, username: string) => {
     setProblem("");
     try {
       const result = await api.chooseImport(profileId);
       if (result.reason) { setProblem("That list couldn't be opened. Try again."); return; }
       onClose();
-      onChanged();
+      onChanged(username);
     } catch {
       setProblem("That list couldn't be opened. Try again.");
     }
@@ -135,7 +135,10 @@ function ListSwitcher({ onChanged, onClose }: { onChanged: () => void; onClose: 
       {imports.map((item) => {
         const current = item.profile_id === lists?.active_profile_id;
         return <li key={item.profile_id}>
-          <button type="button" aria-pressed={current} onClick={() => { if (!current) void choose(item.profile_id); }}>
+          {/* One of several, not a toggle: aria-current marks the list shown. */}
+          <button type="button" aria-current={current ? "true" : undefined}
+            aria-label={current ? `${item.username}, shown now` : `Show ${item.username}`}
+            onClick={() => { if (!current) void choose(item.profile_id, item.username); }}>
             <span className="list-check" aria-hidden="true">{current ? "✓" : ""}</span>{item.username}
           </button>
         </li>;
@@ -147,7 +150,7 @@ function ListSwitcher({ onChanged, onClose }: { onChanged: () => void; onClose: 
 
 export function Account({ system, feed, avatarUrl, onSetUp, onAccount }: {
   system: SystemState | null; feed: Feed | null; avatarUrl: string | null;
-  onSetUp?: () => void; onAccount?: (action: AccountAction) => void;
+  onSetUp?: () => void; onAccount?: (action: AccountAction, username?: string) => void;
 }) {
   const [failed, setFailed] = useState<string | null>(null);
   const account = system?.account ?? null;
@@ -168,7 +171,7 @@ export function Account({ system, feed, avatarUrl, onSetUp, onAccount }: {
         <span className="avatar-large" aria-hidden="true">{picture}</span>
         <div><p className="account-name">{name ?? (registered ? "Your account" : "Guest")}</p><p className="account-context">{context}</p></div>
       </div>
-      {account && onAccount ? <ListSwitcher onClose={close} onChanged={() => onAccount("list-changed")} /> : null}
+      {account && onAccount ? <ListSwitcher onClose={close} onChanged={(username) => onAccount("list-changed", username)} /> : null}
       <ul className="account-links">
         {!registered && onAccount ? <>
           <li><button type="button" onClick={() => { close(); onAccount("register"); }}><Icon name="profile" />Create account</button></li>
@@ -199,7 +202,7 @@ function PersonIcon() {
 
 export function TopBar({ page, system, feed, notices, avatarUrl, onSetUp, onAccount }: {
   page: string; system: SystemState | null; feed: Feed | null; notices: Notice[]; avatarUrl: string | null;
-  onSetUp?: () => void; onAccount?: (action: AccountAction) => void;
+  onSetUp?: () => void; onAccount?: (action: AccountAction, username?: string) => void;
 }) {
   return <header className="topbar">
     <a className="brand" href="#/discover" aria-label="AniRec home">AniRec</a>

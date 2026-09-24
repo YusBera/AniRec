@@ -13,6 +13,7 @@ from anyone else those headers are ignored, because any client can send them.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import threading
 import time
@@ -75,8 +76,42 @@ class KeyedRateWindow:
 
 
 def trusted_proxies_from_environment() -> frozenset[str]:
+    """Addresses or CIDR ranges, comma-separated, in any spelling."""
     raw = os.environ.get(TRUSTED_PROXIES_ENV_VAR, "")
     return frozenset(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _address(value: str):
+    try:
+        return ipaddress.ip_address(value.strip().strip("[]"))
+    except ValueError:
+        return None
+
+
+def _networks(entries: frozenset[str]) -> tuple:
+    networks = []
+    for entry in entries:
+        try:
+            networks.append(ipaddress.ip_network(entry.strip(), strict=False))
+        except ValueError:
+            continue   # an unparseable entry trusts nothing
+    return tuple(networks)
+
+
+def bucket(value: str) -> str:
+    """The limit key for an address: IPv4 as is, IPv6 by its /64.
+
+    One IPv6 host usually holds a whole /64, so keying by full address would
+    hand it unlimited buckets.
+    """
+    address = _address(value)
+    if address is None:
+        return value.strip() or "unknown"
+    if address.version == 4:
+        return str(address)
+    if address.ipv4_mapped is not None:
+        return str(address.ipv4_mapped)
+    return str(ipaddress.ip_network(f"{address}/64", strict=False))
 
 
 @dataclass
@@ -92,27 +127,42 @@ class ClientLimits:
     def from_environment(cls) -> "ClientLimits":
         return cls(trusted_proxies=trusted_proxies_from_environment())
 
+    def _trusted(self, value: str) -> bool:
+        address = _address(value)
+        if address is None:
+            return False
+        networks = getattr(self, "_parsed", None)
+        if networks is None:
+            networks = self._parsed = _networks(self.trusted_proxies)
+        return any(address in network for network in networks if network.version == address.version)
+
     def _forwarded(self, request: Request) -> bool:
-        peer = request.client.host if request.client else ""
-        return bool(self.trusted_proxies) and peer in self.trusted_proxies
+        return bool(self.trusted_proxies) and self._trusted(request.client.host if request.client else "")
+
+    @staticmethod
+    def _header_values(request: Request, name: str) -> list[str]:
+        # Every header line, joined: a proxy that appends its own line after
+        # the client's must not let the client's line decide (final review).
+        joined = ",".join(request.headers.getlist(name))
+        return [part.strip() for part in joined.split(",") if part.strip()]
 
     def client(self, request: Request) -> str:
-        """The visitor's address: the peer, or what a trusted proxy reports."""
+        """The visitor's limit key: the peer, or what a trusted proxy reports."""
         peer = request.client.host if request.client else "unknown"
         if not self._forwarded(request):
-            return peer
-        chain = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+            return bucket(peer)
         # The right-most address a trusted proxy did not add is the client;
         # anything to its left was written by the client and proves nothing.
-        for address in reversed(chain):
-            if address not in self.trusted_proxies:
-                return address
-        return peer
+        for address in reversed(self._header_values(request, "x-forwarded-for")):
+            if not self._trusted(address):
+                return bucket(address)
+        return bucket(peer)
 
     def is_https(self, request: Request) -> bool:
         if request.url.scheme == "https":
             return True
         if self._forwarded(request):
-            proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
-            return proto == "https"
+            # The right-most value is the one the trusted proxy wrote.
+            values = self._header_values(request, "x-forwarded-proto")
+            return bool(values) and values[-1].lower() == "https"
         return False

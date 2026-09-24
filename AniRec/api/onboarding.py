@@ -89,10 +89,13 @@ def onboarding_router(services: ApiContainer, limits: ClientLimits) -> APIRouter
             # Every import reads MyAnimeList with this installation's Client
             # ID: it counts against this visitor's shared budget (limits.py).
             client = limits.client(request)
+            scope = resolve_scope(services, request)
+            # A visitor who could not be given a guest account spends no call.
+            if scope.account is None and limits.new_accounts.full(client):
+                raise AccountError("busy")
             if not limits.mal_calls.take(client):
                 raise AccountError("busy")
             username = services.onboarding.read_public_mal_list(payload.username)
-            scope = resolve_scope(services, request)
             account = scope.account
             if account is None:
                 if not limits.new_accounts.take(client):

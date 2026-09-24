@@ -245,3 +245,16 @@ def test_an_unreadable_account_database_is_an_account_error_and_leaks_nothing(tm
         accounts.register("reader@example.com", "a long password")
     assert refused.value.reason == "unavailable"
     assert accounts.account_for_session("anything") is None
+
+
+def test_guessing_spread_across_many_visitors_still_meets_an_account_wide_ceiling(tmp_path):
+    from AniRec.services.account_service import ACCOUNT_FAILURE_LIMIT
+
+    accounts = _service(tmp_path)
+    accounts.register("reader@example.com", "a long password")
+    for index in range(ACCOUNT_FAILURE_LIMIT):
+        with pytest.raises(AccountError):
+            accounts.sign_in("reader@example.com", "wrong password", client=f"198.51.100.{index}")
+    with pytest.raises(AccountError) as locked:
+        accounts.sign_in("reader@example.com", "a long password", client="203.0.113.5")
+    assert locked.value.reason == "too-many-attempts"

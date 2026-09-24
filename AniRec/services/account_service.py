@@ -40,7 +40,11 @@ SESSION_TOUCH_INTERVAL = timedelta(hours=1)
 PASSWORD_MIN = 8
 PASSWORD_MAX = 256
 EMAIL_MAX = 254
+# Wrong passwords for one email from one visitor; and, much higher, for one
+# email from everyone at once (guessing spread across many addresses). A
+# visitor can therefore no longer lock another reader out on their own.
 FAILURE_LIMIT = 5
+ACCOUNT_FAILURE_LIMIT = 50
 FAILURE_WINDOW = timedelta(minutes=15)
 # Per-visitor limits (new accounts, sign-in failures) live in the API, which
 # knows who the visitor is: ``AniRec/api/limits.py``.
@@ -376,7 +380,7 @@ class AccountService:
             token = self._new_session(conn, account_id)
             return SignedIn(self._load(conn, account_id), token)
 
-    def sign_in(self, email: str, password: str, *, current_token: str | None = None) -> SignedIn:
+    def sign_in(self, email: str, password: str, *, current_token: str | None = None, client: str = "") -> SignedIn:
         """Check the password; bring a guest's imports along (docs/ACCOUNTS.md)."""
         if not isinstance(password, str) or len(password) > PASSWORD_MAX:
             raise AccountError("wrong-credentials")
@@ -388,24 +392,31 @@ class AccountService:
         # The hashing slot is taken before the attempt is counted: a "busy"
         # refusal must never count as a wrong password (final review).
         with _HashSlot():
-            return self._sign_in_holding_slot(email, password, current_token, dummy)
+            return self._sign_in_holding_slot(email, password, current_token, dummy, client)
 
-    def _sign_in_holding_slot(self, email: str, password: str, current_token: str | None, dummy: str) -> SignedIn:
+    def _sign_in_holding_slot(self, email: str, password: str, current_token: str | None, dummy: str, client: str) -> SignedIn:
         now = self._now()
+        # Two counters (the table's key column holds both kinds): this email
+        # from this visitor, and this email from everyone.
+        counters = ((f"{email}\n{client}", FAILURE_LIMIT), (email, ACCOUNT_FAILURE_LIMIT))
         # The attempt is counted before the password is checked, in one
         # locked transaction, so parallel guesses cannot all see a low count.
         with self._transaction() as conn:
-            row = conn.execute(
-                "SELECT count, last_failed_at FROM login_failures WHERE email=?", (email,)
-            ).fetchone()
-            fresh = row is None or now - datetime.fromisoformat(row[1]) >= FAILURE_WINDOW
-            if not fresh and row[0] >= FAILURE_LIMIT:
-                raise AccountError("too-many-attempts")
-            conn.execute(
-                "INSERT INTO login_failures(email, count, last_failed_at) VALUES (?,?,?) "
-                "ON CONFLICT(email) DO UPDATE SET count=excluded.count, last_failed_at=excluded.last_failed_at",
-                (email, 1 if fresh else row[0] + 1, now.isoformat()),
-            )
+            counts = []
+            for key, limit in counters:
+                row = conn.execute(
+                    "SELECT count, last_failed_at FROM login_failures WHERE email=?", (key,)
+                ).fetchone()
+                fresh = row is None or now - datetime.fromisoformat(row[1]) >= FAILURE_WINDOW
+                if not fresh and row[0] >= limit:
+                    raise AccountError("too-many-attempts")
+                counts.append((key, 1 if fresh else row[0] + 1))
+            for key, count in counts:
+                conn.execute(
+                    "INSERT INTO login_failures(email, count, last_failed_at) VALUES (?,?,?) "
+                    "ON CONFLICT(email) DO UPDATE SET count=excluded.count, last_failed_at=excluded.last_failed_at",
+                    (key, count, now.isoformat()),
+                )
             account = conn.execute(
                 "SELECT account_id, password_hash FROM accounts WHERE email=? AND kind='registered'", (email,)
             ).fetchone()
@@ -415,7 +426,8 @@ class AccountService:
         if not valid:
             raise AccountError("wrong-credentials")
         with self._transaction() as conn:
-            conn.execute("DELETE FROM login_failures WHERE email=?", (email,))
+            for key, _limit in counters:
+                conn.execute("DELETE FROM login_failures WHERE email=?", (key,))
             account_id = account[0]
             moved: tuple[str, ...] = ()
             current = self._session_account_locked(conn, current_token)

@@ -199,3 +199,69 @@ def test_a_guest_list_moved_into_an_account_can_be_switched_to(tmp_path):
         assert reader.get("/api/system/state").json()["profile"]["profile_id"] == mine["profile_id"]
         assert _post(reader, "/api/account/imports/active", {"profile_id": guest["profile_id"]}).json()["reason"] is None
         assert reader.get("/api/system/state").json()["profile"]["username"] == "guest_list"
+
+
+# -- final review round -------------------------------------------------------------------
+
+def _limits_request(headers, peer="10.0.0.1"):
+    from starlette.requests import Request
+
+    raw = [(key.lower().encode(), value.encode()) for key, value in headers]
+    return Request({"type": "http", "method": "GET", "path": "/", "headers": raw,
+                    "client": (peer, 1234), "scheme": "http", "server": ("127.0.0.1", 8770), "query_string": b""})
+
+
+def test_a_forged_forwarded_line_cannot_choose_the_visitor():
+    limits = ClientLimits(trusted_proxies=frozenset({"10.0.0.1"}))
+    # The client's own header line first, the proxy's appended line after it.
+    request = _limits_request([("X-Forwarded-For", "6.6.6.6"), ("X-Forwarded-For", "203.0.113.9")])
+    assert limits.client(request) == "203.0.113.9"
+    https = _limits_request([("X-Forwarded-Proto", "http"), ("X-Forwarded-Proto", "https")])
+    assert limits.is_https(https)
+    assert not limits.is_https(_limits_request([("X-Forwarded-Proto", "https, http")]))
+
+
+def test_ipv6_visitors_share_a_bucket_per_64_and_proxies_match_in_any_spelling():
+    limits = ClientLimits(trusted_proxies=frozenset({"0:0:0:0:0:0:0:1", "10.1.0.0/16"}))
+    one = _limits_request([], peer="2001:db8:1:2::1")
+    two = _limits_request([], peer="2001:db8:1:2:ffff::9")
+    assert limits.client(one) == limits.client(two)
+    assert limits.client(_limits_request([("X-Forwarded-For", "203.0.113.9")], peer="::1")) == "203.0.113.9"
+    assert limits.client(_limits_request([("X-Forwarded-For", "203.0.113.9")], peer="10.1.44.2")) == "203.0.113.9"
+
+
+def test_a_registration_that_fails_does_not_spend_the_allowance(tmp_path):
+    limits = ClientLimits(new_accounts=KeyedRateWindow(1, 3600))
+    app, _services, _mal = _app(tmp_path, limits)
+    with TestClient(app) as reader:
+        assert _post(reader, "/api/account/register", {**CREDENTIALS, "password": "short"}).json()["reason"] == "weak-password"
+        assert _post(reader, "/api/account/register", {**CREDENTIALS, "email": "not-an-email"}).json()["reason"] == "invalid-email"
+        assert _post(reader, "/api/account/register", CREDENTIALS).json()["account"]["kind"] == "registered"
+
+
+def test_another_visitor_cannot_lock_a_reader_out_of_their_account(tmp_path):
+    app, _services, _mal = _app(tmp_path)
+    with _visitor(app, "203.0.113.5") as reader, _visitor(app, "198.51.100.9") as attacker:
+        _post(reader, "/api/account/register", CREDENTIALS)
+        _post(reader, "/api/account/sign-out")
+        for _ in range(6):
+            _post(attacker, "/api/account/sign-in", {**CREDENTIALS, "password": "not the password"})
+        assert _post(attacker, "/api/account/sign-in", CREDENTIALS).json()["reason"] == "too-many-attempts"
+        assert _post(reader, "/api/account/sign-in", CREDENTIALS).json()["account"]["kind"] == "registered"
+
+
+@pytest.mark.parametrize("kind", ["api-test", "list-sync"])
+def test_operations_that_spend_the_client_id_share_the_budget(tmp_path, kind):
+    limits = ClientLimits(mal_calls=KeyedRateWindow(1, 3600))
+    app, _services, _mal = _app(tmp_path, limits)
+    with TestClient(app) as reader:
+        assert _post(reader, "/api/onboarding/mal-profile", {"username": "reader_01"}).json()["profile"]
+        assert _post(reader, f"/api/operations/{kind}", {}).status_code == 429
+
+
+def test_a_visitor_out_of_new_accounts_spends_no_myanimelist_call(tmp_path):
+    limits = ClientLimits(new_accounts=KeyedRateWindow(0, 3600))
+    app, _services, mal = _app(tmp_path, limits)
+    with TestClient(app) as visitor:
+        assert _post(visitor, "/api/onboarding/mal-profile", {"username": "reader_01"}).json()["reason"] == "busy"
+    assert mal.calls == 0

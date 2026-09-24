@@ -430,10 +430,22 @@ final review listed:
   and whether the cookie is `Secure`; forwarded headers from anyone else
   are ignored.
 - **Shutdown:** only the launcher's token or the installation owner.
-- Tests: `tests/test_account_phase2.py` (10), the lifecycle and onboarding
+- Tests: `tests/test_account_phase2.py` (17), the lifecycle and onboarding
   tests updated; frontend `Shell.test.tsx`. pytest 586 passed (the same 7
   failures and 39 Qt collection errors as before); `npm run ci` 129.
   Chromium at 375×812: the switcher works, no control under 44px.
+- **Final adversarial review: NO-GO, then fixed** (failing tests first):
+  - blocker: with a proxy that appends its own header line, a client could
+    choose its own `X-Forwarded-For` and escape every limit; all lines are
+    now read, the right-most untrusted address counts, and
+    `X-Forwarded-Proto` uses the right-most value;
+  - a refused registration spent the allowance; now only a success does;
+  - one visitor could lock a reader out; the lockout is now per email and
+    visitor, with a 50-failure ceiling per email from everyone;
+  - `api-test` and `list-sync` now spend the MyAnimeList budget;
+  - focus and an announcement after switching lists; `aria-current`;
+  - IPv6 counted by /64; trusted proxies accept any spelling and CIDR;
+    no MyAnimeList call for a visitor who could not get a guest account.
 - Still before a hosted launch: change password, delete account, export,
   reader preferences split from installation settings, guest pruning.
 

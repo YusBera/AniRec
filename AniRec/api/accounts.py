@@ -177,8 +177,11 @@ def accounts_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
     @router.post("/register", response_model=AccountResponse)
     def register(payload: Credentials, request: Request, response: Response) -> AccountResponse:
         # Upgrading this visitor's guest account is not a new account; any
-        # other registration counts against this visitor's hourly limit.
-        if resolve_scope(services, request).account is None and not limits.new_accounts.take(limits.client(request)):
+        # other registration counts against this visitor's hourly limit, but
+        # only once it succeeds: a mistyped attempt spends nothing.
+        client = limits.client(request)
+        new_account = resolve_scope(services, request).account is None
+        if new_account and limits.new_accounts.full(client):
             return AccountResponse(reason="busy")
         try:
             signed = services.accounts.register(payload.email, payload.password, current_token=session_token(request))
@@ -186,17 +189,22 @@ def accounts_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
             return AccountResponse(reason=error.reason)
         except OSError:
             return AccountResponse(reason="unavailable")
+        if new_account:
+            limits.new_accounts.take(client)
         return signed_in(request, response, signed)
 
     @router.post("/sign-in", response_model=AccountResponse)
     def sign_in(payload: Credentials, request: Request, response: Response) -> AccountResponse:
-        # Per visitor, across every email: one visitor guessing passwords
-        # never locks anyone else out (the per-email limit is in the service).
+        # Per visitor, across every email (password spraying). The service
+        # also counts per email and visitor, with a higher ceiling per email
+        # from everyone, so no single visitor can lock a reader out.
         client = limits.client(request)
         if limits.sign_in_failures.full(client):
             return AccountResponse(reason="too-many-attempts")
         try:
-            signed = services.accounts.sign_in(payload.email, payload.password, current_token=session_token(request))
+            signed = services.accounts.sign_in(
+                payload.email, payload.password, current_token=session_token(request), client=client
+            )
         except AccountError as error:
             if error.reason == "wrong-credentials":
                 limits.sign_in_failures.take(client)

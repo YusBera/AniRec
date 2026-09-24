@@ -77,12 +77,15 @@ export function Workspace() {
     setGeneration((value) => value + 1);
     shell.reset();
   }, [shell.reset]);
-  const onAccount = useCallback((action: AccountAction) => {
+  const onAccount = useCallback((action: AccountAction, username?: string) => {
     if (action === "list-changed") {
-      // Same reader, another of their lists: reload the pages, keep the bell.
+      // Same reader, another of their lists: reload the pages, keep the bell,
+      // say so, and start again from the page (the menu that had focus is gone).
       setFeed(null);
       setGeneration((value) => value + 1);
       shell.nudge();
+      if (username) shell.notify({ tone: "done", title: `Showing ${username}'s list` });
+      content.current?.focus();
       return;
     }
     if (action !== "sign-out") { setAccountDialog(action); return; }

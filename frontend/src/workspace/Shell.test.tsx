@@ -545,11 +545,14 @@ describe("switching lists (D-021)", () => {
     await user.click(await screen.findByRole("button", { name: "Account menu for reader_01" }));
     const panel = screen.getByRole("region", { name: "Account" });
     expect(await within(panel).findByRole("heading", { name: "Your lists" })).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: "reader_01" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(panel).getByRole("button", { name: "reader_01, shown now" })).toHaveAttribute("aria-current", "true");
     expect(within(panel).getByRole("button", { name: "Add another list" })).toBeInTheDocument();
-    await user.click(within(panel).getByRole("button", { name: "guest_list" }));
+    await user.click(within(panel).getByRole("button", { name: "Show guest_list" }));
     expect(choose).toHaveBeenCalledWith("imp_2");
     await waitFor(() => expect((api.feed as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(feedCalls));
+    expect(document.getElementById("workspace-content")).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: /^Notifications/ }));
+    expect(screen.getByText("Showing guest_list's list")).toBeInTheDocument();
   });
 
   it("shows no switcher for an account with one list", async () => {
