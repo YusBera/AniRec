@@ -312,3 +312,50 @@ def test_preferences_need_an_account(tmp_path):
         assert visitor.get("/api/workspace/settings").json()["can_edit_preferences"] is False
         refused = _post(visitor, "/api/workspace/preferences", {"adventurousness": 8, "minimum_mal_score": None, "include_nsfw": True})
     assert refused.status_code == 409
+
+
+# -- final review round -------------------------------------------------------------------
+
+def _age(directory, seconds=7200):
+    old = time.time() - seconds
+    for path in (directory, *directory.rglob("*")):
+        os.utime(path, (old, old))
+
+
+def test_a_list_released_to_the_desktop_survives_every_later_sweep(tmp_path):
+    app, services = _app(tmp_path)
+    reader = TestClient(app)
+    mine = _register_with_list(reader)
+    services.profiles.set_active(mine["profile_id"])   # the desktop tool has it open
+    assert _post(reader, "/api/account/delete", {"password": CREDENTIALS["password"]}).json()["reason"] is None
+    directory = services.profiles.directory(mine["profile_id"])
+    _age(directory)
+    app.state.maintenance.sweep()
+    assert directory.exists()
+    # Still kept once the desktop tool switches to another list.
+    services.profiles._state_path.unlink()
+    app.state.maintenance.sweep()
+    assert directory.exists()
+
+
+@pytest.mark.parametrize("path", ["/api/account/imports", "/api/account/export"])
+def test_every_route_that_renews_a_session_re_sends_its_cookie(tmp_path, path):
+    app, services = _app(tmp_path)
+    clock = Clock()
+    services.accounts._clock = clock
+    reader = TestClient(app)
+    _register_with_list(reader)
+    clock.now += timedelta(hours=2)
+    response = reader.get(path)
+    assert SESSION_COOKIE in response.headers.get("set-cookie", "")
+
+
+def test_the_delete_preview_names_the_lists_that_are_kept(tmp_path):
+    app, services = _app(tmp_path)
+    legacy = services.profiles.create_profile("desktop_reader", mal_user_id=123)
+    services.profiles.save_profile(legacy)
+    reader = TestClient(app)
+    mine = _register_with_list(reader)
+    services.accounts.set_owner(CREDENTIALS["email"], ["mal-123"])
+    listed = {item["profile_id"]: item["kept_on_delete"] for item in reader.get("/api/account/imports").json()["imports"]}
+    assert listed == {mine["profile_id"]: False, "mal-123": True}

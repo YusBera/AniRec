@@ -296,8 +296,9 @@ final for the reader at once and finished on disk afterwards:
    closed list afterwards.
 2. One transaction: its web lists (`imp_*`) enter `pending_deletions`; lists
    from before accounts (the desktop tool's, named from the console) are
-   *released* to no owner rather than deleted, as is any list the desktop
-   tool has active in `profile_state.json`; its ownership rows, preferences,
+   *released* to no owner rather than deleted (and recorded in
+   `released_lists`, so the sweep never removes them), as is any list the
+   desktop tool has active in `profile_state.json`; its ownership rows, preferences,
    sessions, the owner row if it was the owner, and the account go.
 3. Each pending directory and its `tokens/` file are removed (a missing one
    is fine) and its pending row cleared. Whatever fails stays pending.
@@ -348,6 +349,8 @@ sign-in dialog says so.
 - An attacker with 50 addresses can still lock one account for 15 minutes
   at a time (the account-wide ceiling). Email verification with a sign-in
   link would remove this (phase 5).
+- The guest-pruning clock guard can be passed after a forward clock jump
+  once one new visitor arrives; old guests may then be pruned early.
 - The limit tables live in the process: a restart clears them, and several
   worker processes would each keep their own.
 - The desktop shell (Tauri) does not exist yet. Its webview origin is

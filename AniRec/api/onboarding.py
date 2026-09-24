@@ -26,7 +26,7 @@ from ..errors import (
     UnexpectedStatusError,
 )
 from ..services.account_service import AccountError
-from .accounts import resolve_scope, set_session_cookie
+from .accounts import renew_cookie, resolve_scope, set_session_cookie
 from .container import ApiContainer
 from .limits import ClientLimits
 from .models import ApiModel, ProfileSummary
@@ -90,6 +90,7 @@ def onboarding_router(services: ApiContainer, limits: ClientLimits) -> APIRouter
             # ID: it counts against this visitor's shared budget (limits.py).
             client = limits.client(request)
             scope = resolve_scope(services, request)
+            renew_cookie(request, response, scope, limits)
             # A visitor who could not be given a guest account spends no call.
             if scope.account is None and limits.new_accounts.full(client):
                 raise AccountError("busy")

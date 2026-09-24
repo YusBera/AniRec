@@ -79,9 +79,11 @@ class AccountMaintenance:
         """Finish pending deletions, remove stray web lists, prune guests."""
         accounts = self._services.accounts
         try:
-            pending = accounts.pending_deletions()
-            self._operations.close(pending)
-            self._remove(pending)
+            # One at a time: a list another process is still running an
+            # operation on is left for the next sweep.
+            for profile_id in accounts.pending_deletions():
+                if self._operations.close((profile_id,)):
+                    self._remove((profile_id,))
             self._remove_strays()
             if accounts.claim_prune_run():
                 for guest_id, _lists in accounts.prunable_guests():
@@ -98,11 +100,12 @@ class AccountMaintenance:
             return
         now = time.time()
         accounts = self._services.accounts
+        desktop = set(self._desktop_active())
         for directory in root.iterdir():
             name = directory.name
-            if not directory.is_dir() or not is_web_import(name):
+            if not directory.is_dir() or not is_web_import(name) or name in desktop:
                 continue
-            if accounts.is_owned(name) or accounts.is_pending(name):
+            if accounts.is_owned(name) or accounts.is_pending(name) or accounts.is_released(name):
                 continue
             if now - _last_touched(directory) < STRAY_AGE_SECONDS:
                 continue
@@ -117,7 +120,10 @@ class AccountMaintenance:
 
         def loop() -> None:
             while not self._stop.is_set():
-                self.sweep()
+                try:
+                    self.sweep()
+                except Exception:  # noqa: BLE001 - one bad run must not end maintenance
+                    LOGGER.exception("Account maintenance failed; will retry.")
                 self._stop.wait(SWEEP_INTERVAL_SECONDS)
 
         self._thread = threading.Thread(target=loop, name="AniRecAccountMaintenance", daemon=True)

@@ -350,7 +350,7 @@ describe("accounts (D-021)", () => {
   }
   const GUEST = { kind: "guest" as const, email: null, has_import: true, installation_owner: false };
   const READER = { kind: "registered" as const, email: "reader@example.com", has_import: true, installation_owner: false };
-  const WITH_LIST = { ...SYSTEM, needs_setup: false, profile: { profile_id: "imp_1", username: "reader_01" } };
+  const WITH_LIST = { ...SYSTEM, needs_setup: false, profile: { profile_id: "imp_1", username: "reader_01", kept_on_delete: false } };
 
   it("offers a guest Create account and Sign in, and a registered reader their email and Sign out", async () => {
     vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
@@ -503,20 +503,43 @@ describe("Settings → ACCOUNT (D-021)", () => {
     expect(screen.getByLabelText("Current password")).toHaveValue("");
   });
 
-  it("offers the data as a download", async () => {
+  it("says in words when the data can't be downloaded", async () => {
+    const { SettingsPage } = await import("./SettingsPage");
+    const { AniRecApiError } = await import("../api/client");
+    vi.spyOn(api, "settings").mockResolvedValue(SETTINGS);
+    vi.spyOn(api, "exportAccount").mockRejectedValue(new AniRecApiError({ code: "x", title: "x", description: "", solution: "", retryable: false }, 429));
+    render(<SettingsPage account={READER} />);
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Download my data" }));
+    expect(await screen.findByText("You've downloaded your data several times this hour. Try again later.")).toBeInTheDocument();
+  });
+
+  it("separates the lists deleted from the ones kept for the desktop app, and never guesses", async () => {
     const { SettingsPage } = await import("./SettingsPage");
     vi.spyOn(api, "settings").mockResolvedValue(SETTINGS);
+    const imports = vi.spyOn(api, "imports")
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ imports: [
+        { profile_id: "imp_1", username: "reader_01", kept_on_delete: false },
+        { profile_id: "mal-123", username: "desktop_reader", kept_on_delete: true },
+      ], active_profile_id: "imp_1", reason: null });
     render(<SettingsPage account={READER} />);
-    const link = await screen.findByRole("link", { name: "Download my data" });
-    expect(link).toHaveAttribute("href", "/api/account/export");
-    expect(link).toHaveAttribute("download");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Delete account" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete your account?" });
+    expect(await within(dialog).findByText(/Your lists couldn't be read/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Delete my account" })).toBeDisabled();
+    await user.click(within(dialog).getByRole("button", { name: "Try again" }));
+    expect(await within(dialog).findByText("reader_01's list")).toBeInTheDocument();
+    expect(within(dialog).getByText("Kept, because the desktop app uses it:")).toBeInTheDocument();
+    expect(within(dialog).getByText("desktop_reader's list")).toBeInTheDocument();
+    expect(imports).toHaveBeenCalledTimes(2);
   });
 
   it("names every list before deleting, asks for the password, and reports a refusal in words", async () => {
     const { SettingsPage } = await import("./SettingsPage");
     vi.spyOn(api, "settings").mockResolvedValue(SETTINGS);
     vi.spyOn(api, "imports").mockResolvedValue({ imports: [
-      { profile_id: "imp_1", username: "reader_01" }, { profile_id: "imp_2", username: "guest_list" },
+      { profile_id: "imp_1", username: "reader_01", kept_on_delete: false }, { profile_id: "imp_2", username: "guest_list", kept_on_delete: false },
     ], active_profile_id: "imp_1", reason: null });
     const remove = vi.spyOn(api, "deleteAccount")
       .mockResolvedValueOnce({ account: null, reason: "wrong-credentials", moved_imports: 0 })
@@ -526,8 +549,8 @@ describe("Settings → ACCOUNT (D-021)", () => {
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Delete account" }));
     const dialog = screen.getByRole("dialog", { name: "Delete your account?" });
-    expect(await within(dialog).findByText("reader_01's list, with its Watch Later and Not interested")).toBeInTheDocument();
-    expect(within(dialog).getByText("guest_list's list, with its Watch Later and Not interested")).toBeInTheDocument();
+    expect(await within(dialog).findByText("reader_01's list")).toBeInTheDocument();
+    expect(within(dialog).getByText("guest_list's list")).toBeInTheDocument();
     await user.type(within(dialog).getByLabelText("Your password"), "wrong one");
     await user.click(within(dialog).getByRole("button", { name: "Delete my account" }));
     expect(await within(dialog).findByText("That password isn't right.")).toBeInTheDocument();
@@ -542,7 +565,7 @@ describe("Settings → ACCOUNT (D-021)", () => {
   it("lets a guest delete their data without a password", async () => {
     const { SettingsPage } = await import("./SettingsPage");
     vi.spyOn(api, "settings").mockResolvedValue(SETTINGS);
-    vi.spyOn(api, "imports").mockResolvedValue({ imports: [{ profile_id: "imp_1", username: "reader_01" }], active_profile_id: "imp_1", reason: null });
+    vi.spyOn(api, "imports").mockResolvedValue({ imports: [{ profile_id: "imp_1", username: "reader_01", kept_on_delete: false }], active_profile_id: "imp_1", reason: null });
     const remove = vi.spyOn(api, "deleteAccount").mockResolvedValue({ account: null, reason: null, moved_imports: 0 });
     render(<SettingsPage account={{ kind: "guest", email: null, has_import: true, installation_owner: false }} />);
     const user = userEvent.setup();
@@ -550,7 +573,7 @@ describe("Settings → ACCOUNT (D-021)", () => {
     expect(screen.queryByLabelText("Current password")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Delete my data" }));
     const dialog = screen.getByRole("dialog", { name: "Delete your data?" });
-    await within(dialog).findByText("reader_01's list, with its Watch Later and Not interested");
+    await within(dialog).findByText("reader_01's list");
     expect(within(dialog).queryByLabelText("Your password")).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Delete my data" }));
     expect(remove).toHaveBeenCalledWith(null);
@@ -615,7 +638,7 @@ describe("switching lists (D-021)", () => {
   it("lists an account's own lists, marks the one shown, and switches", async () => {
     stub();
     vi.spyOn(api, "imports").mockResolvedValue({ imports: [
-      { profile_id: "imp_1", username: "reader_01" }, { profile_id: "imp_2", username: "guest_list" },
+      { profile_id: "imp_1", username: "reader_01", kept_on_delete: false }, { profile_id: "imp_2", username: "guest_list", kept_on_delete: false },
     ], active_profile_id: "imp_1", reason: null });
     const choose = vi.spyOn(api, "chooseImport").mockResolvedValue({ imports: [], active_profile_id: "imp_2", reason: null });
     const user = userEvent.setup();
@@ -636,7 +659,7 @@ describe("switching lists (D-021)", () => {
 
   it("shows no switcher for an account with one list", async () => {
     stub();
-    vi.spyOn(api, "imports").mockResolvedValue({ imports: [{ profile_id: "imp_1", username: "reader_01" }], active_profile_id: "imp_1", reason: null });
+    vi.spyOn(api, "imports").mockResolvedValue({ imports: [{ profile_id: "imp_1", username: "reader_01", kept_on_delete: false }], active_profile_id: "imp_1", reason: null });
     const user = userEvent.setup();
     render(<Workspace />);
     await user.click(await screen.findByRole("button", { name: "Account menu for reader_01" }));

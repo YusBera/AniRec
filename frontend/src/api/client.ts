@@ -111,8 +111,17 @@ export const api = {
   imports: () => request<AccountImports>("/api/account/imports"),
   changePassword: (currentPassword: string, newPassword: string) => request<AccountResult>("/api/account/password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }),
   deleteAccount: (password: string | null) => request<AccountResult>("/api/account/delete", { method: "POST", body: JSON.stringify({ password }) }),
-  /** A same-origin download: the browser sends the session cookie itself. */
-  exportUrl: () => apiUrl("/api/account/export"),
+  /** The account's data as a file, or an ApiError-shaped refusal. */
+  exportAccount: async (): Promise<Blob> => {
+    let response: Response;
+    try {
+      response = await fetch(apiUrl("/api/account/export"), { headers: headers() });
+    } catch {
+      throw new AniRecApiError(OFFLINE, 0);
+    }
+    if (!response.ok) throw new AniRecApiError({ ...OFFLINE, title: `Request failed (${response.status})` }, response.status);
+    return response.blob();
+  },
   savePreferences: (values: PreferencesWrite) => request<SettingsRead>("/api/workspace/preferences", { method: "POST", body: JSON.stringify(values) }),
   chooseImport: (profileId: string) => request<AccountImports>("/api/account/imports/active", { method: "POST", body: JSON.stringify({ profile_id: profileId }) }),
 

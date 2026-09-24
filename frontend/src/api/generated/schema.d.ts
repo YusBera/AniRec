@@ -1215,6 +1215,12 @@ export interface components {
         };
         /** ImportSummary */
         ImportSummary: {
+            /**
+             * Kept On Delete
+             * @description Deleting the account keeps this list for the desktop tool rather than deleting it.
+             * @default false
+             */
+            kept_on_delete: boolean;
             /** Profile Id */
             profile_id: string;
             /** Username */

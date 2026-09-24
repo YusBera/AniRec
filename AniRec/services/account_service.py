@@ -221,6 +221,10 @@ CREATE TABLE IF NOT EXISTS pending_deletions (
     profile_id TEXT PRIMARY KEY,
     requested_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS released_lists (
+    profile_id TEXT PRIMARY KEY,
+    released_at TEXT NOT NULL
+);
 """
 
 # Reader preferences kept per account (docs/ACCOUNTS.md, "Reader preferences").
@@ -310,6 +314,13 @@ class _AccountManagement:
                     "INSERT OR IGNORE INTO pending_deletions(profile_id, requested_at) VALUES (?,?)",
                     (profile_id, now),
                 )
+            # Remembered, so the sweep never mistakes a kept list for a stray,
+            # even after the desktop tool switches away from it.
+            for profile_id in released:
+                conn.execute(
+                    "INSERT OR IGNORE INTO released_lists(profile_id, released_at) VALUES (?,?)",
+                    (profile_id, now),
+                )
             conn.execute("DELETE FROM profile_owners WHERE account_id=?", (account_id,))
             conn.execute("DELETE FROM installation WHERE key='owner_account_id' AND value=?", (account_id,))
             conn.execute("DELETE FROM accounts WHERE account_id=?", (account_id,))   # sessions, preferences cascade
@@ -322,6 +333,10 @@ class _AccountManagement:
     def deletion_done(self, profile_id: str) -> None:
         with self._transaction() as conn:
             conn.execute("DELETE FROM pending_deletions WHERE profile_id=?", (profile_id,))
+
+    def is_released(self, profile_id: str) -> bool:
+        with self._transaction() as conn:
+            return conn.execute("SELECT 1 FROM released_lists WHERE profile_id=?", (profile_id,)).fetchone() is not None
 
     def is_pending(self, profile_id: str) -> bool:
         with self._transaction() as conn:
@@ -563,6 +578,9 @@ class AccountService(_AccountManagement):
         with _HashSlot():
             account_id = self._checked_credentials(email, password, dummy, client)
         with self._transaction() as conn:
+            if self._load(conn, account_id) is None:
+                # Deleted between the password check and now.
+                raise AccountError("wrong-credentials")
             moved: tuple[str, ...] = ()
             current = self._session_account_locked(conn, current_token)
             if current is not None and current.kind == "guest" and current.account_id != account_id:

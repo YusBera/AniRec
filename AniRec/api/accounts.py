@@ -32,6 +32,7 @@ from ..services.account_service import (
     AccountError,
     AccountService,
     SignedIn,
+    is_web_import,
 )
 from .container import ApiContainer
 from .limits import ClientLimits
@@ -154,6 +155,10 @@ class AccountResponse(ApiModel):
 class ImportSummary(ApiModel):
     profile_id: str
     username: str
+    kept_on_delete: bool = Field(
+        default=False,
+        description="Deleting the account keeps this list for the desktop tool rather than deleting it.",
+    )
 
 
 class ImportsResponse(ApiModel):
@@ -229,7 +234,7 @@ def accounts_router(services: ApiContainer, limits: ClientLimits, maintenance) -
         # other registration counts against this visitor's hourly limit, but
         # only once it succeeds: a mistyped attempt spends nothing.
         client = limits.client(request)
-        new_account = resolve_scope(services, request).account is None
+        new_account = scope_of(request, response).account is None
         if new_account and limits.new_accounts.full(client):
             return AccountResponse(reason="busy")
         try:
@@ -268,6 +273,12 @@ def accounts_router(services: ApiContainer, limits: ClientLimits, maintenance) -
         clear_session_cookie(request, response, limits)
         return AccountResponse()
 
+    def scope_of(request: Request, response: Response) -> ReaderScope:
+        """The scope, re-sending the cookie when using it renewed the session."""
+        scope = resolve_scope(services, request)
+        renew_cookie(request, response, scope, limits)
+        return scope
+
     def counted(request: Request, check) -> None:
         """A password check counted as a sign-in for this visitor."""
         client = limits.client(request)
@@ -282,7 +293,7 @@ def accounts_router(services: ApiContainer, limits: ClientLimits, maintenance) -
 
     @router.post("/password", response_model=AccountResponse)
     def change_password(payload: PasswordChange, request: Request, response: Response) -> AccountResponse:
-        scope = resolve_scope(services, request)
+        scope = scope_of(request, response)
         if scope.account is None:
             return AccountResponse(reason="signed-out")
         if not scope.account.registered:
@@ -298,7 +309,7 @@ def accounts_router(services: ApiContainer, limits: ClientLimits, maintenance) -
     @router.post("/delete", response_model=AccountResponse)
     def delete_account(payload: DeleteRequest, request: Request, response: Response) -> AccountResponse:
         """Delete the account and every list it owns (docs/ACCOUNTS.md)."""
-        scope = resolve_scope(services, request)
+        scope = scope_of(request, response)
         account = scope.account
         if account is None:
             return AccountResponse(reason="signed-out")
@@ -348,11 +359,13 @@ def accounts_router(services: ApiContainer, limits: ClientLimits, maintenance) -
             "preferences": preferences,
             "lists": lists,
         }
-        return Response(
+        download = Response(
             content=json.dumps(body, indent=2, sort_keys=True, default=str),
             media_type="application/json",
             headers={**NO_STORE, "Content-Disposition": 'attachment; filename="anirec-export.json"'},
         )
+        renew_cookie(request, download, scope, limits)
+        return download
 
     def imports_of(scope: ReaderScope, reason: str | None = None) -> ImportsResponse:
         account = scope.account
@@ -364,22 +377,27 @@ def accounts_router(services: ApiContainer, limits: ClientLimits, maintenance) -
             current = services.accounts.account_for_session(scope.token)
         except AccountError:
             return ImportsResponse(reason="unavailable")
+        desktop = services.profiles.desktop_active_profile_id()
         for profile_id in owned:
             try:
-                items.append(ImportSummary(profile_id=profile_id, username=services.profiles.get_profile(profile_id).username))
+                items.append(ImportSummary(
+                    profile_id=profile_id,
+                    username=services.profiles.get_profile(profile_id).username,
+                    kept_on_delete=not is_web_import(profile_id) or profile_id == desktop,
+                ))
             except (AniRecError, OSError, TypeError, ValueError):
                 continue   # an unreadable import is not offered
         active = None if current is None else current.active_profile_id
         return ImportsResponse(imports=tuple(items), active_profile_id=active, reason=reason)
 
     @router.get("/imports", response_model=ImportsResponse)
-    def list_imports(request: Request) -> ImportsResponse:
-        return imports_of(resolve_scope(services, request))
+    def list_imports(request: Request, response: Response) -> ImportsResponse:
+        return imports_of(scope_of(request, response))
 
     @router.post("/imports/active", response_model=ImportsResponse)
-    def choose_import(payload: ActiveImportRequest, request: Request) -> ImportsResponse:
+    def choose_import(payload: ActiveImportRequest, request: Request, response: Response) -> ImportsResponse:
         """Show another of this account's lists. Only its own (D-021)."""
-        scope = resolve_scope(services, request)
+        scope = scope_of(request, response)
         if scope.account is None:
             return ImportsResponse(reason="signed-out")
         try:

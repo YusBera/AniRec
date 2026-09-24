@@ -464,12 +464,52 @@ final review listed:
   pending deletions, removes stray web lists and prunes guests unused for
   37 days, with clock guards.
 - Early design review: 12 findings (3 blockers), applied before code.
-- Tests: `tests/test_account_management.py` (16); frontend
+- Tests: `tests/test_account_management.py` (20); frontend
   `WorkspaceRead.test.tsx`, `Shell.test.tsx`. pytest 610 passed (same
   pre-existing failures); `npm run ci` 134. Chromium at 375×812: Settings,
   the delete dialog and the export.
-- **Next:** password reset once SMTP is wired (phase 5); Google and
-  passkeys (phases 3 and 4).
+- **Final adversarial review: NO-GO, then fixed** (failing tests first):
+  - blocker: a list released to the desktop tool on deletion was removed by
+    the sweep an hour later as a "stray"; released lists are now recorded
+    (`released_lists`) and the desktop's active list is always skipped;
+  - every route that renews a session now re-sends the cookie;
+  - the delete dialog names the lists deleted and the ones kept for the
+    desktop app (`kept_on_delete`), and says so when the lists could not be
+    read instead of "no lists";
+  - the rebuild after saving preferences is followed by its own id, so a
+    fast run is not missed;
+  - "Download my data" reports a refused or failed download in words;
+  - the sweep skips a pending list another process still runs; one failed
+    sweep no longer stops maintenance; a sign-in racing a deletion is a
+    clean refusal.
+  - Known limit (recorded, not fixed): after a forward clock jump, the first
+    new visitor satisfies the clock guard and old guests can be pruned.
+- Verification after the fixes: targeted pytest (7 account/API files) 138
+  passed; `npm run ci` 135.
+
+### Handoff (2026-09-24)
+
+State: everything above is committed on `feat/pyside-design-port` (PR #5
+into `codex/ui-v3-engine`). The account work (D-021) is complete through
+phase 2; `docs/ACCOUNTS.md` is the design and the phase plan.
+
+Next, in order:
+1. **Password reset (phase 5)** once the user wires SMTP: a `Mailer` seam
+   reading SMTP settings from the environment, a single-use, short-lived,
+   hashed reset token table, and "Forgot your password?" in the sign-in
+   dialog and Settings (both currently say reset is not available). Email
+   verification can reuse it, which also removes the per-account lockout
+   limit noted in `ACCOUNTS.md`.
+2. **Google sign-in (phase 3)** needs an OAuth client the owner creates.
+3. **Passkeys (phase 4)** need the app served at `localhost`.
+4. Separate queued task: `list-sync` never passes `synced_at` to
+   `MalSyncService.sync`, so that operation always fails.
+5. Still open from earlier reviews: after a 409 the page does not reload
+   when another tab's run finishes; a history that became empty keeps the
+   old `user_history.csv`.
+
+Before a hosted launch, read `ACCOUNTS.md` "Known limits" (per-address
+limits, in-process limit tables, no Tauri session path).
 
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in

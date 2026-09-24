@@ -95,25 +95,33 @@ export function Workspace() {
     }).catch(() => shell.notify({ tone: "problem", title: "Signing out didn't finish", detail: "Try again in a moment." }));
   }, [accountChanged, shell.notify, shell.nudge]);
   const account = shell.system?.account ?? null;
-  // A rebuild started by saving preferences: reload the pages when it ends,
-  // since Discover only follows the runs it started itself.
-  const [rebuild, setRebuild] = useState<{ id: string; seen: boolean } | null>(null);
+  // A rebuild started by saving preferences: follow it by its own id until it
+  // ends, then reload the pages (Discover follows only the runs it started).
+  const [rebuild, setRebuild] = useState<string | null>(null);
   const onPreferencesChanged = useCallback(() => {
     api.startOperation("recommendation").then((operation) => {
-      setRebuild({ id: operation.id, seen: false });
+      setRebuild(operation.id);
       shell.nudge();
     }).catch(() => shell.notify({ tone: "problem", title: "Your recommendations weren't updated", detail: "Your preferences are saved; they apply the next time your recommendations are rebuilt." }));
   }, [shell.nudge, shell.notify]);
   useEffect(() => {
     if (!rebuild) return;
-    const running = (shell.system?.active_operations ?? []).some((operation) => operation.id === rebuild.id);
-    if (running && !rebuild.seen) setRebuild({ ...rebuild, seen: true });
-    if (!running && rebuild.seen) { setRebuild(null); setFeed(null); setGeneration((value) => value + 1); }
-  }, [shell.system, rebuild]);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      api.operation(rebuild).then((operation) => {
+        if (cancelled) return;
+        if (operation.state === "running") { timer = setTimeout(check, 2000); return; }
+        setRebuild(null); setFeed(null); setGeneration((value) => value + 1);
+      }).catch(() => { if (!cancelled) timer = setTimeout(check, 5000); });
+    };
+    check();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [rebuild]);
   const onSettingsAccount = useCallback((event: "deleted" | "password-changed") => {
     if (event === "deleted") {
       accountChanged();
-      shell.notify({ tone: "info", title: "Your account was deleted", detail: "Everything saved with it is gone. You can keep looking around." });
+      shell.notify({ tone: "info", title: "Your account was deleted", detail: "You can keep looking around." });
     } else {
       shell.notify({ tone: "done", title: "Password changed", detail: "You're still signed in here; everywhere else is signed out." });
     }
