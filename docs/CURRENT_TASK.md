@@ -487,11 +487,14 @@ final review listed:
 - Verification after the fixes: targeted pytest (7 account/API files) 138
   passed; `npm run ci` 135.
 
-### Handoff (2026-09-24)
+### Handoff (2026-09-25)
 
-State: everything above is committed on `feat/pyside-design-port` (PR #5
-into `codex/ui-v3-engine`). The account work (D-021) is complete through
-phase 2; `docs/ACCOUNTS.md` is the design and the phase plan.
+State: everything above is committed and pushed on `feat/pyside-design-port`
+(PR #5 into `codex/ui-v3-engine`). The account work (D-021) is complete
+through phase 2 plus phase 5 (password reset); `docs/ACCOUNTS.md` is the
+design and the phase plan. The owner has run the app on real data: their
+account owns the installation and the `Kuroboshi_` list, the feed is ranked
+by the ONNX bundle, and covers come from `CoverUrlService`.
 
 **Password reset by email (phase 5): done (2026-09-24).** Design, both
 reviews and the known limits are in `ACCOUNTS.md`, "Password reset by email
@@ -531,18 +534,38 @@ reviews and the known limits are in `ACCOUNTS.md`, "Password reset by email
   is re-asked after 30 days; a refused Client ID, rate limit or outage
   stops the run and is not remembered. Upstream fix still open: carry
   picture URLs in the collector snapshot and the bundle catalogue.
-- Proposed, not built: a more prominent MAL score on the card.
+- Proposed, not built: a more prominent MAL score on the card (below).
 
 Next, in order:
-1. **Email verification** can reuse the mailer and a token table like the
+1. **MAL score on the card: waiting on the owner's choice** (mockup first,
+   or build). Proposal: one row under the poster, "Ranked #N of M for you"
+   on the left and a score chip on the right (a muted "MAL" label, the
+   value large and tabular); "MAL · not rated" in words when there is none;
+   the same chip in List, Table and the Score Inspector. It departs from
+   the desktop card's order (D-016), so it needs the owner's OK. The chip
+   must stay labelled "MAL" and apart from the personal rank
+   (DOMAIN_RULES: a community rating is not a personal match).
+2. **Email verification** can reuse the mailer and a token table like the
    reset one; it would stop registration revealing taken emails and let
    reset mail go only to verified addresses. Open choice: refuse email
    reset for the installation owner (`ACCOUNTS.md`).
-2. **Google sign-in (phase 3)** needs an OAuth client the owner creates.
-3. **Passkeys (phase 4)** need the app served at `localhost`.
-4. Still open from earlier reviews: after a 409 the page does not reload
+3. **Google sign-in (phase 3)** needs an OAuth client the owner creates.
+4. **Passkeys (phase 4)** need the app served at `localhost`.
+5. Still open from earlier reviews: after a 409 the page does not reload
    when another tab's run finishes; a history that became empty keeps the
    old `user_history.csv`.
+
+Not yet confirmed by the owner: that their password manager now offers to
+save after registering (the dialog fix is tested in vitest only). Upstream,
+in the other repos: picture URLs in the collector snapshot, so the bundle
+catalogue carries covers.
+
+Running it locally, as the owner does: the launch configs `anirec-api`
+(port 8770, the ONNX bundle) and `anirec-frontend` (Vite on 5173). Vite
+answers on `localhost` only, so open <http://localhost:5173/>, not
+`127.0.0.1`. The API does not reload: restart it after a backend change.
+The MAL Client ID lives in the installation settings and is set by the
+owner; never read, print or write it (AGENTS.md).
 
 Before a hosted launch, read `ACCOUNTS.md` "Known limits" (per-address
 limits, in-process limit tables, no Tauri session path).
@@ -551,4 +574,8 @@ limits, in-process limit tables, no Tauri session path).
 without them fall back to system faces. The Qt test modules cannot import in
 a container without `libEGL`; two `test_api_lifecycle` tests fail on Linux
 (`os.kill` overflow in `single_instance.py`), unrelated to this change.
+On Windows, `tests/test_background_sync.py` (Qt) sometimes hangs inside
+`theme.apply`, before and after these changes alike; run the non-Qt set
+(every test module that does not import PySide or `AniRec.gui`) as the
+regression check: 626 passed at `9788a36`.
 
