@@ -53,6 +53,9 @@ export type OperationSnapshot = Schemas["OperationSnapshotResponse"];
 export type OperationStartRequest = Schemas["OperationStartRequest"];
 export type OperationList = Schemas["OperationListResponse"];
 export type MalImport = Schemas["MalImportResponse"];
+/** The signed-in account (D-021); `null` when signed out. */
+export type AccountSummary = Schemas["AccountSummary"];
+export type AccountResult = Schemas["AccountResponse"];
 
 /** The lifecycle states an operation reports. Drawn from the schema's own union. */
 export type OperationState = OperationSnapshot["state"];

@@ -12,7 +12,8 @@
  * - **Just look around:** the labelled sample library; nothing is saved.
  *
  * Shown when `/api/system/state` reports `needs_setup`, remembered for the
- * session once closed, and reachable again from the account menu.
+ * session once closed, and reachable again from the account menu. A returning
+ * reader signs in from here instead (D-021).
  */
 
 import { useEffect, useId, useRef, useState } from "react";
@@ -45,11 +46,13 @@ export function importProblem(reason: string, username: string): string {
 
 const SOON = [["AniList", "anilist"], ["AniDB", "anidb"]] as const;
 
-export function FirstRun({ clientIdPresent, onImported, onClose }: {
+export function FirstRun({ clientIdPresent, onImported, onClose, onSignIn }: {
   /** From `/api/system/state`: whether this installation can read MyAnimeList lists. */
   clientIdPresent: boolean;
   onImported: (profile: ProfileSummary) => void;
   onClose: () => void;
+  /** "Already have an account?": closes this and opens sign-in. */
+  onSignIn?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -61,6 +64,7 @@ export function FirstRun({ clientIdPresent, onImported, onClose }: {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const imported = useRef<ProfileSummary | null>(null);
+  const signIn = useRef(false);
 
   useEffect(() => {
     const node = dialog.current!;
@@ -100,6 +104,7 @@ export function FirstRun({ clientIdPresent, onImported, onClose }: {
       rememberDismissed();
       if (imported.current) onImported(imported.current);
       onClose();
+      if (signIn.current) onSignIn?.();
     }}>
     <section className="onboarding-welcome">
       <h2 id={heading}>Welcome to AniRec</h2>
@@ -140,6 +145,9 @@ export function FirstRun({ clientIdPresent, onImported, onClose }: {
 
       <button type="button" className="look-around" onClick={close}>Just look around</button>
       <p className="onboarding-status">The sample library. Nothing is saved.</p>
+      {onSignIn ? <p className="account-switch">Already have an account?{" "}
+        <button type="button" className="link-button" onClick={() => { signIn.current = true; close(); }}>Sign in</button>
+      </p> : null}
     </section>
     <button type="button" className="onboarding-close" aria-label="Close" onClick={close}>×</button>
   </dialog>;

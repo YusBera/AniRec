@@ -262,6 +262,34 @@
 .newcomer[aria-disabled="true"] { color: var(--text-disabled); border-color: var(--border); cursor: not-allowed; }
 .look-around { justify-self: start; min-height: 44px; margin-top: var(--space-sm); color: var(--focus); text-decoration: underline; text-underline-offset: 3px; }
 .onboarding-close { position: absolute; top: var(--space-sm); right: var(--space-sm); min-width: 44px; min-height: 44px; color: var(--text-muted); font-size: calc(var(--type-xl) * 1rem); }
+/* ---------- accounts (D-021) ---------- */
+.account-dialog {
+  width: min(440px, calc(100% - var(--space-2xl)));
+  max-width: none;
+  padding: var(--space-2xl) var(--space-2xl) var(--space-xl);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  font-family: var(--font-sans);
+}
+.account-dialog::backdrop { background: color-mix(in srgb, var(--well) 88%, transparent); }
+.account-dialog h2 { margin: 0; color: var(--accent); font: var(--weight-heavy) calc(var(--type-2xl) * 1rem) / 1.15 var(--font-sans); }
+.account-lead { margin: var(--space-xs) 0 var(--space-lg); color: var(--text-strong); }
+.account-dialog form { display: grid; gap: var(--space-xs); }
+.account-dialog label { margin-top: var(--space-sm); color: var(--text-strong); font-weight: var(--weight-bold); }
+.account-dialog input { min-width: 0; min-height: 44px; padding: var(--space-sm) var(--space-md); background: var(--well); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); font: inherit; }
+.account-dialog input[aria-invalid="true"] { border-color: var(--danger-border); }
+.password-field { display: flex; gap: var(--space-xs); }
+.password-field input { flex: 1; }
+.show-password { min-width: 44px; min-height: 44px; }
+.account-hint { margin: 0; color: var(--text-muted); font-size: calc(var(--type-sm) * 1rem); }
+.account-submit { min-height: 44px; margin-top: var(--space-sm); }
+.account-switch { margin: var(--space-md) 0 0; color: var(--text-muted); }
+.link-button { min-height: 44px; padding: 0; color: var(--focus); text-decoration: underline; text-underline-offset: 3px; }
+.save-prompt { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-sm) var(--space-md); margin: var(--space-md) var(--space-xl) 0; padding: var(--space-sm) var(--space-md); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.save-prompt p { margin: 0; flex: 1 1 16em; color: var(--text-strong); }
+.save-prompt .btn { min-height: 44px; }
 .account-links button { display: flex; align-items: center; gap: var(--space-md); width: 100%; min-height: 44px; padding: 0 var(--space-sm); color: var(--text); text-align: left; border-radius: var(--radius-lg); }
 .account-links button:hover { background: var(--surface); }
 
@@ -286,6 +314,8 @@
   .source-row { grid-template-columns: 1fr; gap: var(--space-xs); }
   .popover-panel { position: fixed; top: 60px; left: var(--space-sm); right: var(--space-sm); width: auto; }
   .sample-banner { margin: var(--space-sm) var(--space-lg) 0; justify-content: flex-start; }
+  .save-prompt { margin: var(--space-sm) var(--space-lg) 0; }
+  .account-dialog { padding: var(--space-xl) var(--space-lg) var(--space-lg); }
   .workspace-page { padding: var(--space-lg) var(--space-lg) var(--space-2xl); }
   .workspace-intro { margin-bottom: var(--space-md); }
   .identity-panel, .verdict-panel, .unlisted, .compat-header, .settings-group { padding: var(--space-md); }

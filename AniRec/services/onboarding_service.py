@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from collections.abc import Callable
@@ -10,6 +11,7 @@ try:
     from ..errors import AniRecError, ConfigError
     from ..infrastructure.json_storage import JsonStore
     from ..infrastructure.paths import config_dir
+    from ..models import UserProfile
     from .profile_service import ProfileService
     from .settings_service import SettingsService
     from .token_store import TokenStore
@@ -17,6 +19,7 @@ except ImportError:  # Compatibility with the legacy top-level import path.
     from errors import AniRecError, ConfigError
     from infrastructure.json_storage import JsonStore
     from infrastructure.paths import config_dir
+    from models import UserProfile
     from services.profile_service import ProfileService
     from services.settings_service import SettingsService
     from services.token_store import TokenStore
@@ -74,33 +77,46 @@ class OnboardingService:
         except (AniRecError, ConfigError, OSError, TypeError, ValueError):
             return True
 
-    def import_public_mal_profile(self, reference: str, *, cancellation=None):
-        """Start with a public MyAnimeList list, read by username (D-020).
+    def read_public_mal_list(self, reference: str, *, cancellation=None) -> str:
+        """Check that a public MyAnimeList list can be read; return its username.
 
-        The Client ID is this installation's own setting; the visitor never
-        supplies one. The list is validated before anything is written, the
-        profile becomes the active one, and setup is marked complete. A
-        failure to read the list leaves no profile and no completion flag.
+        Nothing is written. The Client ID is this installation's own setting;
+        the visitor never supplies one (D-020).
         """
         client_id = (self.settings.load().client_id or "").strip()
         if not client_id:
             raise ConfigError("MyAnimeList import is not set up for this installation.")
-        profile = self.profiles.validate_public_profile(reference, client_id, cancellation=cancellation)
-        # A reader AniRec already knows keeps their saved profile, whether
-        # the desktop connected it (mal-<id>) or an earlier import made it:
-        # nothing is rewritten and no second profile is created.
-        known = next(
-            (saved for saved in self.profiles.list_profiles()
-             if saved.username.casefold() == profile.username.casefold()),
-            None,
-        )
-        # The flag first: if it cannot be written, no profile is left behind;
-        # if the profile then cannot be written, no profile is active, so
-        # setup is still needed.
-        self.mark_complete()
-        if known is not None:
-            return self.profiles.set_active(known.profile_id)
-        return self.profiles.save_and_activate(profile)
+        return self.profiles.validate_public_profile(reference, client_id, cancellation=cancellation).username
+
+    def import_for_account(self, accounts, account_id: str, username: str) -> UserProfile:
+        """Make ``username``'s list an import of this account, and its active one.
+
+        An account that already imported this username keeps that import and
+        its saved decisions. Nothing is looked up across accounts: another
+        reader's import of the same list is theirs alone (D-021). The import
+        directory is named by the server, never after the MyAnimeList user.
+        """
+        from .account_service import new_import_id
+
+        for profile_id in accounts.owned_profile_ids(account_id):
+            try:
+                saved = self.profiles.get_profile(profile_id)
+            except (AniRecError, OSError, TypeError, ValueError):
+                continue
+            if saved.username.casefold() == username.casefold():
+                accounts.set_active(account_id, profile_id)
+                return saved
+        profile_id = new_import_id()
+        directory = self.profiles.directory(profile_id, create=True)
+        profile = UserProfile(profile_id, username, output_dir=str(directory))
+        try:
+            self.profiles.save_profile(profile)
+            accounts.add_import(account_id, profile_id)
+        except BaseException:
+            # Never leave an import directory that no account owns.
+            shutil.rmtree(directory, ignore_errors=True)
+            raise
+        return profile
 
     def mark_complete(self) -> Path:
         payload = {

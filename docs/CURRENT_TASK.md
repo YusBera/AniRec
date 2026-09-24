@@ -364,6 +364,40 @@ right a MyAnimeList username field with Continue, AniList and AniDB marked
   a non-MAL local profile, how picks become history, and a model check with
   a real bundle.
 
+**Accounts, phase 1 (2026-09-24, D-021).** The user reported that anyone
+could import any MyAnimeList username and then see and change the saved
+decisions of whoever had imported it before. Design, review findings, known
+limits and later phases: `docs/ACCOUNTS.md`.
+- Backend:
+  - `AccountService` (`config/accounts.sqlite3`): server-assigned account IDs,
+    guest and registered accounts, scrypt passwords, SHA-256-only sessions,
+    import ownership, the installation owner.
+  - Every reader route resolves `ReaderScope` from the session cookie
+    (`api/accounts.py`); the API no longer reads `profile_state.json`.
+    Operations are visible only to the account that owns their import.
+  - `RequestGuardMiddleware`: Host allowlist on every `/api/` request (DNS
+    rebinding) and Origin checks on every write.
+  - Web imports are `imp_<hex>` directories owned by the account; a guest
+    account is created only after a list is read. Imports and new accounts
+    are capped per hour.
+  - Installation settings: only the owner may save them; the operator names
+    the owner with `python -m AniRec.api.accounts owner <email>`, which also
+    hands over pre-account profiles.
+- Frontend: `AccountDialog.tsx` (create account / sign in), the account menu
+  (Create account, Sign in, Sign out), the dismissible "Create an account so
+  you don't lose your Watch Later." prompt for a guest with a list, "Already
+  have an account? Sign in" in first-time setup, read-only Settings for
+  non-owners. Pages remount and notifications clear when the account changes.
+- Early design review: 13 findings (4 blockers), all applied to the design
+  before code.
+- Tests: `test_account_service.py`, `test_account_api.py`, onboarding and
+  the older API tests moved to signed-in readers (`tests/account_helpers.py`);
+  frontend `Shell.test.tsx`. `npm run ci` 125.
+- **Next:** phase 2 (account management, reader preferences split from
+  installation settings, guest pruning) is required before any hosted launch;
+  then Google (needs an OAuth client the owner creates), passkeys (needs
+  `localhost`, not `127.0.0.1`), email (needs a sender).
+
 **Known limits.** The fonts in the token stacks are not bundled, so browsers
 without them fall back to system faces. The Qt test modules cannot import in
 a container without `libEGL`; two `test_api_lifecycle` tests fail on Linux

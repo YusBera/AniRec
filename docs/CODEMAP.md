@@ -21,11 +21,15 @@ file updates the matching row in the same change.
 | `GET /api/workspace/profile` | `AniRec/api/workspace.py` |
 | `GET /api/workspace/compare` | `AniRec/api/workspace.py` |
 | `GET|POST /api/workspace/settings` | `AniRec/api/workspace.py` |
-| `POST /api/onboarding/mal-profile` (username in, active profile or a `reason` out) | `AniRec/api/onboarding.py` |
+| `POST /api/onboarding/mal-profile` (username in, the account's new import or a `reason` out; creates a guest account when there is none, D-021) | `AniRec/api/onboarding.py` |
+| `GET /api/account`, `POST /api/account/{register,sign-in,sign-out}` (D-021) | `AniRec/api/accounts.py` |
+| Reader scope: session cookie to account to owned import, used by every reader route (D-021) | `resolve_scope` in `AniRec/api/accounts.py` |
+| Operator console: `python -m AniRec.api.accounts owner <email>` names the installation owner and hands over unowned imports | `AniRec/api/accounts.py` |
 
 Request and response models: `AniRec/api/models.py`. Error envelopes and
-exception handlers: `AniRec/api/app.py`. Token and origin enforcement:
-`AniRec/api/security.py`. Dependency wiring: `AniRec/api/container.py`.
+exception handlers: `AniRec/api/app.py`. Token enforcement:
+`AniRec/api/security.py`. Host and Origin checks on every `/api/` request:
+`AniRec/api/request_guard.py`. Dependency wiring: `AniRec/api/container.py`.
 OpenAPI export for type generation: `AniRec/api/openapi_export.py`.
 
 ---
@@ -73,7 +77,8 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Explicit taste feedback | `AniRec/services/taste_feedback_service.py` |
 | Result persistence | `AniRec/services/result_service.py` |
 | Sample library and demonstration payloads | `AniRec/services/sample_data_service.py` |
-| First-run flow; public MyAnimeList import by username (D-020) | `AniRec/services/onboarding_service.py` |
+| First-run flow; public MyAnimeList import by username into an account (D-020, D-021) | `AniRec/services/onboarding_service.py` |
+| Accounts, sessions, password hashing, import ownership, installation owner (D-021) | `AniRec/services/account_service.py` |
 | Cover image fetch and cache | `AniRec/services/cover_image_service.py` |
 | Folder and cache management | `AniRec/services/data_management_service.py` |
 | Connection test | `AniRec/services/api_connection_service.py` |
@@ -105,6 +110,7 @@ ONNX bundle contract: `docs/ONNX_MODEL_SERVING.md`.
 | Top bar: tabs, notifications bell, account menu (D-019) | `frontend/src/workspace/TopBar.tsx` |
 | Service polling and notifications (polls `/api/system/state`, `/api/operations`) | `frontend/src/workspace/Shell.tsx` |
 | First-time setup pop-up: MyAnimeList username, AniList/AniDB coming soon, newcomer path, look around (D-020) | `frontend/src/workspace/FirstRun.tsx` |
+| Create account / sign in dialog (D-021) | `frontend/src/workspace/AccountDialog.tsx` |
 | My Library | `frontend/src/workspace/LibraryPage.tsx` |
 | Profile (reader block, THE READING, fact board, instrument) | `frontend/src/workspace/ProfilePage.tsx`, `ProfileSections.tsx`, `profileFacts.ts` |
 | Compare | `frontend/src/workspace/ComparePage.tsx` |
@@ -151,7 +157,11 @@ Per-account directory under the data root:
 | activity database | `recommendation_event_service.py` | Opt-in local activity events |
 
 Application-wide settings, including credentials, live in `config/settings.json`
-under the data root. No CSV carries a schema version; changing a column layout
+under the data root. Accounts, sessions (SHA-256 digests only), import
+ownership and the installation owner live in `config/accounts.sqlite3`
+(`account_service.py`, D-021). The per-import directories above are named
+`imp_<hex>` for web imports; `profile_state.json` (the machine-wide active
+profile) is used only by the deprecated desktop tool. No CSV carries a schema version; changing a column layout
 has no migration path today.
 
 ---

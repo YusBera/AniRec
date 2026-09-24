@@ -5,7 +5,14 @@ from fastapi.testclient import TestClient
 
 from AniRec.api import create_app
 from AniRec.infrastructure.json_storage import JsonStore
+from account_helpers import sign_in_reader
 
+
+
+def sign_in_as_owner(client):
+    """A registered reader the console has named the installation owner."""
+    sign_in_reader(client, email="owner@example.com")
+    client.app.state.container.accounts.set_owner("owner@example.com", [])
 
 def test_sample_reports_are_explicit_and_do_not_replace_missing_live_data(tmp_path):
     with TestClient(create_app(root_override=str(tmp_path))) as client:
@@ -58,12 +65,12 @@ def test_local_profile_reads_the_active_synced_snapshot(tmp_path):
     profile = profiles.create_profile("local_reader")
     directory = profiles.directory(profile.profile_id, create=True)
     JsonStore().write(profile.to_dict(), directory / "profile.json")
-    profiles.set_active(profile.profile_id)
     (directory / "completed_anime.csv").write_text(
         "Anime ID,Title,User Score,Mean Score,Episodes\n19,Monster,9,8.87,74\n",
         encoding="utf-8",
     )
     with TestClient(app) as client:
+        sign_in_reader(client, profile.profile_id)
         result = client.get("/api/workspace/profile").json()
         assert result["reason"] is None
         assert result["profile"]["is_sample"] is False
@@ -77,7 +84,6 @@ def _active_snapshot(app):
     profile = profiles.create_profile('local_reader')
     directory = profiles.directory(profile.profile_id, create=True)
     JsonStore().write(profile.to_dict(), directory / 'profile.json')
-    profiles.set_active(profile.profile_id)
     (directory / 'completed_anime.csv').write_text('Anime ID,Title,User Score,Mean Score\n19,Monster,9,8.87\n20,Naruto,0,8.0\n', encoding='utf-8')
     return profile, directory
 
@@ -89,8 +95,9 @@ def test_preferences_save_preserves_secrets_and_unexposed_settings(tmp_path):
     service.save_preferences(original)
     with TestClient(app) as client:
         headers = {'X-AniRec-Token': 'test-token'}
+        sign_in_as_owner(client)
         payload = client.get('/api/workspace/settings', headers=headers).json()
-        for key in ('username', 'client_id_present', 'using_defaults'):
+        for key in ('username', 'client_id_present', 'using_defaults', 'can_edit'):
             payload.pop(key)
         payload.update(adventurousness=8, theme='oled', minimum_mal_score=None)
         assert client.post('/api/workspace/settings', json=payload).status_code == 401
@@ -115,8 +122,9 @@ def test_unreadable_settings_cannot_be_overwritten_with_defaults(tmp_path):
     service.path.parent.mkdir(parents=True, exist_ok=True)
     service.path.write_text('broken', encoding='utf-8')
     with TestClient(app) as client:
+        sign_in_as_owner(client)
         payload = client.get('/api/workspace/settings').json()
-        for key in ('username', 'client_id_present', 'using_defaults'):
+        for key in ('username', 'client_id_present', 'using_defaults', 'can_edit'):
             payload.pop(key)
         assert client.post('/api/workspace/settings', json=payload).status_code == 409
         assert service.path.read_text() == 'broken'
@@ -128,6 +136,7 @@ def test_library_reads_saved_metadata_outside_latest_feed(tmp_path):
     service = app.state.container.recommendation_state
     service.set_watch_later(profile.profile_id, 19, True)
     with TestClient(app) as client:
+        sign_in_reader(client, profile.profile_id)
         response = client.get('/api/workspace/library', params={'profile_id': profile.profile_id})
         assert response.status_code == 200
         models = response.json()['recommendations']
@@ -142,7 +151,7 @@ def test_live_comparison_joins_ids_and_keeps_unrated_distinct(tmp_path, monkeypa
     import pandas as pd
     from AniRec.services.anime_data_service import AnimeDataService
     app = create_app(root_override=str(tmp_path))
-    _active_snapshot(app)
+    profile, _directory = _active_snapshot(app)
     service = app.state.container.settings
     service.save_preferences(replace(service.load(), client_id='test-id'))
     monkeypatch.setattr(AnimeDataService, 'fetch_completed_anime', lambda *args, **kwargs: pd.DataFrame([
@@ -151,6 +160,7 @@ def test_live_comparison_joins_ids_and_keeps_unrated_distinct(tmp_path, monkeypa
         {'Anime ID': 21, 'Title': 'One Piece', 'User Score': 10},
     ]))
     with TestClient(app) as client:
+        sign_in_reader(client, profile.profile_id)
         result = client.get('/api/workspace/compare?username=other_reader').json()['report']
         assert result['is_sample'] is False
         assert result['friend']['match_score'] is None
@@ -167,13 +177,14 @@ def test_failed_live_comparison_does_not_become_empty_or_sample(tmp_path, monkey
     from AniRec.errors import AccessDeniedError
     from AniRec.services.anime_data_service import AnimeDataService
     app = create_app(root_override=str(tmp_path))
-    _active_snapshot(app)
+    profile, _directory = _active_snapshot(app)
     service = app.state.container.settings
     service.save_preferences(replace(service.load(), client_id='test-id'))
     def fail(*args, **kwargs):
         raise AccessDeniedError('private')
     monkeypatch.setattr(AnimeDataService, 'fetch_completed_anime', fail)
     with TestClient(app, raise_server_exceptions=False) as client:
+        sign_in_reader(client, profile.profile_id)
         response = client.get('/api/workspace/compare?username=private_reader')
         assert response.status_code == 500
         assert response.json()['error']['code'] == 'access_denied'

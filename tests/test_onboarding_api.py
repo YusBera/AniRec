@@ -187,24 +187,47 @@ def test_importing_a_known_reader_again_keeps_their_saved_profile(tmp_path):
     assert path.read_bytes() == saved   # last sync and anything else kept
 
 
-def test_a_reader_with_a_desktop_profile_is_not_given_a_second_one(tmp_path):
+def test_a_desktop_profile_that_no_account_owns_is_never_handed_to_an_import(tmp_path):
+    # D-021: a MyAnimeList name never selects saved data. Only the operator's
+    # console can give pre-account profiles to an account.
     app, services, _mal = _client(tmp_path)
     existing = services.profiles.create_profile("reader_01", mal_user_id=123)
     directory = services.profiles.directory(existing.profile_id, create=True)
     services.profiles._store.write(existing.to_dict(), directory / "profile.json")
     with TestClient(app) as client:
         body = _import(client, "reader_01").json()
-    assert body["profile"]["profile_id"] == "mal-123"
-    assert [profile.profile_id for profile in services.profiles.list_profiles()] == ["mal-123"]
+    assert body["profile"]["profile_id"].startswith("imp_")
+    assert not services.accounts.is_owned("mal-123")
 
 
-def test_a_disk_failure_is_a_reason_and_leaves_setup_unfinished(tmp_path, monkeypatch):
+def test_a_disk_failure_is_a_reason_and_leaves_no_import_behind(tmp_path, monkeypatch):
     app, services, _mal = _client(tmp_path)
     def fail(*_args, **_kwargs):
         raise OSError("disk full")
-    monkeypatch.setattr(services.onboarding, "mark_complete", fail)
+    monkeypatch.setattr(services.profiles, "save_profile", fail)
     with TestClient(app) as client:
         body = _import(client, "reader_01").json()
         state = client.get("/api/system/state").json()
     assert body == {"profile": None, "reason": "unavailable"}
     assert state["profile"] is None and state["needs_setup"] is True
+    profiles = tmp_path / "profiles"
+    assert not profiles.exists() or not any(profiles.iterdir())
+
+
+def test_a_failed_read_creates_no_guest_account(tmp_path):
+    app, services, _mal = _client(tmp_path, error=NotFoundError("MyAnimeList returned HTTP 404."))
+    with TestClient(app) as client:
+        response = _import(client, "reader_01")
+    assert "anirec_session" not in response.cookies
+    assert client.cookies.get("anirec_session") is None
+
+
+def test_imports_are_capped_process_wide(tmp_path, monkeypatch):
+    import AniRec.api.onboarding as onboarding
+
+    monkeypatch.setattr(onboarding, "IMPORTS_PER_HOUR", 1)
+    app, _services, mal = _client(tmp_path)
+    with TestClient(app) as client:
+        assert _import(client, "reader_01").json()["reason"] is None
+        assert _import(client, "reader_02").json() == {"profile": None, "reason": "busy"}
+    assert len(mal.calls) == 1

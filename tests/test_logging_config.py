@@ -92,3 +92,17 @@ def test_non_debug_logger_filters_debug_records(system_temp_dir):
         assert "visible info message" in content
     finally:
         close_logger(logger)
+
+
+def test_account_secrets_are_redacted_whole():
+    """D-021: a password (spaces included), a session cookie and a hash never reach a log."""
+    from AniRec.infrastructure.logging_config import redact_secrets
+
+    logged = redact_secrets(
+        '{"email": "reader@example.com", "password": "correct horse \\" battery"} '
+        "Cookie: anirec_session=abc123; theme=dark "
+        "password_hash=scrypt$15$8$1$salt$hash"
+    )
+    for secret in ("correct", "horse", "battery", "abc123", "scrypt$15"):
+        assert secret not in logged
+    assert "reader@example.com" in logged

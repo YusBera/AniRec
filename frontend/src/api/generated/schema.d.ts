@@ -6,6 +6,74 @@
  * Verify in CI with: npm run verify:api-types
  */
 export interface paths {
+    "/api/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Account */
+        get: operations["read_account_api_account_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register */
+        post: operations["register_api_account_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sign In */
+        post: operations["sign_in_api_account_sign_in_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/sign-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sign Out */
+        post: operations["sign_out_api_account_sign_out_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/discover/activity": {
         parameters: {
             query?: never;
@@ -340,6 +408,38 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountResponse */
+        AccountResponse: {
+            account?: components["schemas"]["AccountSummary"] | null;
+            /**
+             * Reason
+             * @description invalid-email, weak-password, password-too-long, email-taken, wrong-credentials, too-many-attempts, already-signed-in, busy or unavailable.
+             */
+            reason?: string | null;
+        };
+        /**
+         * AccountSummary
+         * @description The signed-in account, as the reader may see it (D-021).
+         */
+        AccountSummary: {
+            /**
+             * Email
+             * @description Registered accounts only.
+             */
+            email?: string | null;
+            /** Has Import */
+            has_import: boolean;
+            /**
+             * Installation Owner
+             * @description Whether this account may change installation settings.
+             */
+            installation_owner: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "guest" | "registered";
+        };
         /** ActivityEvent */
         ActivityEvent: {
             /**
@@ -547,6 +647,13 @@ export interface components {
             label: string;
             /** Value */
             value: number;
+        };
+        /** Credentials */
+        Credentials: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
         };
         /** EraBucket */
         EraBucket: {
@@ -1022,7 +1129,7 @@ export interface components {
             profile?: components["schemas"]["ProfileSummary"] | null;
             /**
              * Reason
-             * @description invalid-username, client-id-required, user-not-found, private-list, installation-refused, rate-limited, network or unavailable.
+             * @description invalid-username, client-id-required, user-not-found, private-list, installation-refused, rate-limited, network, busy or unavailable.
              */
             reason?: string | null;
         };
@@ -1400,6 +1507,12 @@ export interface components {
             background_sync: boolean;
             /** Batch Size */
             batch_size: number;
+            /**
+             * Can Edit
+             * @description Whether this account owns the installation and may save these settings (D-021).
+             * @default false
+             */
+            can_edit: boolean;
             /** Client Id Present */
             client_id_present: boolean;
             /**
@@ -1499,6 +1612,7 @@ export interface components {
         };
         /** SystemStateResponse */
         SystemStateResponse: {
+            account?: components["schemas"]["AccountSummary"] | null;
             /** Active Operations */
             active_operations: components["schemas"]["OperationSnapshotResponse"][];
             /** Mal Client Id Present */
@@ -1635,6 +1749,112 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    read_account_api_account_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+        };
+    };
+    register_api_account_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Credentials"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sign_in_api_account_sign_in_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Credentials"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sign_out_api_account_sign_out_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResponse"];
+                };
+            };
+        };
+    };
     activity_status_api_discover_activity_get: {
         parameters: {
             query?: never;

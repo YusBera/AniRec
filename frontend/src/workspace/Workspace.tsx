@@ -9,20 +9,25 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api } from "../api/client";
 import type { Feed } from "../api/types";
+import { AccountDialog, type AccountMode } from "./AccountDialog";
 import { DiscoverPage } from "../discover/DiscoverPage";
 import { ProfilePage } from "./ProfilePage";
 import { ComparePage } from "./ComparePage";
 import { SettingsPage } from "./SettingsPage";
 import { FirstRun, firstRunDismissed } from "./FirstRun";
 import { useShellState } from "./Shell";
-import { TopBar, useAvatar } from "./TopBar";
+import { TopBar, useAvatar, type AccountAction } from "./TopBar";
 import "./workspace.css";
 
 const titles: Record<string, string> = {
   discover: "Discover", library: "My Library", profile: "Profile", compare: "Compare", settings: "Settings",
 };
 type Page = "discover" | "library" | "profile" | "compare" | "settings";
+const SAVE_PROMPT_KEY = "anirec.savePrompt.dismissed";
+const savePromptDismissed = () => { try { return sessionStorage.getItem(SAVE_PROMPT_KEY) === "1"; } catch { return false; } };
+
 const route = (): Page => (Object.keys(titles).find((id) => location.hash === `#/${id}`) ?? "discover") as Page;
 
 export function Workspace() {
@@ -30,6 +35,11 @@ export function Workspace() {
   const [visited, setVisited] = useState<Set<Page>>(() => new Set([route()]));
   const [feed, setFeed] = useState<Feed | null>(null);
   const [firstRun, setFirstRun] = useState<null | "welcome">(null);
+  const [accountDialog, setAccountDialog] = useState<AccountMode | null>(null);
+  // Bumped when the signed-in account changes: every page remounts and reads
+  // the new account's data, so nothing from the previous one stays on screen.
+  const [generation, setGeneration] = useState(0);
+  const [promptHidden, setPromptHidden] = useState(savePromptDismissed);
   const shell = useShellState();
   const content = useRef<HTMLDivElement>(null);
   const positions = useRef<Partial<Record<Page, number>>>({});
@@ -61,6 +71,24 @@ export function Workspace() {
   }, [shell.system?.needs_setup, shell.system?.profile]);
 
   const onFeedChange = useCallback((next: Feed | null) => setFeed(next), []);
+  const accountChanged = useCallback(() => {
+    setFeed(null);
+    setVisited(new Set([active.current]));
+    setGeneration((value) => value + 1);
+    shell.reset();
+  }, [shell.reset]);
+  const onAccount = useCallback((action: AccountAction) => {
+    if (action !== "sign-out") { setAccountDialog(action); return; }
+    api.signOut().then(() => {
+      accountChanged();
+      shell.notify({ tone: "info", title: "Signed out", detail: "Sign in again to see your list." });
+    }).catch(() => shell.notify({ tone: "problem", title: "Signing out didn't finish", detail: "Try again in a moment." }));
+  }, [accountChanged, shell.notify]);
+  const account = shell.system?.account ?? null;
+  // "Try first, then register": a guest with something saved is reminded,
+  // gently and dismissibly, that it lives only in this browser (D-021).
+  const showSavePrompt = account?.kind === "guest" && account.has_import && !promptHidden
+    && (page === "discover" || page === "library");
   const sample = feed?.source === "sample";
   const avatarUrl = useAvatar(shell.system);
   // Said once in the bell as well as on the page, where it stays.
@@ -74,19 +102,27 @@ export function Workspace() {
   return <div className="workspace">
     <a className="skip-link" href="#workspace-content">Skip to content</a>
     <TopBar page={page} system={shell.system} feed={feed} notices={shell.notices} avatarUrl={avatarUrl}
-      onSetUp={() => setFirstRun("welcome")} />
+      onSetUp={() => setFirstRun("welcome")} onAccount={onAccount} />
     <div className="workspace-content" ref={content} id="workspace-content" tabIndex={-1}>
       {/* No "Connect my account" here: connecting an account from the web
           client is not possible (user decision, 2026-09-24). */}
       {sample ? <div className="sample-banner" role="note">
         <p>You're exploring a sample library. Try anything; nothing here is saved.</p>
       </div> : null}
-      <DiscoverPage surface={page === "discover" || page === "library" ? page : "inactive"}
+      {showSavePrompt ? <section className="save-prompt" aria-label="Keep your list">
+        <p>Create an account so you don't lose your Watch Later.</p>
+        <button type="button" className="btn primary" onClick={() => setAccountDialog("register")}>Create account</button>
+        <button type="button" className="btn" onClick={() => {
+          setPromptHidden(true);
+          try { sessionStorage.setItem(SAVE_PROMPT_KEY, "1"); } catch { /* shown again next load */ }
+        }}>Not now</button>
+      </section> : null}
+      <DiscoverPage key={generation} surface={page === "discover" || page === "library" ? page : "inactive"}
         onFeedChange={onFeedChange} onOperationStarted={shell.nudge} autoRefresh
         activeProfileId={shell.system?.profile?.profile_id ?? null} />
-      <div hidden={page !== "profile"}>{visited.has("profile") ? <ProfilePage /> : null}</div>
-      <div hidden={page !== "compare"}>{visited.has("compare") ? <ComparePage /> : null}</div>
-      <div hidden={page !== "settings"}>{visited.has("settings") ? <SettingsPage version={shell.version} /> : null}</div>
+      <div hidden={page !== "profile"}>{visited.has("profile") ? <ProfilePage key={generation} /> : null}</div>
+      <div hidden={page !== "compare"}>{visited.has("compare") ? <ComparePage key={generation} /> : null}</div>
+      <div hidden={page !== "settings"}>{visited.has("settings") ? <SettingsPage key={generation} version={shell.version} /> : null}</div>
     </div>
     {firstRun ? <FirstRun clientIdPresent={!!shell.system?.mal_client_id_present}
       onImported={(profile) => {
@@ -94,6 +130,15 @@ export function Workspace() {
         // The new active profile starts the automatic refresh (D-018).
         shell.nudge();
       }}
-      onClose={() => setFirstRun(null)} /> : null}
+      onClose={() => setFirstRun(null)}
+      onSignIn={() => setAccountDialog("sign-in")} /> : null}
+    {accountDialog ? <AccountDialog mode={accountDialog}
+      onDone={(signed, mode) => {
+        accountChanged();
+        shell.notify(mode === "register"
+          ? { tone: "done", title: "Account created", detail: signed.has_import ? "Your list and Watch Later are saved to it." : "Add your MyAnimeList list from the account menu." }
+          : { tone: "done", title: "Signed in", detail: signed.email ?? "" });
+      }}
+      onClose={() => setAccountDialog(null)} /> : null}
   </div>;
 }

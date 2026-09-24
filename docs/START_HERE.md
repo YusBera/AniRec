@@ -32,7 +32,8 @@ material lives in `docs/archive/`; nothing there overrides a current document.
 - One final eligibility policy protects heuristic, ONNX, and fallback ranking.
 - Heuristic and ONNX ranking both work behind a shared engine contract.
 - Recommendation activity logging exists, is opt-in, local, and bounded.
-- There is no multi-user web account system yet.
+- AniRec accounts (email and password, guest accounts) scope every reader's
+  data; Google and passkeys are later phases (`ACCOUNTS.md`).
 
 ## Work order
 
@@ -63,6 +64,14 @@ In a second terminal, from `frontend/`:
 ```powershell
 npm.cmd install
 npm.cmd run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+Readers sign in to AniRec accounts (D-021, `ACCOUNTS.md`). Profiles made before
+accounts, and the installation settings, belong to the installation owner, whom
+you name once from this terminal after creating your account in the browser:
+
+```powershell
+.\.venv\Scripts\python.exe -m AniRec.api.accounts owner you@example.com
 ```
 
 Open <http://127.0.0.1:5173/>. Without a bundle the heuristic engine ranks, and

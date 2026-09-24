@@ -71,7 +71,7 @@ it("keeps the selected friend focused during loading without showing stale score
 
 it("saves preferences, keeps failed edits, and excludes account fields", async () => {
   const { SettingsPage } = await import("./SettingsPage");
-  const initial = { adventurousness: 5, batch_size: 10, minimum_mal_score: null, default_sort: "personal-match" as const, include_hidden: false, include_nsfw: false, background_sync: false, theme: "dark" as const, gui_scale: 1, font_scale: 1, show_covers: true, username: "reader", client_id_present: true, using_defaults: false };
+  const initial = { adventurousness: 5, batch_size: 10, minimum_mal_score: null, default_sort: "personal-match" as const, include_hidden: false, include_nsfw: false, background_sync: false, theme: "dark" as const, gui_scale: 1, font_scale: 1, show_covers: true, username: "reader", client_id_present: true, using_defaults: false, can_edit: true };
   vi.spyOn(api, "settings").mockResolvedValue(initial);
   const save = vi.spyOn(api, "saveSettings").mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ ...initial, adventurousness: 8 });
   render(<SettingsPage />);

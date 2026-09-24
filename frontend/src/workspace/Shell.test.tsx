@@ -138,8 +138,10 @@ describe("the shell", () => {
     const { unmount } = render(<Workspace />);
     const dialog = await screen.findByRole("dialog", { name: "Welcome to AniRec" });
     expect(within(dialog).getByText("your personal anime recommender")).toBeInTheDocument();
-    // Never a Client ID, a login or a desktop app.
-    expect(dialog).not.toHaveTextContent(/client id|log ?in|sign ?in|desktop|install|download/i);
+    // Never a Client ID, a MyAnimeList login or a desktop app (D-017). The
+    // only sign-in is to an AniRec account (D-021).
+    expect(dialog).not.toHaveTextContent(/client id|log ?in|desktop|install|download/i);
+    expect(within(dialog).getByRole("button", { name: "Sign in" }).closest("p")).toHaveTextContent("Already have an account? Sign in");
     await user.click(within(dialog).getByRole("button", { name: "Just look around" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     unmount();
@@ -337,3 +339,162 @@ describe("first-time setup (D-020)", () => {
   });
 });
 
+
+describe("accounts (D-021)", () => {
+  function stubShell(system: SystemState) {
+    vi.spyOn(api, "health").mockResolvedValue({ status: "ok", version: "1.3.0" });
+    vi.spyOn(api, "systemState").mockResolvedValue(system);
+    vi.spyOn(api, "operations").mockResolvedValue({ operations: [] });
+    vi.spyOn(api, "feed").mockResolvedValue(SAMPLE_FEED);
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  }
+  const GUEST = { kind: "guest" as const, email: null, has_import: true, installation_owner: false };
+  const READER = { kind: "registered" as const, email: "reader@example.com", has_import: true, installation_owner: false };
+  const WITH_LIST = { ...SYSTEM, needs_setup: false, profile: { profile_id: "imp_1", username: "reader_01" } };
+
+  it("offers a guest Create account and Sign in, and a registered reader their email and Sign out", async () => {
+    vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
+    stubShell({ ...WITH_LIST, account: GUEST });
+    const user = userEvent.setup();
+    const { unmount } = render(<Workspace />);
+    await user.click(await screen.findByRole("button", { name: "Account menu for reader_01" }));
+    let panel = screen.getByRole("region", { name: "Account" });
+    expect(within(panel).getByRole("button", { name: "Create account" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
+    unmount();
+
+    stubShell({ ...WITH_LIST, account: READER });
+    render(<Workspace />);
+    await user.click(await screen.findByRole("button", { name: "Account menu for reader_01" }));
+    panel = screen.getByRole("region", { name: "Account" });
+    expect(within(panel).getByText("reader@example.com")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(within(panel).queryByRole("button", { name: "Create account" })).not.toBeInTheDocument();
+  });
+
+  it("reminds a guest with a list to create an account, once per session if dismissed", async () => {
+    vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
+    stubShell({ ...WITH_LIST, account: GUEST });
+    const user = userEvent.setup();
+    const { unmount } = render(<Workspace />);
+    const prompt = await screen.findByRole("region", { name: "Keep your list" });
+    expect(prompt).toHaveTextContent("Create an account so you don't lose your Watch Later.");
+    await user.click(within(prompt).getByRole("button", { name: "Not now" }));
+    expect(screen.queryByRole("region", { name: "Keep your list" })).not.toBeInTheDocument();
+    unmount();
+    render(<Workspace />);
+    await screen.findByRole("button", { name: "Account menu for reader_01" });
+    expect(screen.queryByRole("region", { name: "Keep your list" })).not.toBeInTheDocument();
+  });
+
+  it("never reminds a registered reader", async () => {
+    vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
+    stubShell({ ...WITH_LIST, account: READER });
+    render(<Workspace />);
+    await screen.findByRole("button", { name: "Account menu for reader_01" });
+    expect(screen.queryByRole("region", { name: "Keep your list" })).not.toBeInTheDocument();
+  });
+
+  it("creates the account from the reminder and reloads the pages for it", async () => {
+    vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
+    stubShell({ ...WITH_LIST, account: GUEST });
+    const register = vi.spyOn(api, "register").mockResolvedValue({ account: { ...READER }, reason: null });
+    const user = userEvent.setup();
+    render(<Workspace />);
+    const feedCalls = (api.feed as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+    await user.click(within(await screen.findByRole("region", { name: "Keep your list" })).getByRole("button", { name: "Create account" }));
+    const dialog = screen.getByRole("dialog", { name: "Create your account" });
+    await user.type(within(dialog).getByLabelText("Email"), "reader@example.com");
+    await user.type(within(dialog).getByLabelText("Password"), "a long password");
+    await user.click(within(dialog).getByRole("button", { name: "Create account" }));
+    expect(register).toHaveBeenCalledWith("reader@example.com", "a long password");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect((api.feed as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(feedCalls));
+  });
+
+  it("opens sign-in from first-time setup for a returning reader", async () => {
+    stubShell({ ...SYSTEM, mal_client_id_present: true });
+    const user = userEvent.setup();
+    render(<Workspace />);
+    const setup = await screen.findByRole("dialog", { name: "Welcome to AniRec" });
+    await user.click(within(setup).getByRole("button", { name: "Sign in" }));
+    expect(await screen.findByRole("dialog", { name: "Welcome back" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Welcome to AniRec" })).not.toBeInTheDocument();
+  });
+});
+
+describe("the account dialog (D-021)", () => {
+  it("says in words why signing in failed, keeps the password private, and can show it", async () => {
+    const { AccountDialog } = await import("./AccountDialog");
+    vi.spyOn(api, "signIn").mockResolvedValue({ account: null, reason: "wrong-credentials" });
+    const onDone = vi.fn();
+    render(<AccountDialog mode="sign-in" onDone={onDone} onClose={vi.fn()} />);
+    const dialog = screen.getByRole("dialog", { name: "Welcome back" });
+    const user = userEvent.setup();
+    const email = within(dialog).getByLabelText("Email");
+    const password = within(dialog).getByLabelText("Password");
+    expect(password).toHaveAttribute("type", "password");
+    expect(password).toHaveAttribute("autocomplete", "current-password");
+    await user.click(within(dialog).getByRole("button", { name: "Show password" }));
+    expect(password).toHaveAttribute("type", "text");
+    await user.type(email, "reader@example.com");
+    await user.type(password, "not the password");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(within(dialog).getByRole("status")).toHaveTextContent("That email and password don't match an account."));
+    expect(email).toHaveFocus();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  it("switches between creating an account and signing in", async () => {
+    const { AccountDialog } = await import("./AccountDialog");
+    render(<AccountDialog mode="register" onDone={vi.fn()} onClose={vi.fn()} />);
+    const user = userEvent.setup();
+    expect(screen.getByLabelText("Password")).toHaveAttribute("autocomplete", "new-password");
+    expect(screen.getByText("At least 8 characters.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(screen.getByRole("dialog", { name: "Welcome back" })).toBeInTheDocument();
+  });
+
+  it("words every reason the service can give, without technical terms", async () => {
+    const { accountProblem } = await import("./AccountDialog");
+    for (const reason of ["invalid-email", "weak-password", "password-too-long", "email-taken", "wrong-credentials", "too-many-attempts", "already-signed-in", "busy", "unavailable"]) {
+      expect(accountProblem(reason)).not.toMatch(/undefined|reason|HTTP|session|token|cookie/i);
+    }
+    expect(accountProblem("email-taken")).not.toBe(accountProblem("unavailable"));
+  });
+});
+
+it("shows installation settings read-only, with the reason, to anyone but the owner", async () => {
+  const { SettingsPage } = await import("./SettingsPage");
+  vi.spyOn(api, "settings").mockResolvedValue({
+    adventurousness: 5, batch_size: 10, minimum_mal_score: null, default_sort: "personal-match", include_hidden: false,
+    include_nsfw: false, background_sync: false, theme: "dark", gui_scale: 1, font_scale: 1, show_covers: true,
+    username: "reader", client_id_present: true, using_defaults: false, can_edit: false,
+  });
+  render(<SettingsPage />);
+  expect(await screen.findByText("Only the owner of this AniRec installation can change these settings.")).toBeInTheDocument();
+  expect(screen.getByRole("slider", { name: "Adventurousness (1–10)" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Save preferences" })).toBeDisabled();
+});
+
+it("forgets the previous reader's notifications when someone signs out (D-021)", async () => {
+  vi.spyOn(api, "health").mockResolvedValue({ status: "ok", version: "1.3.0" });
+  vi.spyOn(api, "systemState").mockResolvedValue({ ...SYSTEM, needs_setup: false, profile: { profile_id: "imp_1", username: "reader_01" },
+    account: { kind: "registered", email: "reader@example.com", has_import: true, installation_owner: false } });
+  vi.spyOn(api, "operations").mockResolvedValue({ operations: [] });
+  vi.spyOn(api, "feed").mockResolvedValue(SAMPLE_FEED);
+  vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
+  vi.spyOn(api, "signOut").mockResolvedValue({ account: null, reason: null });
+  vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  const user = userEvent.setup();
+  render(<Workspace />);
+  // The sample library notice stands in for anything the reader was told.
+  await user.click(await screen.findByRole("button", { name: "Notifications, 1 new" }));
+  expect(screen.getByText("You're exploring the sample library")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: /^Account menu/ }));
+  await user.click(screen.getByRole("button", { name: "Sign out" }));
+  await user.click(await screen.findByRole("button", { name: /^Notifications/ }));
+  await waitFor(() => expect(screen.getByText("Signed out")).toBeInTheDocument());
+  expect(screen.queryByText("You're exploring the sample library")).not.toBeInTheDocument();
+});

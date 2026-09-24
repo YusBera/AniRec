@@ -100,11 +100,21 @@ export function useAvatar(system: SystemState | null): string | null {
   return url;
 }
 
-export function Account({ system, feed, avatarUrl, onSetUp }: { system: SystemState | null; feed: Feed | null; avatarUrl: string | null; onSetUp?: () => void }) {
+/** What the account menu can ask the workspace to do (D-021). */
+export type AccountAction = "register" | "sign-in" | "sign-out";
+
+export function Account({ system, feed, avatarUrl, onSetUp, onAccount }: {
+  system: SystemState | null; feed: Feed | null; avatarUrl: string | null;
+  onSetUp?: () => void; onAccount?: (action: AccountAction) => void;
+}) {
   const [failed, setFailed] = useState<string | null>(null);
+  const account = system?.account ?? null;
+  const registered = account?.kind === "registered";
   const name = system?.profile?.username ?? null;
   const letters = name ? name.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 2).toLocaleUpperCase() : null;
-  const context = feed?.source === "sample" ? "Exploring the sample library" : name ? "Your MyAnimeList list" : "No profile yet";
+  const context = registered ? account?.email ?? "Signed in"
+    : feed?.source === "sample" ? "Exploring the sample library"
+      : name ? "Guest: create an account to keep your list" : "No profile yet";
   const picture = avatarUrl && failed !== avatarUrl
     ? <img src={avatarUrl} alt="" referrerPolicy="no-referrer" onError={() => setFailed(avatarUrl)} />
     : letters ? <span aria-hidden="true">{letters}</span> : <PersonIcon />;
@@ -114,12 +124,17 @@ export function Account({ system, feed, avatarUrl, onSetUp }: { system: SystemSt
     {(close) => <>
       <div className="account-head">
         <span className="avatar-large" aria-hidden="true">{picture}</span>
-        <div><p className="account-name">{name ?? "Guest"}</p><p className="account-context">{context}</p></div>
+        <div><p className="account-name">{name ?? (registered ? "Your account" : "Guest")}</p><p className="account-context">{context}</p></div>
       </div>
       <ul className="account-links">
+        {!registered && onAccount ? <>
+          <li><button type="button" onClick={() => { close(); onAccount("register"); }}><Icon name="profile" />Create account</button></li>
+          <li><button type="button" onClick={() => { close(); onAccount("sign-in"); }}><Icon name="profile" />Sign in</button></li>
+        </> : null}
         {!name && onSetUp ? <li><button type="button" onClick={() => { close(); onSetUp(); }}><Icon name="nav-library" />Set up your profile</button></li> : null}
         <li><a href="#/profile" onClick={close}><Icon name="profile" />Your profile</a></li>
         <li><a href="#/settings" onClick={close}><Icon name="nav-settings" />Settings</a></li>
+        {registered && onAccount ? <li><button type="button" onClick={() => { close(); onAccount("sign-out"); }}>Sign out</button></li> : null}
       </ul>
     </>}
   </Popover>;
@@ -138,8 +153,9 @@ function PersonIcon() {
   </svg>;
 }
 
-export function TopBar({ page, system, feed, notices, avatarUrl, onSetUp }: {
-  page: string; system: SystemState | null; feed: Feed | null; notices: Notice[]; avatarUrl: string | null; onSetUp?: () => void;
+export function TopBar({ page, system, feed, notices, avatarUrl, onSetUp, onAccount }: {
+  page: string; system: SystemState | null; feed: Feed | null; notices: Notice[]; avatarUrl: string | null;
+  onSetUp?: () => void; onAccount?: (action: AccountAction) => void;
 }) {
   return <header className="topbar">
     <a className="brand" href="#/discover" aria-label="AniRec home">AniRec</a>
@@ -150,7 +166,7 @@ export function TopBar({ page, system, feed, notices, avatarUrl, onSetUp }: {
     </nav>
     <div className="topbar-end">
       <Notifications notices={notices} />
-      <Account system={system} feed={feed} avatarUrl={avatarUrl} onSetUp={onSetUp} />
+      <Account system={system} feed={feed} avatarUrl={avatarUrl} onSetUp={onSetUp} onAccount={onAccount} />
     </div>
   </header>;
 }

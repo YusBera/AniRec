@@ -350,8 +350,18 @@ class OperationSnapshotResponse(ApiModel):
     event_count: int
 
 
+class AccountSummary(ApiModel):
+    """The signed-in account, as the reader may see it (D-021)."""
+
+    kind: Literal["guest", "registered"]
+    email: str | None = Field(default=None, description="Registered accounts only.")
+    has_import: bool
+    installation_owner: bool = Field(description="Whether this account may change installation settings.")
+
+
 class SystemStateResponse(ApiModel):
     profile: ProfileSummary | None
+    account: AccountSummary | None = None
     needs_setup: bool
     mal_client_id_present: bool
     active_operations: tuple[OperationSnapshotResponse, ...]

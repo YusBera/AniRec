@@ -15,7 +15,7 @@
  * `api.feed()` either way.
  */
 
-import type { ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
+import type { AccountResult, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
 import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
@@ -101,6 +101,13 @@ export const api = {
 
   /** First-time setup: start with a public MyAnimeList list (D-020). */
   importMalProfile: (username: string) => request<MalImport>("/api/onboarding/mal-profile", { method: "POST", body: JSON.stringify({ username }) }),
+
+  // Accounts (D-021). The session is an HttpOnly cookie the browser keeps;
+  // no token is ever handled here.
+  account: () => request<AccountResult>("/api/account"),
+  register: (email: string, password: string) => request<AccountResult>("/api/account/register", { method: "POST", body: JSON.stringify({ email, password }) }),
+  signIn: (email: string, password: string) => request<AccountResult>("/api/account/sign-in", { method: "POST", body: JSON.stringify({ email, password }) }),
+  signOut: () => request<AccountResult>("/api/account/sign-out", { method: "POST" }),
 
   operations: () => request<OperationList>("/api/operations"),
   operation: (id: string) => request<OperationSnapshot>(`/api/operations/${encodeURIComponent(id)}`),

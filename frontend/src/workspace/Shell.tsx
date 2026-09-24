@@ -153,5 +153,19 @@ export function useShellState() {
   /** Called when this client starts an operation, so its outcome is seen promptly. */
   const nudge = useCallback(() => kick.current(), []);
 
-  return { system, systemFailed, version, notices, notify, nudge };
+  /**
+   * The signed-in account changed (D-021): forget everything about the last
+   * one, so the next person at this browser sees none of it, and treat the
+   * new account's operation history as history rather than news.
+   */
+  const reset = useCallback(() => {
+    streams.current.forEach((source) => source.close());
+    streams.current.clear();
+    errors.current.clear();
+    seen.current = null;
+    setNotices([]);
+    kick.current();
+  }, []);
+
+  return { system, systemFailed, version, notices, notify, nudge, reset };
 }

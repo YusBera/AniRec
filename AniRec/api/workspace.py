@@ -8,7 +8,7 @@ from dataclasses import replace
 from threading import Lock
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field
 
 from ..core.mal_mapping import ANIME_FIELDS, anime_from_node, anime_from_row
@@ -27,6 +27,7 @@ from ..presentation.taste_profile import (
 from ..presentation.compatibility import (
     CompatibilityReport, CompatibilityUnavailable, SampleCompatibilityProvider,
 )
+from .accounts import ReaderScope, resolve_scope
 from .container import ApiContainer
 from .models import ApiModel, RecommendationViewModelResponse
 from .serialization import view_model_to_dict
@@ -59,6 +60,10 @@ class SettingsReadResponse(ApiModel):
     client_id_present: bool
     username: str | None
     using_defaults: bool
+    can_edit: bool = Field(
+        default=False,
+        description="Whether this account owns the installation and may save these settings (D-021).",
+    )
 
 
 class SettingsWriteRequest(ApiModel):
@@ -89,14 +94,22 @@ def workspace_router(services: ApiContainer) -> APIRouter:
     router = APIRouter(prefix="/api/workspace")
     settings_lock = Lock()
 
-    def active(profile_id):
-        if not profile_id or services.active_profile_id() != profile_id:
+    def reader(request: Request) -> ReaderScope:
+        return resolve_scope(services, request)
+
+    def owned(scope: ReaderScope, profile_id):
+        """The directory of ``profile_id``, only when it is this reader's import now."""
+        if not profile_id or scope.profile_id != profile_id:
             raise HTTPException(409, "Active profile changed. Reload this view.")
         return services.profiles.directory(profile_id)
 
+    def still_owned(request: Request, profile_id) -> None:
+        """Re-checked after a slow read: the reader may have signed out meanwhile."""
+        owned(resolve_scope(services, request), profile_id)
+
     @router.get("/library", response_model=LibraryReadResponse)
-    def library(profile_id: str) -> LibraryReadResponse:
-        directory = active(profile_id)
+    def library(profile_id: str, request: Request, scope: ReaderScope = Depends(reader)) -> LibraryReadResponse:
+        directory = owned(scope, profile_id)
         state = services.recommendation_state.load(profile_id)
         wanted = set(state.watch_later_mal_ids) | set(state.hidden_mal_ids)
         found = {}
@@ -116,12 +129,12 @@ def workspace_router(services: ApiContainer) -> APIRouter:
                 anime = anime_from_row(row)
                 if anime.mal_id in wanted and anime.mal_id not in found:
                     found[anime.mal_id] = metadata_model(anime)
-        active(profile_id)
+        still_owned(request, profile_id)
         return LibraryReadResponse(profile_id=profile_id, recommendations=tuple(view_model_to_dict(m) for m in found.values()))
 
     @router.post("/library/resolve", response_model=RecommendationViewModelResponse)
-    def resolve_title(payload: LibraryResolveRequest):
-        active(payload.profile_id)
+    def resolve_title(payload: LibraryResolveRequest, request: Request, scope: ReaderScope = Depends(reader)):
+        owned(scope, payload.profile_id)
         state = services.recommendation_state.load(payload.profile_id)
         if payload.mal_id not in set(state.watch_later_mal_ids) | set(state.hidden_mal_ids):
             raise HTTPException(400, "Only saved decisions can be resolved here.")
@@ -133,13 +146,13 @@ def workspace_router(services: ApiContainer) -> APIRouter:
         anime = anime_from_node(node)
         if anime is None or anime.mal_id != payload.mal_id:
             raise HTTPException(502, "MyAnimeList returned invalid title details.")
-        active(payload.profile_id)
+        still_owned(request, payload.profile_id)
         return view_model_to_dict(metadata_model(anime))
 
     @router.get("/profile", response_model=ProfileReadResponse)
-    def profile(sample: bool = False) -> ProfileReadResponse:
+    def profile(sample: bool = False, scope: ReaderScope = Depends(reader)) -> ProfileReadResponse:
         provider = (SampleTasteProfileProvider() if sample
-                    else LocalTasteProfileProvider(services.statistics))
+                    else LocalTasteProfileProvider(services.statistics, profile=scope.profile))
         try:
             report = provider.taste_profile()
             return ProfileReadResponse(profile=report, archetype=archetype_for(report))
@@ -147,15 +160,17 @@ def workspace_router(services: ApiContainer) -> APIRouter:
             return ProfileReadResponse(reason=error.reason.value)
 
     @router.get("/compare", response_model=CompareReadResponse)
-    def compare(sample: bool = False, username: str = "") -> CompareReadResponse:
+    def compare(
+        request: Request, sample: bool = False, username: str = "", scope: ReaderScope = Depends(reader)
+    ) -> CompareReadResponse:
         if not sample:
             if not username:
                 return CompareReadResponse(reason="username-required")
             name = username_from_profile_reference(username)
-            profile_id = services.active_profile_id()
+            profile_id = scope.profile_id
             if not profile_id:
                 return CompareReadResponse(reason="not-connected")
-            directory = active(profile_id)
+            directory = owned(scope, profile_id)
             client_id = services.settings.load().client_id
             if not client_id:
                 return CompareReadResponse(reason="client-id-required")
@@ -165,7 +180,7 @@ def workspace_router(services: ApiContainer) -> APIRouter:
             yours = CsvStorage().read(path, required_columns=("Anime ID", "Title", "User Score"))
             theirs = AnimeDataService(client=ComparisonClient()).fetch_completed_anime(name, client_id=client_id,
                 include_nsfw=services.settings.load().pipeline.include_nsfw)
-            active(profile_id)
+            still_owned(request, profile_id)
             return CompareReadResponse(report=compare_completed(name, yours, theirs))
         provider = SampleCompatibilityProvider()
         try:
@@ -178,8 +193,13 @@ def workspace_router(services: ApiContainer) -> APIRouter:
         except CompatibilityUnavailable as error:
             return CompareReadResponse(reason=error.reason.value)
 
+    def is_owner(scope: ReaderScope) -> bool:
+        account = scope.account
+        return (account is not None and account.registered
+                and services.accounts.owner_account_id() == account.account_id)
+
     @router.get("/settings", response_model=SettingsReadResponse)
-    def settings() -> SettingsReadResponse:
+    def settings(scope: ReaderScope = Depends(reader)) -> SettingsReadResponse:
         saved = services.settings.load()
         return SettingsReadResponse(
             adventurousness=saved.pipeline.randomness_factor,
@@ -192,12 +212,17 @@ def workspace_router(services: ApiContainer) -> APIRouter:
             theme=saved.theme, gui_scale=saved.gui_scale,
             font_scale=saved.font_scale, show_covers=saved.show_covers,
             client_id_present=bool(saved.client_id),
-            username=services.active_username(),
+            username=None if scope.profile is None else scope.profile.username,
             using_defaults=services.settings.last_error is not None,
+            can_edit=is_owner(scope),
         )
 
     @router.post("/settings", response_model=SettingsReadResponse)
-    def save_settings(payload: SettingsWriteRequest) -> SettingsReadResponse:
+    def save_settings(payload: SettingsWriteRequest, scope: ReaderScope = Depends(reader)) -> SettingsReadResponse:
+        # These settings rank every account's feed; only the installation
+        # owner, named from the console, may change them (docs/ACCOUNTS.md).
+        if not is_owner(scope):
+            raise HTTPException(403, "Only the owner of this AniRec installation can change these settings.")
         with settings_lock:
             saved = services.settings.load()
             if services.settings.last_error:
@@ -212,6 +237,6 @@ def workspace_router(services: ApiContainer) -> APIRouter:
                 include_hidden_recommendations=payload.include_hidden,
                 background_sync_enabled=payload.background_sync, theme=payload.theme,
                 gui_scale=payload.gui_scale, font_scale=payload.font_scale, show_covers=payload.show_covers))
-            return settings()
+            return settings(scope)
 
     return router

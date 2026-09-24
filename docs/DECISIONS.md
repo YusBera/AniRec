@@ -38,6 +38,9 @@ MAL login remains optional for public-list imports.
    would reuse the single-user application but incur a runtime and deployment
    cost for every reader.
 
+**Settled by D-021 (2026-09-24):** the local product runs the same account
+schema as a hosted one. The text below records the question as it stood.
+
 **Open before login or migration code:** decide whether the current local
 loopback product stays a file-backed single-user mode, or runs the same database
 schema as a one-account hosted deployment. This choice changes the migration
@@ -102,6 +105,39 @@ costs nothing. A hosting platform's users have no MyAnimeList account, so a
 scorer that assumes one cannot serve them. Everything else partner-facing
 (multi-tenancy, owned catalogue, stateless scoring) is already required by
 web-first.
+
+---
+
+## D-021 - AniRec accounts own every import; the same accounts everywhere
+**2026-09-24 - Accepted (user decision). Settles D-014's local-mode question; revises D-020's "active profile".**
+
+Anyone could import any public MyAnimeList username and then see and change
+the saved decisions of whoever had imported it before, because one
+machine-wide active profile served every request. Now:
+
+- **An AniRec account, with an ID the server assigns, owns every import.** A
+  MyAnimeList username only names a public list to read into that account;
+  two accounts importing one list get two separate imports. Every reader
+  route derives its scope from the session cookie; a request field is only
+  checked against it.
+- **Sign-in:** email and password now; Google as an optional quick way to
+  register, and passkeys added after registering, in later phases.
+- **Try first, then register:** a visitor who imports a list gets a guest
+  account; registering upgrades that same account, so nothing is lost; a
+  gentle, dismissible prompt says so.
+- **The same accounts everywhere,** local as well as hosted (D-014's open
+  question): local mode runs the same schema with one or more accounts.
+- **Installation settings** change every account's ranking, so only the
+  installation owner may save them, and the owner is named from the
+  operator's console, never through open web registration. The same command
+  hands over pre-account profiles.
+
+The design, the early review's 13 findings, the known limits and the phase
+plan (account management, Google, passkeys, email) are in `docs/ACCOUNTS.md`.
+A hosted deployment must not launch before phase 2.
+
+*Why:* D-002 already chose AniRec-owned accounts; the user reported the
+cross-reader exposure as a launch blocker.
 
 ---
 

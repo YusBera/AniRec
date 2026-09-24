@@ -14,7 +14,7 @@ import type { SettingsRead, SettingsWrite } from "../api/types";
 import { PageHeading, ReadState, useRead } from "./common";
 
 function editable(saved: SettingsRead): SettingsWrite {
-  const { username: _username, client_id_present: _clientId, using_defaults: _defaults, ...preferences } = saved;
+  const { username: _username, client_id_present: _clientId, using_defaults: _defaults, can_edit: _canEdit, ...preferences } = saved;
   return preferences;
 }
 
@@ -56,7 +56,10 @@ function Preferences({ initial }: { initial: SettingsRead }) {
     finally { setBusy(false); }
   }}>
     {saved.using_defaults ? <p role="alert">Saved settings could not be read. Defaults are shown. Repair the settings in the desktop app before saving.</p> : null}
-    <fieldset disabled={busy || saved.using_defaults} className="settings-form"><legend className="visually-hidden">Saved preferences</legend>
+    {/* These rank every account's feed on this installation, so only its
+        owner may change them (D-021). Everyone else can still read them. */}
+    {!saved.can_edit ? <p className="settings-note">Only the owner of this AniRec installation can change these settings.</p> : null}
+    <fieldset disabled={busy || saved.using_defaults || !saved.can_edit} className="settings-form"><legend className="visually-hidden">Saved preferences</legend>
       <div className="settings-groups">
         <Group title="RECOMMENDATION">
           <Row legend="ADVENTUROUSNESS" hint="Low keeps close to what you already love. High reaches further for something unexpected.">

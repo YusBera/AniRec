@@ -74,6 +74,11 @@ class _TitleRecord:
         return self.user_score - self.community_score
 
 
+# "Whichever profile is active on this machine": the desktop's meaning when it
+# names none. The web always passes the requesting account's import (D-021).
+ACTIVE_PROFILE = object()
+
+
 class ProfileStatisticsService:
     """Build the documented Profile payload from the active local snapshot."""
 
@@ -86,9 +91,11 @@ class ProfileStatisticsService:
         self._profiles = profile_service
         self._storage = storage or CsvStorage()
 
-    def profile_payload(self) -> dict:
+    def profile_payload(self, profile=ACTIVE_PROFILE, /) -> dict:
+        """The payload for ``profile``; the desktop omits it for the active one."""
         try:
-            profile = self._profiles.active_profile()
+            if profile is ACTIVE_PROFILE:
+                profile = self._profiles.active_profile()
         except (AniRecError, OSError, TypeError, ValueError) as error:
             raise ProfileStatisticsUnavailable(
                 ProfileStatisticsUnavailableReason.INVALID_DATA,

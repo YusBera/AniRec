@@ -34,7 +34,7 @@ import json
 import os
 from typing import Any, Callable, Iterator
 
-from fastapi import Body, FastAPI, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -50,7 +50,9 @@ from ..services.recommendation_event_service import (
     activity_model_version,
     feed_fingerprint,
 )
+from .accounts import ReaderScope, account_summary, accounts_router, resolve_scope
 from .container import ApiContainer, build_container
+from .request_guard import RequestGuardMiddleware, allowed_hosts_from_environment
 from .workspace import workspace_router
 from .onboarding import onboarding_router
 from .models import (
@@ -184,6 +186,7 @@ def create_app(
     app.state.token_required = bool(resolved_token)
     app.include_router(workspace_router(services))
     app.include_router(onboarding_router(services))
+    app.include_router(accounts_router(services))
 
     if resolved_token:
         app.add_middleware(TokenAuthMiddleware, token=resolved_token)
@@ -199,6 +202,21 @@ def create_app(
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "X-AniRec-Token"],
     )
+    # Outermost: a request from another site or an unknown Host is refused
+    # before anything else reads it (D-021, request_guard.py).
+    app.add_middleware(
+        RequestGuardMiddleware, origins=tuple(origins), hosts=allowed_hosts_from_environment()
+    )
+
+    def reader(request: Request) -> ReaderScope:
+        """The requesting account and the import it owns (D-021)."""
+        return resolve_scope(services, request)
+
+    def visible(record, scope: ReaderScope) -> bool:
+        """An operation is seen only by the account that owns its import now."""
+        return scope.account is not None and services.accounts.owns(
+            scope.account.account_id, record.profile_id
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_request: Request, error: StarletteHTTPException) -> JSONResponse:
@@ -261,8 +279,8 @@ def create_app(
         return HealthResponse(status="ok", version=app.version)
 
     @app.get("/api/system/state", response_model=SystemStateResponse)
-    def system_state() -> SystemStateResponse:
-        profile = services.profiles.active_profile()
+    def system_state(scope: ReaderScope = Depends(reader)) -> SystemStateResponse:
+        profile = scope.profile
         settings = services.settings.load()
         return SystemStateResponse(
             profile=(
@@ -270,10 +288,14 @@ def create_app(
                 if profile is None
                 else ProfileSummary(profile_id=profile.profile_id, username=profile.username)
             ),
-            needs_setup=services.onboarding.needs_setup(),
+            account=account_summary(services, scope),
+            # Per reader: setup is needed until this account has an import.
+            needs_setup=profile is None,
             mal_client_id_present=bool(settings.client_id),
             active_operations=tuple(
-                OperationSnapshotResponse(**r.snapshot()) for r in operations.active()
+                OperationSnapshotResponse(**r.snapshot())
+                for r in operations.active()
+                if visible(r, scope)
             ),
         )
 
@@ -301,14 +323,16 @@ def create_app(
     # -- discover ---------------------------------------------------------
 
     @app.get("/api/discover/feed", response_model=FeedResponse)
-    def discover_feed(include_hidden: bool = Query(False)) -> FeedResponse:
+    def discover_feed(
+        include_hidden: bool = Query(False), scope: ReaderScope = Depends(reader)
+    ) -> FeedResponse:
         """The feed, its local votes, and the terms it can be filtered by.
 
         One request rather than three. The three answers are derived from the
         same loaded result, and splitting them would let a client render cards
         against one generation while filtering them against another.
         """
-        profile = services.profiles.active_profile()
+        profile = scope.profile
         source = "profile"
         result = None
         if profile is not None:
@@ -372,35 +396,35 @@ def create_app(
             ),
         )
 
-    def activity_context():
-        profile = services.profiles.active_profile()
+    def activity_context(scope: ReaderScope):
+        profile = scope.profile
         if profile is None:
             raise HTTPException(status_code=409, detail="Connect a profile to save local activity.")
         activity = RecommendationEventService(getattr(services.recommendation_state, "_root_override", None))
         return activity, profile.profile_id
 
     @app.get("/api/discover/activity", response_model=ActivityStatus)
-    def activity_status():
-        if services.profiles.active_profile() is None:
+    def activity_status(scope: ReaderScope = Depends(reader)):
+        if scope.profile is None:
             return ActivityStatus(enabled=False)
-        activity, profile = activity_context()
+        activity, profile = activity_context(scope)
         return ActivityStatus(**activity.status(profile))
 
     @app.post("/api/discover/activity/settings", response_model=ActivityStatus)
-    def activity_settings(payload: ActivitySetting):
-        activity, profile = activity_context()
+    def activity_settings(payload: ActivitySetting, scope: ReaderScope = Depends(reader)):
+        activity, profile = activity_context(scope)
         return ActivityStatus(**activity.set_enabled(profile, payload.enabled))
 
     @app.delete("/api/discover/activity", response_model=ActivityStatus)
-    def activity_clear():
-        activity, profile = activity_context()
+    def activity_clear(scope: ReaderScope = Depends(reader)):
+        activity, profile = activity_context(scope)
         activity.clear(profile)
         return ActivityStatus(**activity.status(profile))
 
     @app.post("/api/discover/activity", response_model=ActivityReceipt)
-    def activity_event(payload: ActivityEvent):
-        activity, profile = activity_context()
-        feed = discover_feed(include_hidden=True)
+    def activity_event(payload: ActivityEvent, scope: ReaderScope = Depends(reader)):
+        activity, profile = activity_context(scope)
+        feed = discover_feed(include_hidden=True, scope=scope)
         if profile != payload.profile_id or feed.state_profile_id != profile or feed.ephemeral or feed.activity_feed_id != payload.feed_id:
             return ActivityReceipt(recorded=False)
         model = next((m for m in feed.recommendations if m.mal_id == payload.mal_id), None)
@@ -420,12 +444,14 @@ def create_app(
             adventurousness=model.adventurousness))
 
     @app.post("/api/discover/feedback", response_model=FeedbackResponse)
-    def discover_feedback(payload: FeedbackRequest) -> FeedbackResponse:
+    def discover_feedback(
+        payload: FeedbackRequest, scope: ReaderScope = Depends(reader)
+    ) -> FeedbackResponse:
         """One vote. Mirrors what the card's three controls write."""
         profile_id = payload.profile_id.strip()
         if not profile_id:
             raise HTTPException(status_code=400, detail="profile_id is required.")
-        profile = services.profiles.active_profile()
+        profile = scope.profile
         if profile is None or profile.profile_id != profile_id:
             raise HTTPException(status_code=409, detail="Active profile changed. Reload this view.")
         profile_id = profile.profile_id
@@ -440,7 +466,7 @@ def create_app(
             # (D-013). Attribution, genres and title come from the served row
             # when the vote is for the active profile's own feed.
             genres, title, attribution = tuple(payload.genres), payload.title, None
-            feed = discover_feed(include_hidden=True)
+            feed = discover_feed(include_hidden=True, scope=scope)
             served = next(
                 (m for m in feed.recommendations if m.mal_id == payload.mal_id), None
             )
@@ -477,17 +503,21 @@ def create_app(
     # -- operations -------------------------------------------------------
 
     @app.get("/api/operations", response_model=OperationListResponse)
-    def list_operations() -> OperationListResponse:
+    def list_operations(scope: ReaderScope = Depends(reader)) -> OperationListResponse:
         return OperationListResponse(
             operations=tuple(
-                OperationSnapshotResponse(**record.snapshot()) for record in operations.all()
+                OperationSnapshotResponse(**record.snapshot())
+                for record in operations.all()
+                if visible(record, scope)
             )
         )
 
     @app.get("/api/operations/{operation_id}", response_model=OperationSnapshotResponse)
-    def get_operation(operation_id: str) -> OperationSnapshotResponse:
+    def get_operation(
+        operation_id: str, scope: ReaderScope = Depends(reader)
+    ) -> OperationSnapshotResponse:
         record = operations.get(operation_id)
-        if record is None:
+        if record is None or not visible(record, scope):
             raise HTTPException(status_code=404, detail="Unknown operation.")
         return OperationSnapshotResponse(**record.snapshot())
 
@@ -497,13 +527,15 @@ def create_app(
         response_model=OperationAcceptedResponse,
     )
     def start_operation(
-        kind: str, payload: OperationStartRequest = Body(default=OperationStartRequest())
+        kind: str,
+        payload: OperationStartRequest = Body(default=OperationStartRequest()),
+        scope: ReaderScope = Depends(reader),
     ) -> OperationAcceptedResponse:
         if kind not in SUPPORTED_KINDS:
             raise HTTPException(
                 status_code=404, detail=f"Unsupported operation kind: {kind}"
             )
-        profile = services.profiles.active_profile()
+        profile = scope.profile
         if profile is None:
             raise HTTPException(
                 status_code=409,
@@ -548,15 +580,20 @@ def create_app(
         return OperationAcceptedResponse(**record.snapshot())
 
     @app.delete("/api/operations/{operation_id}")
-    def cancel_operation(operation_id: str) -> dict[str, Any]:
-        if not operations.cancel(operation_id):
+    def cancel_operation(
+        operation_id: str, scope: ReaderScope = Depends(reader)
+    ) -> dict[str, Any]:
+        record = operations.get(operation_id)
+        if record is None or not visible(record, scope) or not operations.cancel(operation_id):
             raise HTTPException(
                 status_code=404, detail="No running operation with that id."
             )
         return {"cancelled": True, "id": operation_id}
 
     @app.get("/api/operations/{operation_id}/events")
-    def operation_events(operation_id: str) -> StreamingResponse:
+    def operation_events(
+        operation_id: str, scope: ReaderScope = Depends(reader)
+    ) -> StreamingResponse:
         """Server-sent events: ``started``, ``progress``/``step``, a terminal
         ``result``/``error``/``cancelled``, then ``finished``.
 
@@ -568,7 +605,7 @@ def create_app(
         declares these by hand for that reason.
         """
         record = operations.get(operation_id)
-        if record is None:
+        if record is None or not visible(record, scope):
             raise HTTPException(status_code=404, detail="Unknown operation.")
 
         def stream() -> Iterator[str]:
