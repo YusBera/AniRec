@@ -7,6 +7,24 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-25 - Follow-ups from the first real-data run
+
+`ClientIdRejectedError` for a 401 on a Client-ID-only request (Refresh no
+longer tells a reader to reconnect); Compare returns `private-list`,
+`user-not-found`, `installation-refused`, `api-unavailable` or `network`
+instead of HTTP 500; no Sign in offer for a signed-in reader adding a list;
+icons inlined as data URIs; account dialog fields named for password
+managers, and the password kept until the dialog closes.
+
+*Verification:* failing tests first (`tests/test_mal_client.py`,
+`tests/test_api_workspace.py`, four vitest cases); non-Qt pytest 616
+passed; `npm run ci` 148; `vite build`; menu icons checked in the browser
+pane.
+
+*Left open:* the installation's Client ID needs replacing by its owner.
+
+---
+
 ## 2026-09-24 - Accounts: password reset by email (D-021, phase 5)
 
 A `Mailer` seam (`infrastructure/mailer.py`, SMTP settings from

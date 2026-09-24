@@ -53,6 +53,23 @@ class AuthError(AniRecError):
     retryable = True
 
 
+class ClientIdRejectedError(AuthError):
+    """A 401 on a request that carried only this installation's Client ID.
+
+    Nothing about the reader's own connection is wrong, so they are never
+    told to reconnect: the installation's Client ID needs replacing.
+    """
+
+    code = "client_id_rejected"
+    user_title = "MyAnimeList turned down this AniRec"
+    safe_description = "MyAnimeList rejected this AniRec installation's Client ID."
+    suggested_solution = (
+        "Nothing about your list needs to change. The owner of this AniRec installation "
+        "needs to enter a valid MyAnimeList Client ID."
+    )
+    retryable = False
+
+
 class AuthTimeoutError(AuthError):
     code = "auth_timeout"
     user_title = "Account connection timed out"

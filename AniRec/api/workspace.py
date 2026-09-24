@@ -11,6 +11,17 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import Field
 
+from ..errors import (
+    AccessDeniedError,
+    AniRecError,
+    AuthError,
+    InvalidResponseError,
+    NetworkError,
+    NotFoundError,
+    RateLimitError,
+    ServerError,
+    UnexpectedStatusError,
+)
 from ..core.mal_mapping import ANIME_FIELDS, anime_from_node, anime_from_row
 from ..infrastructure.csv_storage import CsvStorage
 from ..infrastructure.mal_client import MALClient
@@ -39,6 +50,26 @@ class ProfileReadResponse(ApiModel):
     profile: TasteProfile | None = None
     reason: str | None = None
     archetype: Archetype | None = None
+
+
+def _compare_failure(error: AniRecError) -> str:
+    """Why a live comparison could not read the other list.
+
+    Order matters: AccessDeniedError and ClientIdRejectedError are
+    AuthErrors; RateLimitError and ServerError are NetworkErrors.
+    """
+    if isinstance(error, AccessDeniedError):
+        return "private-list"
+    if isinstance(error, NotFoundError):
+        return "user-not-found"
+    if isinstance(error, AuthError):
+        # Compare sends only this installation's Client ID.
+        return "installation-refused"
+    if isinstance(error, (RateLimitError, ServerError, UnexpectedStatusError, InvalidResponseError)):
+        return "api-unavailable"
+    if isinstance(error, NetworkError):
+        return "network"
+    return "api-unavailable"
 
 
 class CompareReadResponse(ApiModel):
@@ -198,8 +229,12 @@ def workspace_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
             if not limits.mal_calls.take(limits.client(request)):
                 return CompareReadResponse(reason="busy")
             yours = CsvStorage().read(path, required_columns=("Anime ID", "Title", "User Score"))
-            theirs = AnimeDataService(client=ComparisonClient()).fetch_completed_anime(name, client_id=client_id,
-                include_nsfw=reader_pipeline(services, scope).include_nsfw)
+            try:
+                theirs = AnimeDataService(client=ComparisonClient()).fetch_completed_anime(name, client_id=client_id,
+                    include_nsfw=reader_pipeline(services, scope).include_nsfw)
+            except AniRecError as error:
+                # Said in words, never an empty or a sample comparison.
+                return CompareReadResponse(reason=_compare_failure(error))
             still_owned(request, profile_id)
             return CompareReadResponse(report=compare_completed(name, yours, theirs))
         provider = SampleCompatibilityProvider()

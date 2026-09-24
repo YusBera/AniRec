@@ -132,7 +132,9 @@ export function AccountDialog({ mode: initialMode, resetAvailable = false, onDon
       const result = mode === "register" ? await api.register(email.trim(), password) : await api.signIn(email.trim(), password);
       if (result.account) {
         done.current = { account: result.account, moved: result.moved_imports ?? 0 };
-        setPassword("");
+        // The password stays in the field until the dialog is gone: password
+        // managers read the form as it disappears, and an emptied field left
+        // them nothing to save. The component unmounts right after.
         dialog.current?.close();
         return;
       }
@@ -157,13 +159,14 @@ export function AccountDialog({ mode: initialMode, resetAvailable = false, onDon
       <p className="account-lead">{copy.lead}</p>
       <form onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <label htmlFor={emailId}>Email</label>
-        <input id={emailId} ref={emailField} type="email" autoComplete="email" required maxLength={254}
+        {/* "username": the identifier password managers pair with the password. */}
+        <input id={emailId} ref={emailField} name="email" type="email" autoComplete="username" required maxLength={254}
           value={email} disabled={busy} aria-describedby={statusId} aria-invalid={problem ? true : undefined}
           onChange={(event) => { setEmail(event.target.value); setProblem(""); setSent(false); }} />
         {resetting ? null : <>
           <label htmlFor={passwordId}>Password</label>
           <div className="password-field">
-            <input id={passwordId} type={shown ? "text" : "password"} required maxLength={256}
+            <input id={passwordId} name="password" type={shown ? "text" : "password"} required maxLength={256}
               autoComplete={mode === "register" ? "new-password" : "current-password"}
               value={password} disabled={busy} aria-invalid={problem ? true : undefined}
               aria-describedby={mode === "register" ? `${hintId} ${statusId}` : statusId}

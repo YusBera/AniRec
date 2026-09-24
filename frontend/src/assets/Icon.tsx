@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 /**
  * The desktop's interface glyphs, drawn in the current text colour.
  *
@@ -8,7 +10,15 @@
  * the control it sits in carries the accessible name.
  */
 
-const url = (path: string) => new URL(path, import.meta.url).href;
+// Every glyph is built into the bundle as a data URI. As separate files they
+// were fetched only when first shown, so a menu opened with blank icons for
+// as long as the request took.
+const SOURCES = import.meta.glob<string>(["./icons/*.svg", "./shell/*.svg"], { eager: true, query: "?raw", import: "default" });
+const url = (path: string) => {
+  const svg = SOURCES[path];
+  if (svg === undefined) throw new Error(`Missing icon: ${path}`);
+  return `data:image/svg+xml,${encodeURIComponent(svg.trim())}`;
+};
 
 export const ICONS = {
   "watch-later": url("./icons/watch-later.svg"),

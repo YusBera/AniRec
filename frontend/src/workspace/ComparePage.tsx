@@ -29,6 +29,7 @@ const REASONS: Record<string, [string, string]> = {
   "private-list": ["That list is private", "That user exists, but their anime list is not public, so there is nothing to compare against."],
   network: ["MyAnimeList is unreachable", "AniRec could not reach MyAnimeList. Check your connection and try again."],
   "api-unavailable": ["MyAnimeList could not answer", "The request was refused or timed out. This usually clears on its own. Try again shortly."],
+  "installation-refused": ["MyAnimeList turned down this AniRec", "MyAnimeList rejected this AniRec installation's Client ID, so live comparison can't run. Nothing about your list needs to change; the owner of this installation needs to enter a valid Client ID."],
   busy: ["Too many lookups for now", "AniRec is limiting MyAnimeList lookups for a while. Try again later."],
 };
 

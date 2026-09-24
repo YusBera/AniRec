@@ -191,7 +191,8 @@ export function Workspace() {
         onAccount("list-changed");
       }}
       onClose={() => setFirstRun(null)}
-      onSignIn={() => setAccountDialog("sign-in")} /> : null}
+      // Only someone not signed in to an account can have one to sign in to.
+      onSignIn={account?.kind === "registered" ? undefined : () => setAccountDialog("sign-in")} /> : null}
     {accountDialog ? <AccountDialog mode={accountDialog} resetAvailable={!!shell.system?.password_reset_available}
       onDone={(signed, mode, moved) => {
         // Signed in after a reset: on to the reader's picks.

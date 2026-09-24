@@ -1,6 +1,8 @@
 """Workspace reads must preserve provider truth and keep credentials private."""
 from dataclasses import replace
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from AniRec.api import create_app
@@ -173,22 +175,30 @@ def test_live_comparison_joins_ids_and_keeps_unrated_distinct(tmp_path, monkeypa
         assert unrated['entries'][0]['scores']['difference'] is None
 
 
-def test_failed_live_comparison_does_not_become_empty_or_sample(tmp_path, monkeypatch):
-    from AniRec.errors import AccessDeniedError
+@pytest.mark.parametrize('error, reason', [
+    ('AccessDeniedError', 'private-list'),
+    ('NotFoundError', 'user-not-found'),
+    ('ClientIdRejectedError', 'installation-refused'),
+    ('RateLimitError', 'api-unavailable'),
+    ('ServerError', 'api-unavailable'),
+    ('NetworkError', 'network'),
+])
+def test_failed_live_comparison_says_why_and_never_becomes_empty_or_sample(tmp_path, monkeypatch, error, reason):
+    import AniRec.errors as errors
     from AniRec.services.anime_data_service import AnimeDataService
     app = create_app(root_override=str(tmp_path))
     profile, _directory = _active_snapshot(app)
     service = app.state.container.settings
     service.save_preferences(replace(service.load(), client_id='test-id'))
     def fail(*args, **kwargs):
-        raise AccessDeniedError('private')
+        raise getattr(errors, error)('refused')
     monkeypatch.setattr(AnimeDataService, 'fetch_completed_anime', fail)
     with TestClient(app, raise_server_exceptions=False) as client:
         sign_in_reader(client, profile.profile_id)
         response = client.get('/api/workspace/compare?username=private_reader')
-        assert response.status_code == 500
-        assert response.json()['error']['code'] == 'access_denied'
-        assert 'report' not in response.json()
+        assert response.status_code == 200
+        assert response.json()['reason'] == reason
+        assert response.json()['report'] is None
 
 
 def test_comparison_client_refuses_invalid_payload_and_foreign_pagination():

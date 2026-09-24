@@ -12,6 +12,7 @@ try:
         AccessDeniedError,
         AuthError,
         CancelledError,
+        ClientIdRejectedError,
         InvalidResponseError,
         NetworkError,
         NotFoundError,
@@ -24,6 +25,7 @@ except ImportError:  # Compatibility with the S01 top-level import path.
         AccessDeniedError,
         AuthError,
         CancelledError,
+        ClientIdRejectedError,
         InvalidResponseError,
         NetworkError,
         NotFoundError,
@@ -76,6 +78,10 @@ class MALClient:
 
         status = int(getattr(response, "status_code", 200))
         if status >= 400:
+            if status == 401 and client_id and not access_token:
+                # Only the installation's Client ID was sent: it is what was
+                # refused, and the reader has nothing to reconnect.
+                raise ClientIdRejectedError("MyAnimeList returned HTTP 401 for the Client ID.")
             self._raise_status_error(status, getattr(response, "headers", {}))
 
         try:

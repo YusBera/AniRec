@@ -815,3 +815,60 @@ describe("password reset by email (D-021, phase 5)", () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 });
+
+describe("follow-ups from the first real-data run", () => {
+  const READER = { kind: "registered" as const, email: "reader@example.com", has_import: true, installation_owner: true };
+  function stubShell(system: SystemState) {
+    vi.spyOn(api, "health").mockResolvedValue({ status: "ok", version: "1.3.0" });
+    vi.spyOn(api, "systemState").mockResolvedValue(system);
+    vi.spyOn(api, "operations").mockResolvedValue({ operations: [] });
+    vi.spyOn(api, "feed").mockResolvedValue(SAMPLE_FEED);
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+  }
+
+  it("never offers Sign in to a signed-in reader adding another list", async () => {
+    vi.spyOn(api, "profile").mockResolvedValue({ profile: null } as never);
+    stubShell({ ...SYSTEM, needs_setup: false, mal_client_id_present: true, account: READER,
+      profile: { profile_id: "imp_1", username: "reader_01", kept_on_delete: false } } as SystemState);
+    const user = userEvent.setup();
+    render(<Workspace />);
+    await user.click(await screen.findByRole("button", { name: "Account menu for reader_01" }));
+    await user.click(screen.getByRole("button", { name: "Add another list" }));
+    const setup = await screen.findByRole("dialog", { name: "Welcome to AniRec" });
+    expect(within(setup).queryByRole("button", { name: "Sign in" })).not.toBeInTheDocument();
+    expect(within(setup).queryByText(/Already have an account/)).not.toBeInTheDocument();
+  });
+
+  it("says in words when MyAnimeList turned down this AniRec, without sending the reader to reconnect", async () => {
+    vi.spyOn(api, "compare").mockResolvedValue({ report: null, reason: "installation-refused", sample_names: [] } as never);
+    render(<ComparePage />);
+    expect(await screen.findByText("MyAnimeList turned down this AniRec")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/reconnect/i);
+  });
+
+  it("ships every icon inside the page, so a menu never waits for one", async () => {
+    const { ICONS } = await import("../assets/Icon");
+    for (const [name, source] of Object.entries(ICONS)) {
+      expect(source, name).toMatch(/^data:image\/svg\+xml,/);
+    }
+  });
+
+  it("lets a password manager recognise and save the new account", async () => {
+    const { AccountDialog } = await import("./AccountDialog");
+    vi.spyOn(api, "register").mockResolvedValue({ account: READER, reason: null, moved_imports: 0 });
+    let atClose = "";
+    render(<AccountDialog mode="register" onDone={() => { atClose = (document.querySelector("input[name=password]") as HTMLInputElement | null)?.value ?? "gone"; }} onClose={vi.fn()} />);
+    const email = screen.getByLabelText("Email");
+    const password = screen.getByLabelText("Password");
+    expect(email).toHaveAttribute("name", "email");
+    expect(email).toHaveAttribute("autocomplete", "username");
+    expect(password).toHaveAttribute("name", "password");
+    expect(password).toHaveAttribute("autocomplete", "new-password");
+    const user = userEvent.setup();
+    await user.type(email, "reader@example.com");
+    await user.type(password, "a long password{Enter}");
+    await waitFor(() => expect(atClose).not.toBe(""));
+    // Still filled when the form goes away: managers read it then.
+    expect(atClose).toBe("a long password");
+  });
+});

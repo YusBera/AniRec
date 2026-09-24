@@ -511,6 +511,21 @@ reviews and the known limits are in `ACCOUNTS.md`, "Password reset by email
   `MalSyncService` uses the data root (`--root-override`); before, its
   state went to the default root. Test: `tests/test_api_list_sync.py`.
 
+**Follow-ups from the first real-data run (2026-09-25): done.**
+- A 401 on a request that sent only the Client ID is now
+  `ClientIdRejectedError`: Refresh says MyAnimeList turned down this
+  AniRec's Client ID, not "reconnect your account". Compare turns
+  MyAnimeList failures into reasons instead of a server error.
+- "Add another list" no longer offers Sign in to a signed-in reader.
+- Icons are data URIs in the bundle, so a menu no longer waits for them.
+- The account dialog names its fields (`email` with
+  `autocomplete="username"`, `password`) and keeps the password in place as
+  it closes, so password managers can save it.
+- Open: the installation's Client ID was rejected by MyAnimeList; the owner
+  replaces it (not from the web). The feed on screen is from 30 Aug and has
+  no explanations until a Refresh succeeds. The MAL score's prominence on
+  the card is being proposed.
+
 Next, in order:
 1. **Email verification** can reuse the mailer and a token table like the
    reset one; it would stop registration revealing taken emails and let
