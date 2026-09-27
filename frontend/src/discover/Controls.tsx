@@ -10,6 +10,7 @@
 
 import type { Catalogue } from "../api/types";
 import { EMPTY_FILTERS, activeFilterCount, type Filters, type SortMode } from "./filtering";
+import { setTitleLanguage, useTitleLanguage } from "./titlePreference";
 
 const SORTS: { value: SortMode; label: string }[] = [
   { value: "personal-match", label: "Personal fit" },
@@ -24,18 +25,22 @@ interface Props {
   sortMode: SortMode;
   onFilters: (next: Filters) => void;
   onSort: (next: SortMode) => void;
+  /** The filter grid is folded behind the Filters toggle; the pill row is always shown. */
+  open?: boolean;
+  id?: string;
 }
 
 function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
-export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Props) {
+export function Controls({ catalogue, filters, sortMode, onFilters, onSort, open = true, id }: Props) {
   const count = activeFilterCount(filters);
+  const titleLanguage = useTitleLanguage();
 
   return (
     <>
-      <div className="controls">
+      <div className="controls" id={id} hidden={!open}>
         <details className="control-group filter-group">
           <summary>Genre <span>{catalogue.genres.length} options · {filters.genres.length} selected</span></summary>
           <div className="term-row">
@@ -53,9 +58,9 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
           </div>
         </details>
 
-        <details className="control-group filter-group">
+        <details className="control-group filter-group studio-filter">
           <summary>Studio <span>{catalogue.studios.length} options · {filters.studios.length} selected</span></summary>
-          <div className="term-row">
+          <div className="term-row studio-term-row" role="region" aria-label="Studio choices" tabIndex={0}>
             {catalogue.studios.map((studio) => (
               <button
                 key={studio}
@@ -122,6 +127,15 @@ export function Controls({ catalogue, filters, sortMode, onFilters, onSort }: Pr
               </button>
             ))}
           </div>
+        </div>
+        <div className="control-group display-preference">
+          <span className="lbl">Display preference</span>
+          <div className="control-head"><span className="lbl">Title language</span><span className="line" /></div>
+          <div className="sort-row" role="group" aria-label="Title language">
+            <button type="button" className="pill" aria-pressed={titleLanguage === "english"} onClick={() => setTitleLanguage("english")}>English</button>
+            <button type="button" className="pill" aria-pressed={titleLanguage === "original"} onClick={() => setTitleLanguage("original")}>Original</button>
+          </div>
+          <p>Changes how titles are shown, not which anime are recommended.</p>
         </div>
       </div>
 

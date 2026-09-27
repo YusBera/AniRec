@@ -884,10 +884,7 @@ class MainWindow(QMainWindow):
         title = QLabel(APP_NAME.upper())
         title.setObjectName("sidebarTitle")
         title.setAccessibleName("AniRec application title")
-        subtitle = QLabel("アニレク")
-        subtitle.setObjectName("sidebarKana")
         plate_layout.addWidget(title)
-        plate_layout.addWidget(subtitle)
         layout.addWidget(plate)
         layout.addWidget(self._hairline())
 

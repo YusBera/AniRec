@@ -137,6 +137,18 @@ class RecommendationEventService:
                 conn.execute(f"ALTER TABLE events ADD COLUMN {name} {kind}")
         return conn
 
+    def export(self, profile):
+        """Every retained event for this list, oldest first, for its reader."""
+        path = self._root(profile) / "recommendation_events.sqlite"
+        if not path.exists():
+            return []
+        with closing(self._connect(profile)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM events ORDER BY recorded_at, rowid LIMIT ?", (MAX_EVENTS,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def clear(self, profile):
         path = self._root(profile) / "recommendation_events.sqlite"
         if path.exists():

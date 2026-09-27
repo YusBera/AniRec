@@ -2,7 +2,9 @@
 
 React + TypeScript workspace with Discover, Library, Profile, Compare and
 Settings. The web client is AniRec's primary product surface. PySide remains a
-development tool and is not the current visual authority.
+development tool, and its design is the reference for these surfaces
+(`docs/DECISIONS.md` D-016). Read the matching `AniRec/gui/*.py` and
+`AniRec/gui/texts.py` before changing a surface.
 
 New agents start with [the documentation index](../docs/README.md). UI work must
 also read [the current task](../docs/CURRENT_TASK.md) to avoid colliding with

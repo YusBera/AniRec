@@ -72,6 +72,7 @@ class FinalEligibilityPolicy:
         context: EligibilityContext | None = None,
         user_history: Iterable[Mapping[str, object]] = (),
         consumed_mal_ids: Iterable[int] = (),
+        known_mal_ids: Iterable[int] = (),
         excluded_mal_ids: Iterable[int] = (),
         excluded_titles: Iterable[str] = (),
         include_nsfw: bool = False,
@@ -80,9 +81,14 @@ class FinalEligibilityPolicy:
         context = context or EligibilityContext()
         cutoff = as_of or date.today()
         history = tuple(user_history)
-        known_ids = self._history_ids(history)
+        supplied_consumed_ids = self._positive_ids(consumed_mal_ids)
+        known_ids = (
+            self._history_ids(history)
+            | supplied_consumed_ids
+            | self._positive_ids(known_mal_ids)
+        )
         consumed_ids = {
-            *self._positive_ids(consumed_mal_ids),
+            *supplied_consumed_ids,
             *self._consumed_history_ids(history),
         }
         explicit_ids = self._positive_ids(excluded_mal_ids)

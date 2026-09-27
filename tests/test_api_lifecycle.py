@@ -156,6 +156,7 @@ def test_the_shutdown_route_invokes_the_launcher_hook(tmp_path):
         root_override=str(tmp_path), on_shutdown_requested=lambda: called.append(True)
     )
     with TestClient(app) as client:
+        _sign_in_owner(client)   # without a launcher token, only the owner may stop it (D-021)
         assert client.post("/api/system/shutdown").status_code == 202
     assert called == [True]
 
@@ -163,7 +164,15 @@ def test_the_shutdown_route_invokes_the_launcher_hook(tmp_path):
 def test_the_shutdown_route_answers_without_a_hook(tmp_path):
     """A test harness has no uvicorn Server; the route must not require one."""
     with TestClient(create_app(root_override=str(tmp_path))) as client:
+        _sign_in_owner(client)
         assert client.post("/api/system/shutdown").json() == {"accepted": True}
+
+
+def _sign_in_owner(client):
+    from account_helpers import sign_in_reader
+
+    sign_in_reader(client, email="owner@example.com")
+    client.app.state.container.accounts.set_owner("owner@example.com", [])
 
 
 # -- the real process ----------------------------------------------------------

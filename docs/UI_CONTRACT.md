@@ -26,16 +26,34 @@ only so older clients still parse. `personal_match_text` and
   fine to show; a "match %" is not.
 - `fit_rank` is the engine's rank **before** diversity selection, so it can
   differ from feed position. Do not label it as feed position.
-- A feed and its "more" batches share one ranking, so their `fit_rank` values
-  are unique and comparable. "More" continues exactly the ranking the feed was
-  generated from. Hiding or restoring titles in between changes only what can
-  be selected: a restored title returns at the next full generation. If the
-  ranking inputs changed since (a MAL sync, different feedback, a changed
-  "Include NSFW anime" or minimum MAL score setting, rebuilt candidates or
-  taste profile, or a different engine or catalogue), the "more" operation
-  fails with a message containing "Generate a new feed". Offer that action;
-  never mix two rankings in one feed. A new full generation starts a new
+- The complete saved feed shares one `ranking_id`. `fit_rank` describes the
+  model order; `rank` describes its saved browsing position after selection.
+  Both remain fixed when filters or pages change. A new analysis starts a new
   ranking.
+
+### Refresh and pages (D-018)
+
+- **Refresh:** `POST /api/operations/refresh` with no count.
+  - It syncs the list and regenerates only when needed. The result's
+    `user_stats.feed_refresh` is `"missing"`, `"inputs-changed"`,
+    `"engine-changed"`, `"legacy-capped-ranking"` or `"current"`;
+    `"current"` keeps the saved model order.
+  - Start it once per session for each profile the service reports active,
+    and from the small Refresh button. That includes a profile with no feed
+    yet, which is served the sample library until its first refresh. Never
+    start it when there is no profile.
+  - An `auth_error` is shown by its title and description only. Its
+    suggested fix is to reconnect an account, which the web client cannot do
+    (D-017).
+- **Pages:** `GET /api/discover/feed?query=<URL-encoded JSON>` accepts page,
+  genre, studio, year, MAL score, status, episode and sort selections. The API
+  filters the entire saved ranking first and returns `total`, zero-based
+  `page`, `page_size: 50` and only that page's recommendations. Genre choices
+  intersect. Page changes make one read request and no ranking operation.
+  Missing community scores do not satisfy a positive score floor. The
+  unfiltered complete feed is also bounded to its first 50 picks.
+- `refresh` is a feed-writing operation: it never overlaps `sync`,
+  `recommendation` or `more-recommendations` for the same profile.
 - Every row carries `ranking_id`, the ranking its `fit_rank` comes from.
   Compare or sort `fit_rank` only between rows that share it.
 - `fit_pool_size` differs by engine. The sequence model ranks thousands of
@@ -48,74 +66,23 @@ only so older clients still parse. `personal_match_text` and
 - Sort "Personal fit" by `fit_rank` ascending, with nulls last. Rename the
   "Match" sort label.
 
-### Clicking it: `why` (an `Explanation`)
+### Inspector: personal rank, without explanations (D-023)
 
-Branch on `why.method`. If `why` is `null`, render it the same as `unavailable`.
+PERSONAL FIT shows the API's personal rank, eligible population and answering
+engine. Do not render "Why this pick", legacy `reason` strings, supporting
+history titles, additive score parts or removal diagnostics.
 
-**`exact-additive` (heuristic): an additive bar.**
-- `segments[].value` sums to `total`, the ranking score, to within one float
-  rounding step. Negative parts offset positive ones, so a positive part can
-  exceed `total`. Draw bar lengths proportional to `|value|`, with positive
-  parts ("raised it") and negative parts ("held it back") on separate sides.
-  Never present a part as a percentage of `total`, and never drop negatives.
-- `kind: "taste"` parts come from the reader's own ratings. `facet` is one of
-  genre, studio, source, media-type or era; label the segment with its facet.
-  On click, show:
-  - `taste.rated_count` rated titles with this facet, averaging
-    `taste.mean_user_score` against the reader's overall
-    `taste.overall_mean_user_score`;
-  - the `evidence` titles with their `user_score`, the reader's real ratings;
-  - `feedback_adjustment`, if non-null, as "adjusted by your likes/dislikes".
-- `taste.affinity` is the value the ranking used, after any feedback. When
-  `feedback_adjustment` is set, do not describe it as coming from ratings
-  alone. `rated_count` and `mean_user_score` are null when the reader's rated
-  list was unavailable: say "unknown", not zero.
-- `kind: "community"` is the MAL community rating and `kind: "similar-viewers"`
-  is the recommendation graph. Label both as not about the reader's taste.
-  - If `signal_available` is `false`, there was no data and a neutral stand-in
-    was used. Say so.
-  - `community.mean_score` and `community.scoring_users` are the MAL figures.
+New recommendations have `why: null` for both engines, including heuristic
+fallback. The nullable field and legacy evidence-artwork endpoint remain for
+saved-feed compatibility; the web client does not request evidence artwork.
+Old saved explanations still deserialize but are not displayed.
 
-**`counterfactual-removal` (sequence model): a relative-impact bar, not shares.**
-- The model was rerun without parts of the reader's history. `total` and
-  `baseline` are `null` because the effects overlap and do not add up. Never
-  render these segments as slices of a whole or as percentages of the score.
-- Each segment is the reader's history titles in one genre. `member_count`
-  gives how many; `kind: "history-other"` covers titles without genres.
-  - Wording must be "your *Psychological* titles", never "because it is
-    Psychological". The model never sees genres.
-  - `value` is the model-score drop without those titles; bar length can be
-    proportional to `|value|`.
-  - `rank_without` is the pick's rank without them. Show it as
-    "#`full_rank` → #`rank_without`".
-  - Negative `value` means those titles held the pick back.
-- On click, list the segment's `evidence` titles. Each has its own
-  single-title `value` and `rank_without`, plus `list_status` and `user_score`.
-- `influences` are the strongest single titles overall: "Because you watched
-  *X*: without it, #4 → #337". Use `list_status` for the verb: watched,
-  dropped, plan to watch, and so on.
-- `history_window` is how many recent list entries the model reads, up to 200.
-  Say "from your N most recent titles". Never say the whole list. A removal
-  takes titles out of that window; it does not pull older titles in.
-- If a segment's `member_count` equals `history_window`, removing it leaves no
-  history, and `rank_without` is the rank for a brand-new reader. Say so.
-- Group and single-title effects interact. A genre segment can be negative
-  while each of its titles, removed alone, is positive. Show the numbers as
-  they are, and never infer one from the other.
-- `full_rank` and `ranked_candidate_count` are the same rank as `fit_rank` and
-  `fit_pool_size`.
+### Likes and dislikes (D-013, revised by D-015)
 
-**`unavailable`:** show "This pick can't be explained" plus `unavailable_reason`,
-mapped to plain text:
-- `engine-cannot-explain` → "this engine can't explain its picks";
-- `explanation-failed` and `explanation-unavailable` → "couldn't compute an
-  explanation this time";
-- `outside-ranked-candidates` → "not in the ranked set";
-- `score-parts-missing` → "no score breakdown was recorded".
-
-Never substitute another engine's explanation.
-
-### Likes and dislikes (D-013)
+**No vote controls on Discover cards or in the inspector.** D-015 moves
+feedback to the Library, after watching. The Library-side reporting and the
+observed-on-return path are later work. The endpoint below stays, and so do
+the votes already collected under D-013.
 
 The backend collects votes. They do not change recommendations yet, so the UI
 must not say or imply that they do: no "we'll show you more like this".
@@ -136,6 +103,6 @@ must not say or imply that they do: no "we'll show you more like this".
 
 ### Cost and states
 
-Sequence-model explanations are computed at generation, adding about 4 s for a
-200-title history, so opening one needs no request. A failed explanation never
-removes the recommendation; it arrives as `unavailable`.
+Discover rebuilds do not generate explanations. A successful sequence rebuild
+performs its ranking inference without counterfactual/removal calls. Opening
+the Inspector does not generate explanations or fetch explanation artwork.

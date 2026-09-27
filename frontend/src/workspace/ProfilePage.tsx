@@ -1,38 +1,98 @@
+/**
+ * Profile, as `gui/profile_page.py` builds it: the READER block, THE READING
+ * verdict, the "NOT ON YOUR MAL PROFILE" board, then THE INSTRUMENT.
+ *
+ * The Local / Sample switch stays: sample evidence is opt-in and labelled,
+ * and a local profile that cannot be read never silently becomes the sample.
+ */
+
 import { useState } from "react";
 import { api } from "../api/client";
-import type { TitleVerdict } from "../api/types";
-import { number, Poster, ReadState, Scores, useRead } from "./common";
+import { Icon } from "../assets/Icon";
+import { PageHeading, number, ReadState, useRead } from "./common";
+import { boardFacts, scoreText } from "./profileFacts";
 import { ProfileSections } from "./ProfileSections";
 
-function Evidence({ titles, label }: { titles: TitleVerdict[]; label: string }) {
-  return <section><h2>{label}</h2>{!titles.length ? <p>No title evidence is available in this snapshot.</p> : <div className="evidence-shelf">{titles.map((title, i) => <article className="evidence-card" key={`${title.mal_id}-${i}`}>
-    <Poster title={title.title} url={title.cover_url} /><div><h3>{title.title}</h3><Scores yours={title.your_score} theirs={title.community_score} />{title.mal_id ? <a href={`https://myanimelist.net/anime/${title.mal_id}`} target="_blank" rel="noreferrer">MyAnimeList ↗</a> : null}</div>
-  </article>)}</div>}</section>;
+/** `STATE_FOR_REASON`, worded for a client that cannot connect an account. */
+const UNAVAILABLE: Record<string, [string, string, boolean]> = {
+  "not-connected": ["Your taste profile is not built yet", "A taste profile is read from your MyAnimeList history, which is not available here. You can still inspect the bundled sample profile.", false],
+  "backend-missing": ["Your taste profile is not built yet", "Live profile statistics are not available in this build. You can still inspect the bundled sample profile.", false],
+  "private-list": ["Your list is private", "AniRec can only read a public list. Make yours public on MyAnimeList, then try again.", false],
+  network: ["MyAnimeList is unreachable", "AniRec could not reach MyAnimeList. Check your connection and try again.", true],
+  "api-unavailable": ["MyAnimeList could not answer", "The request was refused or timed out. This usually clears on its own. Try again shortly.", true],
+  "user-not-found": ["Nothing to read yet", "A taste profile needs scored anime. Rate a few titles on MyAnimeList, sync, and this page fills in.", false],
+};
+
+/** `ProfileIdentity.initials`: the first and last letters of the name. */
+function initials(username: string): string {
+  const letters = [...username].filter((char) => /[\p{L}\p{N}]/u.test(char));
+  if (!letters.length) return "??";
+  return letters.length === 1 ? letters[0]!.toLocaleUpperCase() : (letters[0]! + letters[letters.length - 1]!).toLocaleUpperCase();
 }
 
 export function ProfilePage() {
   const [sample, setSample] = useState(false);
   const read = useRead(() => api.profile(sample), `${sample}`);
   const profile = read.result?.profile;
-  const readings = () => profile?.fingerprint?.map(reading => <div key={reading.reading_id}><h2>{reading.caption}</h2><strong>{reading.value_text}</strong><p>{reading.detail || reading.label}</p></div>);
-  return <main className="workspace-page"><h1 tabIndex={-1}>Profile</h1><p className="workspace-intro">A portrait of your taste, read off the scores you have already given.</p>
-    <div className="workspace-toolbar"><button className="btn" aria-pressed={!sample} onClick={() => setSample(false)}>Local profile</button><button className="btn" aria-pressed={sample} onClick={() => setSample(true)}>View sample profile</button></div>
-    {sample ? <p className="sample-note">Bundled sample data. These figures describe anirec_sample, not your account.</p> : null}
+  const reason = read.result?.reason;
+  const unavailable = reason ? UNAVAILABLE[reason] ?? ["Profile data unavailable", "No synchronized library is available for this profile yet. You can still inspect the bundled sample profile.", false] : null;
+  const identity = profile?.identity;
+  const archetype = read.result?.archetype;
+  const facts = profile ? boardFacts(profile) : [];
+  const memberYear = identity?.member_since?.match(/\d{4}/)?.[0];
+
+  return <main className="workspace-page">
+    <PageHeading name="Profile" />
+    <p className="workspace-intro">A portrait of your taste, read off the scores you have already given.</p>
+    <div className="workspace-toolbar" role="group" aria-label="Profile source">
+      <button className="btn" aria-pressed={!sample} onClick={() => setSample(false)}>Local profile</button>
+      <button className="btn" aria-pressed={sample} onClick={() => setSample(true)}>View sample profile</button>
+    </div>
     <ReadState {...read} />
-    {read.result?.reason ? <div className="workspace-empty"><h2>Profile data unavailable</h2><p>{read.result.reason === "not-connected" ? "Profile connection is not available in this browser build. You can explore the sample profile above." : "No synchronized library is available for this profile yet. You can explore the sample profile above."}</p><button className="btn" onClick={read.retry}>Reload profile</button></div> : null}
+    {unavailable ? <div className="workspace-empty">
+      <Icon name="details-inspector" className="empty-icon" />
+      <h2>{unavailable[0]}</h2><p>{unavailable[1]}</p>
+      <div className="empty-actions">
+        {unavailable[2] ? <button className="btn" onClick={read.retry}>Try again</button> : null}
+        <button className="btn" onClick={() => setSample(true)}>Show a sample profile</button>
+      </div>
+    </div> : null}
     {profile ? <>
-      <section className="identity-strip"><div><h2>{profile.identity?.username}</h2>{profile.identity?.member_since ? <p>MAL member since {profile.identity.member_since}</p> : null}</div>
-        <dl>{([["Completed", profile.identity?.completed], ["Episodes", profile.identity?.episodes], ["Days watched", profile.identity?.days_watched], ["Mean score / 10", profile.identity?.mean_score]] as const).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{number(value, 2)}</dd></div>)}</dl>
+      <section className="identity-panel panel" aria-label="Reader">
+        <div className="avatar" aria-hidden="true">{initials(identity?.username ?? "")}</div>
+        <div className="identity-name">
+          <p className="legend-row"><span className="legend">READER</span>{profile.is_sample ? <span className="tag warn" title="A bundled example profile. Connect MyAnimeList and generate recommendations to see your own figures here.">SAMPLE DATA</span> : null}</p>
+          <h2>{identity?.username || "Unknown reader"}</h2>
+          <p className="legend">MAL MEMBER SINCE {memberYear ?? "N/A"}</p>
+        </div>
+        <dl className="identity-stats">
+          <div><dt>COMPLETED</dt><dd>{number(identity?.completed)}</dd></div>
+          <div><dt>EPISODES</dt><dd>{number(identity?.episodes)}</dd></div>
+          <div><dt>DAYS</dt><dd>{scoreText(identity?.days_watched, 1)}</dd></div>
+          <div><dt>MEAN</dt><dd data-tone="you">{scoreText(identity?.mean_score, 2)}</dd></div>
+        </dl>
       </section>
-      <section className="profile-readings desktop-readings" aria-label="Taste readings">{readings()}</section>
-      <details className="mobile-readings"><summary>Taste readings · {profile.fingerprint?.length ?? 0}</summary><div className="profile-readings">{readings()}</div></details>
-      <Evidence label="Rated above the community" titles={profile.hot_takes?.higher ?? []} />
-      <Evidence label="Rated below the community" titles={profile.hot_takes?.lower ?? []} />
-      {read.result?.archetype ? <section><h2>{read.result.archetype.name}</h2><p>{read.result.archetype.sentence}</p><ul>{read.result.archetype.evidence?.map(evidence => <li key={evidence}>{evidence}</li>)}</ul></section> : null}
-      <Evidence label="Highly ranked titles you rated low" titles={profile.hype_killers?.entries ?? []} />
-      {profile.hype_killers?.biggest ? <Evidence label="Largest gap among highly ranked titles" titles={[profile.hype_killers.biggest]} /> : null}
-      <Evidence label="Hidden gems" titles={profile.hidden_gems?.entries ?? []} />
-      {profile.hidden_gems?.deepest ? <Evidence label="Deepest discovery" titles={[profile.hidden_gems.deepest]} /> : null}
+      {profile.is_sample ? <p className="sample-note">Bundled sample data. These figures describe {identity?.username || "the sample reader"}, not your account.</p> : null}
+
+      <section className="verdict-panel panel" aria-labelledby="the-reading">
+        <p className="legend" id="the-reading">THE READING</p>
+        <h2 className="verdict-name">You are {archetype?.name ?? "still writing the profile"}.</h2>
+        <p>{archetype?.sentence ?? "There is not enough scored history yet to give your taste a fair headline. A few more ratings will sharpen the picture."}</p>
+      </section>
+
+      <section className="unlisted panel" aria-labelledby="unlisted-title">
+        <h2 id="unlisted-title">NOT ON YOUR MAL PROFILE</h2>
+        <p className="unlisted-description">None of this is a number MyAnimeList shows you. It comes out of comparing every score you have given against everyone else's.</p>
+        {facts.length ? <ul className="fact-board">{facts.map((fact, i) => <li key={`${fact.legend}-${i}`} className="fact-card" data-tone={fact.tone}>
+          <p className="fact-head"><Icon name={fact.icon} className="fact-mark" /><span className="legend">{fact.legend}</span></p>
+          <p className="fact-value">{fact.value}</p>
+          <p className="fact-caption">{fact.caption}</p>
+          {fact.evidence.length ? <ul className="fact-evidence" aria-label="Titles behind this">{fact.evidence.map((line) => <li key={line}>{line}</li>)}</ul> : null}
+        </li>)}</ul> : <p>Not measured yet.</p>}
+      </section>
+
+      <h2 className="instrument-title">THE INSTRUMENT</h2>
+      <p className="unlisted-description">Every reading behind the above, in full. Open whichever you want.</p>
       <ProfileSections profile={profile} />
     </> : null}
   </main>;

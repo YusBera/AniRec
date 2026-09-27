@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { Workspace } from "./workspace/Workspace";
 import { PlatformProvider } from "./platform/PlatformContext";
+import "./styles/fonts.css";
 import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/instrument.css";

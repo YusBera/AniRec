@@ -114,6 +114,50 @@ why, plus a repeatable evaluation that future daily data can rerun.
 **Estimate:** data checking plus several training runs may take 1-3 days,
 depending on snapshot size and hardware.
 
+## Before a public launch
+
+Recorded 2026-09-24. Not ordered goals yet; each needs scoping before work.
+
+**Blocking**
+1. **Accounts.** Sign-up, sessions and account-scoped storage (D-014). It
+   waits on the local-mode choice.
+2. **Easy import.**
+   - Username-only import through a server-held MAL Client ID.
+   - A request queue with automatic retry on HTTP 429, so a burst of imports
+     waits in line instead of failing.
+   - MAL XML export upload as a fallback that uses no API calls.
+3. **How feeds are produced.** Decided in D-018: an automatic refresh when a
+   profile opens, a small Refresh button, and pages that continue the
+   ranking. A feed that predates the current model is rebuilt on the first
+   refresh. Still open for hosting: a scheduled refresh without an open
+   browser, and the import queue (item 2).
+4. **Sparse-history state.** Below the evidence threshold, say the system does
+   not know enough yet (`DOMAIN_RULES.md`, "Scoring Honesty").
+5. **Hosting and security.**
+   - A deployment with TLS and authentication on every route.
+   - Per-user rate limits and secret management.
+   - A security review before the API leaves loopback.
+6. **Legal and data.**
+   - Stay non-commercial under the MAL API agreement.
+   - Resolve where the training data comes from (the collector reads MAL's
+     website, not the API).
+   - A privacy policy covering KVKK/GDPR, with consent at import, export and
+     deletion.
+   - Rules for how covers and synopses are shown.
+7. **Feedback after watching (D-015).** Library-side reporting and
+   observation on return; retire the card vote buttons.
+
+**Needed, not blocking**
+8. A 375px, keyboard and screen-reader pass across all five pages.
+9. Operations: bundle deploy and rollback, backups, error monitoring,
+   retention jobs.
+10. Known debt: the intermittent API shutdown test, and stale whole-state
+    `save()` calls.
+11. **Design fidelity to the desktop client.** The user considers the web
+    client to have lost the PySide design language and widget structure. A
+    comparison against the released 1.3.0 is in progress; its findings decide
+    what is restored.
+
 ## Decisions that wait for Goal 4 evidence
 
 Do not schedule these merely because they sound useful:

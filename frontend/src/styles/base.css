@@ -93,3 +93,7 @@ img {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Headings take focus on a route change so a screen reader announces the new
+   page; that is not a keyboard-visible target, so it draws no ring. */
+h1[tabindex="-1"]:focus, h2[tabindex="-1"]:focus { outline: none; }

@@ -263,7 +263,7 @@ OAUTH_STATUS_TEXT = {
 class DiscoverTextCatalog:
     """Copy for the Discover surface. Plain language, no pipeline vocabulary."""
 
-    channel: str = "DISCOVER // 推薦"
+    channel: str = "DISCOVER"
     state_caption: str = "STATE"
     taste_caption: str = "TASTE VECTOR"
     refresh: str = "RUN ANALYSIS"
@@ -398,7 +398,7 @@ FILTER_TEXT = FilterTextCatalog()
 class CompareTextCatalog:
     """Copy for the Friends surface."""
 
-    channel: str = "COMPARE // 相性"
+    channel: str = "COMPARE // COMPATIBILITY"
     hint: str = (
         "Enter a MyAnimeList username to see how your taste lines up with "
         "theirs."

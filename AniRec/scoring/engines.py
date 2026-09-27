@@ -95,8 +95,8 @@ class HeuristicRankingEngine:
         ranked = rank_candidate_pool(
             candidates,
             profile,
-            num_recommendations=request.parameters.recommendation_count,
-            top_anime_count=request.parameters.candidate_pool_size,
+            num_recommendations=len(candidates) if request.context.get("full_ranking") else request.parameters.recommendation_count,
+            top_anime_count=len(candidates) if request.context.get("full_ranking") else request.parameters.candidate_pool_size,
             genre_adjustments=dict(request.taste_adjustments),
             excluded_mal_ids=set(request.excluded_mal_ids),
             excluded_titles=set(request.excluded_titles),
@@ -204,7 +204,11 @@ class OnnxSequenceRankingEngine:
 
     @property
     def engine_version(self) -> str:
-        if not self._loaded:
+        # The manifest names the checkpoint as soon as the bundle is read; the
+        # model session is not needed for that. Reporting "unloaded" until
+        # the first ranking made every refresh after a restart look like a
+        # model change (D-018).
+        if not self._bundle_loaded:
             return "unloaded"
         checkpoint = self._manifest.get("checkpoint", {})
         return str(checkpoint.get("sha256") or "unknown")[:12]
@@ -263,7 +267,7 @@ class OnnxSequenceRankingEngine:
         )
         # The ordered pool is returned; the shared selection policy in
         # ``scoring.selection`` picks the feed from it after ranking.
-        pool = eligible[:pool_limit]
+        pool = eligible if request.context.get("full_ranking") else eligible[:pool_limit]
         ranked_rows = []
         for global_rank, (raw_score, _mean, _mal_id, _title, row) in enumerate(pool):
             row.update(
@@ -783,6 +787,14 @@ class FallbackRankingEngine:
     def __init__(self, preferred: RankingEngine, fallback: RankingEngine) -> None:
         self._preferred = preferred
         self._fallback = fallback
+
+    @property
+    def preferred_engine(self) -> RankingEngine:
+        return self._preferred
+
+    @property
+    def fallback_engine(self) -> RankingEngine:
+        return self._fallback
 
     @property
     def requires_user_history(self) -> bool:

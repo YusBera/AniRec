@@ -208,6 +208,7 @@ class RecommendationViewModelResponse(ApiModel):
     cover_url: str | None
     large_cover_url: str | None
     mal_url: str | None
+    pv_youtube_url: str | None = None
     media_type: str | None
     fit_rank: int | None = Field(
         default=None,
@@ -266,6 +267,7 @@ class ProfileSummary(ApiModel):
 FeedSource = Literal["profile", "sample", "empty"]
 
 
+
 class FeedResponse(ApiModel):
     source: FeedSource
     ephemeral: bool
@@ -277,6 +279,39 @@ class FeedResponse(ApiModel):
     state: LocalState
     user_stats: dict[str, Any]
     activity_feed_id: str = ""
+    total: int | None = None
+    page: int | None = None
+    page_size: int | None = None
+
+
+class FeedQuery(ApiModel):
+    page: int = Field(default=0, ge=0)
+    genres: tuple[str, ...] = ()
+    studios: tuple[str, ...] = ()
+    years: tuple[int, ...] = ()
+    minimumMalScore: float | None = Field(default=None, ge=0, le=10)
+    status: str | None = None
+    minimumEpisodes: int | None = Field(default=None, ge=0)
+    maximumEpisodes: int | None = Field(default=None, ge=0)
+    sort: Literal["personal-match", "mal-score", "year", "title"] = "personal-match"
+
+
+class PageMetadataRequest(ApiModel):
+    mal_ids: tuple[int, ...] = Field(min_length=1, max_length=50)
+
+
+class EvidenceArtworkRequest(ApiModel):
+    pick_mal_id: int = Field(gt=0)
+    ranking_id: str | None
+
+
+class EvidencePoster(ApiModel):
+    mal_id: int
+    cover_url: str | None
+
+
+class EvidenceArtworkResponse(ApiModel):
+    posters: tuple[EvidencePoster, ...]
 
 
 FeedbackAction = Literal["hidden", "watch_later", "sentiment"]
@@ -349,10 +384,24 @@ class OperationSnapshotResponse(ApiModel):
     event_count: int
 
 
+class AccountSummary(ApiModel):
+    """The signed-in account, as the reader may see it (D-021)."""
+
+    kind: Literal["guest", "registered"]
+    email: str | None = Field(default=None, description="Registered accounts only.")
+    has_import: bool
+    installation_owner: bool = Field(description="Whether this account may change installation settings.")
+
+
 class SystemStateResponse(ApiModel):
     profile: ProfileSummary | None
+    account: AccountSummary | None = None
     needs_setup: bool
     mal_client_id_present: bool
+    password_reset_available: bool = Field(
+        default=False,
+        description="Whether this installation can email a password reset link (mail and a public address are set up).",
+    )
     active_operations: tuple[OperationSnapshotResponse, ...]
 
 

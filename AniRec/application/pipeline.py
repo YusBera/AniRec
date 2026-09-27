@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import threading
 from dataclasses import replace
 from collections.abc import Callable
@@ -31,7 +32,7 @@ try:
         franchise_exclusions,
         select_seeds,
     )
-    from ..scoring.selection import SELECTION_POLICY_VERSION, clamp_adventurousness
+    from ..scoring.selection import SELECTION_POLICY_VERSION, clamp_adventurousness, max_leap
     from ..infrastructure.paths import RANKING_SNAPSHOT_ARCHIVE
     from ..scoring.explanation import (
         EXPLANATION_COLUMN,
@@ -66,7 +67,7 @@ except ImportError:  # Backward compatibility for ``python AniRec/main.py``.
         franchise_exclusions,
         select_seeds,
     )
-    from scoring.selection import SELECTION_POLICY_VERSION, clamp_adventurousness
+    from scoring.selection import SELECTION_POLICY_VERSION, clamp_adventurousness, max_leap
     from infrastructure.paths import RANKING_SNAPSHOT_ARCHIVE
     from scoring.explanation import (
         EXPLANATION_COLUMN,
@@ -109,6 +110,7 @@ STEP_LABELS = {
 }
 
 CANDIDATE_CATALOGUE_FILENAME = "candidate_catalogue.csv"
+COMPLETED_EXCLUSION_IDS_FILENAME = "completed_exclusion_ids.csv"
 # The ranking snapshot a generated feed was ranked from: the collaborative
 # scores, franchise and hidden exclusions, eligibility date, a digest of the
 # ranking inputs and the engine that answered. "More" continues exactly that
@@ -129,13 +131,29 @@ SIGNAL_INPUT_DIGEST = "input-digest"
 SIGNAL_RANKING_ENGINE = "ranking-engine"
 SIGNAL_RANKING_ID = "ranking-id"
 SIGNAL_FILTERS = "eligibility-filters"
+# Only on a feed the fallback ranked: the preferred engine that declined it
+# ("id:version"), "unavailable" when it could not load, or
+# "history-unavailable" when the reader's history could not be fetched. Not
+# part of the ranking identity; a refresh reads it to tell "the same model
+# declined again" from "a different model could rank now" (D-018).
+SIGNAL_PREFERRED_ENGINE = "preferred-engine"
 # Files whose content decides a ranking; a sync or a regenerated step changes it.
-RANKING_INPUT_FILES = (
-    "genre_importance.csv",
-    "recommendation_candidates.csv",
-    "completed_anime.csv",
-    "user_history.csv",
+# What decides whether a ranking is still current: only what the reader did
+# (D-018). The catalogue and community columns in these files (mean score,
+# scorer counts, pictures) drift every day; hashing whole files made nearly
+# every sync look like a change and swapped the feed under the reader.
+USER_INPUT_COLUMNS = (
+    ("completed_anime.csv", ("Anime ID", "Status", "User Score")),
+    (COMPLETED_EXCLUSION_IDS_FILENAME, ("Anime ID",)),
+    (
+        "user_history.csv",
+        ("Anime ID", "Status", "User Score", "Episodes Watched", "Is Rewatching", "Updated At"),
+    ),
 )
+# Files a ranking is computed from that only a generation writes: hashed byte
+# for byte, so a changed (or tampered) candidate pool or taste profile still
+# makes "more" refuse, while a sync, which never writes them, cannot churn them.
+GENERATED_INPUT_FILES = ("genre_importance.csv", "recommendation_candidates.csv")
 STALE_FEED_MESSAGE = (
     "Your MyAnimeList data, feedback, filters or saved candidates changed "
     "since this feed was generated. Generate a new feed to see more "
@@ -231,6 +249,9 @@ class PipelineOrchestrator:
             cancellation_token=token,
         )
         self._require_nonempty(completed, "MyAnimeList returned no completed anime data.")
+        completed_exclusions = self._fetch_completed_exclusion_ids(
+            username, settings, credentials, token, completed
+        )
         history = self._fetch_user_history(
             username, settings, credentials, token
         )
@@ -238,8 +259,9 @@ class PipelineOrchestrator:
         sources = [
             (candidate_catalogue, directory / CANDIDATE_CATALOGUE_FILENAME),
             (completed, directory / "completed_anime.csv"),
+            (completed_exclusions, directory / COMPLETED_EXCLUSION_IDS_FILENAME),
         ]
-        if history is not None and not history.empty:
+        if history is not None:
             sources.append((history, directory / "user_history.csv"))
         generated = self._storage.write_batch(
             tuple(sources),
@@ -273,6 +295,9 @@ class PipelineOrchestrator:
         excluded_mal_ids: set[int] | frozenset[int] | None = None,
         profile_override: UserProfile | None = None,
         access_token_provider: Callable[[], str] | None = None,
+        count: int | None = None,
+        selection_page_size: int | None = None,
+        full_ranking: bool = False,
     ) -> PipelineResult:
         token = cancellation_token or CancellationToken()
         profile = profile_override or self._profiles.resolve_profile(username)
@@ -281,7 +306,34 @@ class PipelineOrchestrator:
         directory = self._profiles.directory(profile.profile_id, create=True)
         started_at = self._timestamp()
         credentials = self._checked_credentials(token, access_token_provider)
+        effective_settings = (
+            self._settings_for_count(settings, count, selection_page_size)
+            if count is not None else settings
+        )
+        candidate_catalogue, completed, completed_exclusions, history = self._fetch_inputs(
+            username, effective_settings, token, credentials, progress_callback
+        )
+        return self._generate_feed(
+            profile,
+            directory,
+            effective_settings,
+            token,
+            credentials,
+            progress_callback,
+            candidate_catalogue=candidate_catalogue,
+            completed=completed,
+            completed_exclusions=completed_exclusions,
+            history=history,
+            genre_adjustments=genre_adjustments,
+            excluded_mal_ids=excluded_mal_ids,
+            started_at=started_at,
+            preload_target=count,
+            selection_page_size=selection_page_size,
+            full_ranking=full_ranking,
+        )
 
+    def _fetch_inputs(self, username, settings, token, credentials, progress_callback):
+        """Steps 1 and 2 of a full run: the catalogue, the list and its history."""
         self._emit(progress_callback, "fetch_top", 1, 6)
         token.raise_if_cancelled()
         candidate_catalogue = self._load_candidate_catalogue(
@@ -298,11 +350,42 @@ class PipelineOrchestrator:
             cancellation_token=token,
         )
         self._require_nonempty(completed, "MyAnimeList returned no completed anime data.")
+        completed_exclusions = self._fetch_completed_exclusion_ids(
+            username, settings, credentials, token, completed
+        )
         history = self._fetch_user_history(
             username, settings, credentials, token
         )
         token.raise_if_cancelled()
+        return candidate_catalogue, completed, completed_exclusions, history
 
+    def _generate_feed(
+        self,
+        profile,
+        directory: Path,
+        settings: PipelineSettings,
+        token: CancellationToken,
+        credentials,
+        progress_callback,
+        *,
+        candidate_catalogue: pd.DataFrame,
+        completed: pd.DataFrame,
+        completed_exclusions: pd.DataFrame,
+        history,
+        genre_adjustments,
+        excluded_mal_ids,
+        started_at,
+        extra_user_stats: dict | None = None,
+        preload_target: int | None = None,
+        selection_page_size: int | None = None,
+        full_ranking: bool = False,
+    ) -> PipelineResult:
+        """Steps 3 to 6 of a full run, from already fetched inputs.
+
+        A full run and a refresh rebuild both come here, so a rebuilt feed is
+        ranked exactly as a full run ranks it: taste learned from real
+        ratings, fresh similar-viewer and franchise signals, one snapshot.
+        """
         self._emit(progress_callback, "impute_scores", 3, 6)
         token.raise_if_cancelled()
         imputed = self._recommendations.impute_missing_scores(completed)
@@ -346,9 +429,12 @@ class PipelineOrchestrator:
             user_history=history,
             fallback_candidates=fallback_candidates,
             consumed_mal_ids=self._mal_ids(completed),
+            known_mal_ids=self._mal_ids(completed_exclusions),
             include_nsfw=settings.include_nsfw,
             as_of=self._clock().date(),
             rated_history=completed,
+            selection_page_size=selection_page_size,
+            full_ranking=full_ranking,
         )
         self._require_nonempty(ranked, "No recommendations were generated.")
         ranking_metadata = ranked.attrs.get("ranking_engine")
@@ -358,13 +444,19 @@ class PipelineOrchestrator:
         outputs = [
             (candidate_catalogue, directory / CANDIDATE_CATALOGUE_FILENAME),
             (completed, directory / "completed_anime.csv"),
+            (completed_exclusions, directory / COMPLETED_EXCLUSION_IDS_FILENAME),
             (imputed, directory / "completed_anime_imputed.csv"),
             (genre_importance, directory / "genre_importance.csv"),
             (candidates, directory / "recommendation_candidates.csv"),
             (ranked, recommendation_path),
         ]
-        if history is not None and not history.empty:
+        if history is not None:
             outputs.append((history, directory / "user_history.csv"))
+        if full_ranking:
+            # Web ranks live in the compact ResultService snapshot, not three
+            # per-reader copies of the shared catalogue and full ranked rows.
+            outputs = [(frame, path) for frame, path in outputs if path.name not in
+                       {CANDIDATE_CATALOGUE_FILENAME, "recommendation_candidates.csv", recommendation_path.name}]
         generated_paths = self._storage.write_batch(
             tuple(outputs),
             cancellation_check=token.raise_if_cancelled,
@@ -380,6 +472,19 @@ class PipelineOrchestrator:
             eligibility_audit=eligibility_audit,
             settings=settings,
         )
+        if full_ranking:
+            snapshot["digest"] = self._user_inputs_digest(directory, {
+                "completed_anime.csv": completed,
+                COMPLETED_EXCLUSION_IDS_FILENAME: completed_exclusions,
+                "user_history.csv": history,
+            }, genre_adjustments, include_generated=False)
+            snapshot["filters"] = self._complete_filters_label(settings)
+            snapshot["ranking_id"] = hashlib.sha256(json.dumps(
+                [snapshot["digest"], snapshot["filters"], snapshot["engine"],
+                 sorted(snapshot["collaborative"].items()), sorted(snapshot["franchise"]),
+                 sorted(snapshot["hidden"]), snapshot["as_of"].isoformat()]
+            ).encode("utf-8")).hexdigest()[:24]
+        snapshot["preferred"] = self._declined_preferred(ranking_metadata, history)
         generated_paths = (
             *generated_paths,
             self._write_ranking_snapshot(directory, snapshot),
@@ -400,10 +505,17 @@ class PipelineOrchestrator:
                     candidate_catalogue
                 ),
                 "recommendation_count": len(ranked),
+                "complete_ranking": full_ranking,
+                # A new feed: no batch has been added to it yet.
+                "added_recommendation_count": 0,
+                "feed_preload_target": (
+                    settings.recommendation_count if preload_target is not None and not full_ranking else None
+                ),
                 **self._ranking_user_stats(
                     ranking_metadata,
                     eligibility_audit,
                 ),
+                **(extra_user_stats or {}),
             },
             generated_files=tuple(str(path) for path in generated_paths),
             started_at=started_at,
@@ -446,18 +558,9 @@ class PipelineOrchestrator:
         candidate_catalogue = self._read_candidate_catalogue(directory)
         fallback_candidates = candidates
         snapshot = self._read_ranking_snapshot(directory)
-        if (
-            snapshot is None
-            or snapshot["digest"] != self._ranking_inputs_digest(directory, genre_adjustments)
-            or snapshot["filters"] != self._filters_label(settings)
-            or any(
-                item.ranking_id != snapshot["ranking_id"]
-                for item in existing_recommendations
-            )
+        if not self._snapshot_is_current(
+            directory, settings, existing_recommendations, genre_adjustments, snapshot
         ):
-            # Either the inputs changed, or the feed on screen is not the one
-            # this snapshot ranked (an older feed, or a snapshot written for a
-            # feed that was never saved).
             raise DataError(STALE_FEED_MESSAGE)
         collaborative = snapshot["collaborative"]
         franchise_ids = snapshot["franchise"]
@@ -501,6 +604,7 @@ class PipelineOrchestrator:
             user_history=history,
             fallback_candidates=fallback_candidates,
             consumed_mal_ids=self._mal_ids(completed),
+            known_mal_ids=self._read_completed_exclusion_ids(directory),
             include_nsfw=settings.include_nsfw,
             as_of=snapshot["as_of"],
             rated_history=self._read_rated_history(directory),
@@ -543,6 +647,97 @@ class PipelineOrchestrator:
             completed_at=self._timestamp(),
         )
 
+    def run_refresh(
+        self,
+        username: str,
+        settings: PipelineSettings,
+        *,
+        existing: PipelineResult | None,
+        count: int,
+        full_ranking: bool = False,
+        progress_callback: Callable[[PipelineProgress], None] | None = None,
+        cancellation_token: CancellationToken | None = None,
+        profile_override: UserProfile | None = None,
+        access_token_provider: Callable[[], str] | None = None,
+    ) -> PipelineResult:
+        """Bring the saved feed up to date (D-018).
+
+        Fetches exactly what a full run fetches, once. The feed is rebuilt when
+        there is none, when the reader's own list data, feedback or filters
+        changed, or when a different engine would rank now. The rebuild is the
+        full run's own generation, so it ranks exactly as a full run does.
+        Otherwise the fresh list data is saved as a sync saves it, and the
+        result carries no recommendations and no timestamps, so the saved feed
+        and its ranking stay exactly as they were.
+        """
+        token = cancellation_token or CancellationToken()
+        profile = profile_override or self._profiles.resolve_profile(username)
+        if profile.username.casefold() != username.strip().casefold():
+            raise DataError("The selected profile does not match the requested MAL username.")
+        directory = self._profiles.directory(profile.profile_id, create=True)
+        started_at = self._timestamp()
+        credentials = self._checked_credentials(token, access_token_provider)
+        effective_settings = self._settings_for_count(settings, count, 50)
+        candidate_catalogue, completed, completed_exclusions, history = self._fetch_inputs(
+            username, effective_settings, token, credentials, progress_callback
+        )
+        # A failed history fetch is not a changed list. Judge the list against
+        # the history already saved, so a transient failure neither rebuilds
+        # the feed without history nor overwrites the saved history.
+        judged_history = history
+        if history is None and self._recommendations.requires_user_history:
+            judged_history = self._read_user_history(directory)
+        reason = self._refresh_reason(
+            directory,
+            settings,
+            existing,
+            {"completed_anime.csv": completed,
+             COMPLETED_EXCLUSION_IDS_FILENAME: completed_exclusions,
+             "user_history.csv": judged_history},
+            count=count,
+            full_ranking=full_ranking,
+        )
+        if (
+            reason == "preload-changed"
+            and history is None
+            and self._recommendations.requires_user_history
+        ):
+            # An unavailable MAL history must not replace a sequence feed
+            # with heuristic picks solely to expand the saved page count.
+            reason = None
+        if reason is None:
+            sources = [
+                (candidate_catalogue, directory / CANDIDATE_CATALOGUE_FILENAME),
+                (completed, directory / "completed_anime.csv"),
+                (completed_exclusions, directory / COMPLETED_EXCLUSION_IDS_FILENAME),
+            ]
+            if history is not None:
+                sources.append((history, directory / "user_history.csv"))
+            if full_ranking:
+                sources = [(frame, path) for frame, path in sources if path.name != CANDIDATE_CATALOGUE_FILENAME]
+            self._storage.write_batch(tuple(sources), cancellation_check=token.raise_if_cancelled)
+            self._profiles.mark_synced(profile)
+            return PipelineResult(user_stats={"feed_refresh": "current"})
+        return self._generate_feed(
+            profile,
+            directory,
+            effective_settings,
+            token,
+            credentials,
+            progress_callback,
+            candidate_catalogue=candidate_catalogue,
+            completed=completed,
+            completed_exclusions=completed_exclusions,
+            history=history,
+            genre_adjustments=None,
+            excluded_mal_ids=None,
+            started_at=started_at,
+            extra_user_stats={"feed_refresh": reason},
+            preload_target=count,
+            selection_page_size=50,
+            full_ranking=full_ranking,
+        )
+
     def run_step(
         self,
         step_id: str,
@@ -553,6 +748,7 @@ class PipelineOrchestrator:
         cancellation_token: CancellationToken | None = None,
         excluded_mal_ids: set[int] | frozenset[int] | None = None,
         genre_adjustments: dict[str, float] | None = None,
+        profile_override: UserProfile | None = None,
     ) -> PipelineResult:
         """Run one step. ``excluded_mal_ids`` (hidden titles) and
         ``genre_adjustments`` apply to "generate_recommendations" exactly as
@@ -561,7 +757,9 @@ class PipelineOrchestrator:
             raise ValueError(f"Unknown pipeline step: {step_id}")
 
         token = cancellation_token or CancellationToken()
-        profile = self._profiles.resolve_profile(username)
+        profile = profile_override or self._profiles.resolve_profile(username)
+        if profile.username.casefold() != username.strip().casefold():
+            raise DataError("The selected profile does not match the requested MAL username.")
         directory = self._profiles.directory(profile.profile_id, create=True)
         started_at = self._timestamp()
         self._emit(progress_callback, step_id, 1, 1)
@@ -588,34 +786,33 @@ class PipelineOrchestrator:
             )
 
         if step_id == "fetch_completed":
+            credentials = self._checked_credentials(token)
             frame = self._anime_data.fetch_completed_anime(
                 username,
                 include_nsfw=settings.include_nsfw,
-                **self._checked_credentials(token),
+                **credentials,
                 cancellation_token=token,
             )
             self._require_nonempty(frame, "MyAnimeList returned no completed anime data.")
-            history = self._fetch_user_history(
-                username, settings, self._checked_credentials(token), token
+            completed_exclusions = self._fetch_completed_exclusion_ids(
+                username, settings, credentials, token, frame
             )
-            if history is not None and not history.empty:
-                paths = self._storage.write_batch(
-                    (
-                        (frame, directory / "completed_anime.csv"),
-                        (history, directory / "user_history.csv"),
-                    ),
-                    cancellation_check=token.raise_if_cancelled,
-                )
-                return PipelineResult(
-                    generated_files=tuple(str(path) for path in paths),
-                    started_at=started_at,
-                    completed_at=self._timestamp(),
-                )
-            return self._write_step(
-                frame,
-                directory / "completed_anime.csv",
-                started_at,
-                token,
+            history = self._fetch_user_history(
+                username, settings, credentials, token
+            )
+            sources = [
+                (frame, directory / "completed_anime.csv"),
+                (completed_exclusions, directory / COMPLETED_EXCLUSION_IDS_FILENAME),
+            ]
+            if history is not None:
+                sources.append((history, directory / "user_history.csv"))
+            paths = self._storage.write_batch(
+                tuple(sources), cancellation_check=token.raise_if_cancelled,
+            )
+            return PipelineResult(
+                generated_files=tuple(str(path) for path in paths),
+                started_at=started_at,
+                completed_at=self._timestamp(),
             )
 
         completed = self._read_completed(directory)
@@ -679,6 +876,7 @@ class PipelineOrchestrator:
             user_history=self._read_user_history(directory),
             fallback_candidates=candidates,
             consumed_mal_ids=self._mal_ids(completed),
+            known_mal_ids=self._read_completed_exclusion_ids(directory),
             include_nsfw=settings.include_nsfw,
             as_of=as_of,
             rated_history=self._read_rated_history(directory),
@@ -762,6 +960,12 @@ class PipelineOrchestrator:
         path = imputed if imputed.exists() else directory / "completed_anime.csv"
         return self._storage.read(path, required_columns=["Title", "Genres", "User Score"])
 
+    def _read_completed_exclusion_ids(self, directory: Path) -> set[int]:
+        path = directory / COMPLETED_EXCLUSION_IDS_FILENAME
+        if not path.exists():
+            raise DataError("Completed-title exclusions are missing. Fetch completed anime again.")
+        return self._mal_ids(self._storage.read(path, required_columns=["Anime ID"]))
+
     def _snapshot(
         self,
         directory: Path,
@@ -823,6 +1027,8 @@ class PipelineOrchestrator:
                 (SIGNAL_RANKING_ID, snapshot["ranking_id"]),
             )
         ]
+        if snapshot.get("preferred"):
+            rows.append({"Signal": SIGNAL_PREFERRED_ENGINE, "Anime ID": None, "Value": None, "Text": snapshot["preferred"]})
         frame = pd.DataFrame(rows, columns=["Signal", "Anime ID", "Value", "Text"])
         path = self._storage.write(frame, directory / RANKING_SIGNALS_FILENAME)
         self._archive_ranking_snapshot(directory, snapshot["ranking_id"], frame)
@@ -867,6 +1073,7 @@ class PipelineOrchestrator:
             "engine": None,
             "filters": None,
             "ranking_id": None,
+            "preferred": None,
         }
         for _index, row in frame.iterrows():
             signal = row.get("Signal")
@@ -886,6 +1093,9 @@ class PipelineOrchestrator:
                 continue
             if signal == SIGNAL_FILTERS:
                 snapshot["filters"] = text
+                continue
+            if signal == SIGNAL_PREFERRED_ENGINE:
+                snapshot["preferred"] = text
                 continue
             mal_id = pd.to_numeric(row.get("Anime ID"), errors="coerce")
             if pd.isna(mal_id) or int(mal_id) <= 0:
@@ -909,14 +1119,47 @@ class PipelineOrchestrator:
         return snapshot
 
     @staticmethod
-    def _ranking_inputs_digest(directory: Path, genre_adjustments) -> str:
-        """Content digest of every input that decides the feed's ranking."""
+    def _canonical(value) -> str:
+        """One spelling per value, so a CSV round trip does not look like an edit."""
+        if value is None:
+            return ""
+        try:
+            # NaN, None, NaT and <NA> all come back from a CSV as an empty cell.
+            if pd.isna(value):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        text = str(value).strip()
+        if text.casefold() in {"true", "false"}:
+            return text.casefold()
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+        if math.isnan(number):
+            return ""
+        return str(int(number)) if number.is_integer() else repr(number)
+
+    def _user_inputs_digest(self, directory: Path, frames: dict, genre_adjustments, *, include_generated=True) -> str:
+        """Digest of the reader's own list data, the generated ranking inputs,
+        and the reader's feedback."""
         digest = hashlib.sha256()
-        for name in RANKING_INPUT_FILES:
+        for name in GENERATED_INPUT_FILES if include_generated else ():
             path = directory / name
             digest.update(name.encode("utf-8") + b"\0")
             digest.update(path.read_bytes() if path.exists() else b"<absent>")
             digest.update(b"\0")
+        for name, columns in USER_INPUT_COLUMNS:
+            frame = frames.get(name)
+            digest.update(name.encode("utf-8") + b"\0")
+            if frame is None or frame.empty:
+                digest.update(b"<absent>\0")
+                continue
+            rows = sorted(
+                tuple(self._canonical(row.get(column)) for column in columns)
+                for row in frame.to_dict("records")
+            )
+            digest.update(json.dumps(rows).encode("utf-8") + b"\0")
         adjustments = sorted(
             (str(genre).strip().casefold(), round(float(value), 9))
             for genre, value in (genre_adjustments or {}).items()
@@ -924,6 +1167,120 @@ class PipelineOrchestrator:
         )
         digest.update(json.dumps(adjustments).encode("utf-8"))
         return digest.hexdigest()
+
+    def _ranking_inputs_digest(self, directory: Path, genre_adjustments) -> str:
+        """The same digest, read back from the profile's saved files."""
+        frames = {
+            name: pd.read_csv(directory / name) if (directory / name).exists() else None
+            for name, _columns in USER_INPUT_COLUMNS
+        }
+        return self._user_inputs_digest(directory, frames, genre_adjustments)
+
+    def _snapshot_is_current(
+        self, directory: Path, settings: PipelineSettings, recommendations,
+        genre_adjustments, snapshot,
+    ) -> bool:
+        """Whether ``recommendations`` are still exactly what their snapshot ranked.
+
+        False when the inputs or the eligibility filters changed, or when the
+        feed is not the one this snapshot ranked (an older feed, or a snapshot
+        written for a feed that was never saved). "More" refuses to continue
+        such a feed; a refresh rebuilds it. One definition serves both.
+        """
+        return (
+            snapshot is not None
+            and snapshot["digest"] == self._ranking_inputs_digest(directory, genre_adjustments)
+            and snapshot["filters"] == self._filters_label(settings)
+            and all(item.ranking_id == snapshot["ranking_id"] for item in recommendations)
+        )
+
+    def _refresh_reason(
+        self,
+        directory: Path,
+        settings: PipelineSettings,
+        existing: PipelineResult | None,
+        fetched: dict,
+        *,
+        count: int,
+        full_ranking: bool = False,
+    ) -> str | None:
+        """Why the saved feed must be rebuilt, or None when it is current.
+
+        ``fetched`` is the list data just read from MyAnimeList, judged before
+        anything is written, with the same digest the snapshot recorded.
+        """
+        if existing is None or not existing.recommendations:
+            return "missing"
+        snapshot = self._read_ranking_snapshot(directory)
+        if (
+            snapshot is None
+            # The web client feeds no taste adjustments (D-013), so none here.
+            or snapshot["digest"] != self._user_inputs_digest(directory, fetched, None, include_generated=not full_ranking)
+            or snapshot["filters"] != (self._complete_filters_label(settings) if full_ranking else self._filters_label(settings))
+            or any(item.ranking_id != snapshot["ranking_id"] for item in existing.recommendations)
+        ):
+            return "inputs-changed"
+        engine_change = self._engine_change(snapshot)
+        if engine_change:
+            return engine_change
+        if full_ranking:
+            return None if existing.user_stats.get("complete_ranking") else "legacy-capped-ranking"
+        if existing.user_stats.get("feed_preload_target") != max(1, int(count)):
+            return "preload-changed"
+        return None
+
+    @staticmethod
+    def _settings_for_count(
+        settings: PipelineSettings, count: int, page_size: int | None = None
+    ) -> PipelineSettings:
+        target = max(1, int(count))
+        pages = (target + page_size - 1) // page_size if page_size else 1
+        pool = max(
+            settings.candidate_pool_size,
+            target + pages * max_leap(settings.randomness_factor),
+        )
+        return replace(
+            settings,
+            recommendation_count=target,
+            candidate_pool_size=pool,
+            top_anime_limit=max(settings.top_anime_limit, pool),
+        )
+
+    def _engine_change(self, snapshot) -> str | None:
+        """"engine-changed" when a different engine would rank this feed now.
+
+        A feed the fallback ranked stays current while the same preferred
+        engine would decline it again (it could not load, or it declined this
+        reader); it is rebuilt when the preferred engine can load after all,
+        or is a different version. Comparing it with the preferred engine
+        alone made every refresh of such a feed a rebuild.
+        """
+        parts = str(snapshot["engine"]).split(":")
+        ranked_by = tuple(parts[:2])
+        if len(parts) > 2 and parts[2] == "fallback":
+            preferred = self._recommendations.preferred_identity()
+            declined_again = (
+                preferred is None
+                or snapshot.get("preferred") == ":".join(preferred)
+            )
+            if declined_again and ranked_by == self._recommendations.fallback_identity():
+                return None
+            return "engine-changed"
+        if ranked_by != self._recommendations.engine_identity():
+            return "engine-changed"
+        return None
+
+    def _declined_preferred(self, metadata, history) -> str | None:
+        """What SIGNAL_PREFERRED_ENGINE records for a fallback-ranked feed."""
+        if metadata is None or not metadata.fallback_used:
+            return None
+        preferred = self._recommendations.preferred_identity()
+        if preferred is None:
+            return "unavailable"
+        if self._recommendations.requires_user_history and history is None:
+            # Declined only because the fetch failed: rebuild once it works.
+            return "history-unavailable"
+        return ":".join(preferred)
 
     @staticmethod
     def _engine_label(metadata, audit=None) -> str:
@@ -951,6 +1308,11 @@ class PipelineOrchestrator:
             },
             sort_keys=True,
         )
+
+    def _complete_filters_label(self, settings):
+        return json.dumps({"eligibility": self._filters_label(settings),
+                           "adventurousness": settings.randomness_factor,
+                           "complete": self._recommendations.complete_ranking_identity()}, sort_keys=True)
 
     def _hidden_titles(self, profile_id: str, excluded_mal_ids) -> set[int]:
         """Hidden titles: the caller's set, or the profile's saved state."""
@@ -1017,6 +1379,17 @@ class PipelineOrchestrator:
         except AniRecError:
             # The fallback engine will report that current history was unavailable.
             return None
+
+    def _fetch_completed_exclusion_ids(self, username, settings, credentials, token, completed):
+        """Keep all watched IDs out of candidates without changing taste inputs."""
+        full = completed if settings.include_nsfw else self._anime_data.fetch_completed_anime(
+            username,
+            include_nsfw=True,
+            **credentials,
+            cancellation_token=token,
+        )
+        ids = self._mal_ids(completed) | self._mal_ids(full)
+        return pd.DataFrame({"Anime ID": sorted(ids)})
 
     def _load_candidate_catalogue(
         self,
@@ -1182,7 +1555,7 @@ class PipelineOrchestrator:
                     ranked_candidate_count=row.get(RANKED_COUNT_COLUMN),
                     explanation=row.get(EXPLANATION_COLUMN),
                     ranking_id=ranking_id,
-                    selection_policy=SELECTION_POLICY_VERSION if settings else None,
+                    selection_policy=("complete-carry-v1" if frame.attrs.get("complete_ranking") else SELECTION_POLICY_VERSION) if settings else None,
                     adventurousness=(
                         clamp_adventurousness(settings.randomness_factor)
                         if settings

@@ -134,6 +134,7 @@ def anime_from_row(row: Mapping[str, Any]) -> Anime:
         alternative_titles=tuple(parse_genres(row.get("Alternative Titles"))),
         genres=tuple(parse_genres(row.get("Genres"))),
         mean_score=row.get("Mean Score"),
+        mean_score_source=_text(row.get("Mean Score Source")),
         cover_url=_text(row.get("Picture URL")),
         large_cover_url=_text(row.get("Large Picture URL")),
         episodes=_positive_int(row.get("Episodes")),
@@ -146,6 +147,7 @@ def anime_from_row(row: Mapping[str, Any]) -> Anime:
         source=_text(row.get("Source")),
         media_type=_text(row.get("Media Type")),
         scoring_users=_count(row.get("Scoring Users")),
+        pv_youtube_url=_text(row.get("PV YouTube URL")),
         mal_url=(
             f"https://myanimelist.net/anime/{mal_id}"
             if mal_id is not None

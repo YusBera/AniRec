@@ -12,22 +12,26 @@ try:
         AccessDeniedError,
         AuthError,
         CancelledError,
+        ClientIdRejectedError,
         InvalidResponseError,
         NetworkError,
         NotFoundError,
         RateLimitError,
         ServerError,
+        UnexpectedStatusError,
     )
 except ImportError:  # Compatibility with the S01 top-level import path.
     from errors import (
         AccessDeniedError,
         AuthError,
         CancelledError,
+        ClientIdRejectedError,
         InvalidResponseError,
         NetworkError,
         NotFoundError,
         RateLimitError,
         ServerError,
+        UnexpectedStatusError,
     )
 
 
@@ -74,6 +78,10 @@ class MALClient:
 
         status = int(getattr(response, "status_code", 200))
         if status >= 400:
+            if status == 401 and client_id and not access_token:
+                # Only the installation's Client ID was sent: it is what was
+                # refused, and the reader has nothing to reconnect.
+                raise ClientIdRejectedError("MyAnimeList returned HTTP 401 for the Client ID.")
             self._raise_status_error(status, getattr(response, "headers", {}))
 
         try:
@@ -138,7 +146,7 @@ class MALClient:
             )
         if status >= 500:
             raise ServerError(f"MyAnimeList returned HTTP {status}.")
-        raise NetworkError(f"MyAnimeList returned HTTP {status}.")
+        raise UnexpectedStatusError(f"MyAnimeList returned HTTP {status}.")
 
 
 def _safe_retry_after(value: object) -> int | None:

@@ -146,8 +146,8 @@ def test_full_pipeline_runs_six_steps_in_order_and_returns_typed_result(
     assert result.user_stats["eligibility_input_count"] == 2
     assert result.user_stats["eligibility_eligible_count"] == 2
     assert result.user_stats["candidate_catalogue_source"] == LEGACY_MAL_CATALOGUE_SOURCE
-    # Six pipeline outputs plus the ranking signals "more" reuses.
-    assert len(result.generated_files) == 7
+    # Six pipeline outputs, exclusion IDs, and the ranking signals "more" reuses.
+    assert len(result.generated_files) == 8
     assert any(path.endswith("ranking_signals.csv") for path in result.generated_files)
     assert all(pd.io.common.file_exists(path) for path in result.generated_files)
     catalogue_path = next(
@@ -159,6 +159,81 @@ def test_full_pipeline_runs_six_steps_in_order_and_returns_typed_result(
     assert set(persisted_catalogue[CATALOGUE_SOURCE_COLUMN]) == {
         LEGACY_MAL_CATALOGUE_SOURCE
     }
+
+
+def test_completed_exclusion_does_not_change_taste_input_or_the_rest_of_the_feed(
+    system_temp_dir, top_anime_df,
+):
+    catalogue = top_anime_df.copy()
+    catalogue["Anime ID"] = [1, 34403, 3]
+    catalogue = pd.concat([catalogue, pd.DataFrame([{
+        "Anime ID": 4, "Title": "Fourth Show", "Genres": ["Action"], "Mean Score": 7.5,
+    }])], ignore_index=True)
+    scored = pd.DataFrame([{
+        "Anime ID": 1, "Title": "Alpha Show", "Genres": ["Action"],
+        "Status": "Completed", "User Score": 8,
+    }])
+    extra = pd.DataFrame([{
+        "Anime ID": 34403, "Title": "Gamma Show", "Genres": ["Romance"],
+        "Status": "Completed", "User Score": 1,
+    }])
+    calls = []
+
+    def completed_fetcher(_username, _access_token=None, *, include_nsfw=False, **_kwargs):
+        calls.append(include_nsfw)
+        return pd.concat([scored, extra], ignore_index=True) if include_nsfw else scored.copy()
+
+    anime_data = AnimeDataService(
+        top_fetcher=lambda **_kwargs: catalogue,
+        completed_fetcher=completed_fetcher,
+    )
+    orchestrator = _orchestrator(
+        system_temp_dir, catalogue, scored, anime_data=anime_data,
+    )
+    result = orchestrator.run_full("fixture-user", PipelineSettings(
+        top_anime_limit=4, recommendation_count=2, candidate_pool_size=3,
+    ))
+
+    assert calls == [False, True]
+    assert result.user_stats["completed_count"] == 1
+    assert {rec.anime.mal_id for rec in result.recommendations}.isdisjoint({1, 34403})
+    saved = orchestrator._profiles.directory(
+        orchestrator._profiles.resolve_profile("fixture-user").profile_id
+    )
+    assert pd.read_csv(saved / "completed_anime.csv")["Anime ID"].tolist() == [1]
+    assert set(pd.read_csv(saved / "completed_exclusion_ids.csv")["Anime ID"]) == {1, 34403}
+
+
+def test_empty_current_history_replaces_old_sequence_history(
+    system_temp_dir, top_anime_df, completed_anime_df,
+):
+    class NeedsHistory(HeuristicRankingEngine):
+        requires_user_history = True
+
+    history = pd.DataFrame([{
+        "Anime ID": 34403, "Status": "completed", "User Score": 0,
+        "Episodes Watched": 12, "Is Rewatching": False,
+        "Updated At": "2026-09-24T12:00:00+00:00",
+    }])
+    current = {"frame": history}
+    anime_data = AnimeDataService(
+        top_fetcher=lambda **_kwargs: top_anime_df,
+        completed_fetcher=lambda *_args, **_kwargs: completed_anime_df,
+        history_fetcher=lambda *_args, **_kwargs: current["frame"].copy(),
+    )
+    orchestrator = _orchestrator(
+        system_temp_dir, top_anime_df, completed_anime_df,
+        anime_data=anime_data, recommendations=RecommendationService(ranker=NeedsHistory()),
+    )
+    orchestrator.run_sync("fixture-user", PipelineSettings())
+    directory = orchestrator._profiles.directory(
+        orchestrator._profiles.resolve_profile("fixture-user").profile_id
+    )
+    assert len(pd.read_csv(directory / "user_history.csv")) == 1
+
+    current["frame"] = history.iloc[0:0]
+    orchestrator.run_sync("fixture-user", PipelineSettings())
+    assert pd.read_csv(directory / "user_history.csv").empty
 
 
 def test_sequence_pipeline_fetches_persists_and_passes_full_history(
@@ -436,7 +511,7 @@ def test_sync_prefers_client_id_and_does_not_require_oauth_token(
         ),
     )
 
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert all(call["client_id"] == "fixture-client-id" for call in calls)
     assert all("access_token" not in call for call in calls)
 
@@ -752,3 +827,32 @@ def test_full_more_and_single_step_share_one_deterministic_selection(
     assert len(added[0]) == 3
     assert not set(added[0]) & set(initial_ids)
     assert calls[2:] == [(3, 10), (3, 10)]
+
+
+def test_complete_web_ranking_reuses_identical_inputs_without_bulk_copies(
+    system_temp_dir, top_anime_df, completed_anime_df, monkeypatch,
+):
+    top_anime_df = pd.DataFrame({
+        "Anime ID": range(10_000, 10_703),
+        "Title": [f"Candidate {i}" for i in range(703)],
+        "Genres": [["Action"] for _ in range(703)],
+        "Mean Score": [7.0] * 703,
+    })
+    orchestrator = _orchestrator(system_temp_dir, top_anime_df, completed_anime_df)
+    calls = []
+    original = orchestrator._recommendations._ranker.rank
+    def counted(request):
+        calls.append(request)
+        return original(request)
+    monkeypatch.setattr(orchestrator._recommendations._ranker, "rank", counted)
+    settings = PipelineSettings(recommendation_count=1, candidate_pool_size=1, top_anime_limit=703)
+    first = orchestrator.run_full("fixture-user", settings, full_ranking=True)
+    assert first.user_stats["complete_ranking"] and len(first.recommendations) > 500
+    assert first.recommendations[500].anime.mal_id is not None
+    assert not any(Path(p).name in {"candidate_catalogue.csv", "recommendation_candidates.csv"}
+                   or Path(p).name.endswith("_recommendations.csv") for p in first.generated_files)
+    current = orchestrator.run_refresh("fixture-user", settings, existing=first, count=50, full_ranking=True)
+    assert current.user_stats["feed_refresh"] == "current" and len(calls) == 1
+    changed = orchestrator.run_refresh("fixture-user", __import__("dataclasses").replace(settings, randomness_factor=10),
+                                       existing=first, count=50, full_ranking=True)
+    assert changed.recommendations and len(calls) == 2

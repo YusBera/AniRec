@@ -46,18 +46,18 @@ function model(overrides: Partial<RecommendationViewModel>): RecommendationViewM
 }
 
 describe("filterAndSort", () => {
-  it("treats values within one kind as an or", () => {
+  it("requires every selected genre", () => {
     const models = [
       model({ mal_id: 1, genres: ["Action"] }),
       model({ mal_id: 2, genres: ["Comedy"] }),
-      model({ mal_id: 3, genres: ["Drama"] }),
+      model({ mal_id: 3, genres: ["Action", "Comedy"] }),
     ];
     const result = filterAndSort(
       models,
       { ...EMPTY_FILTERS, genres: ["Action", "Comedy"] },
       "personal-match",
     );
-    expect(result.map((item) => item.mal_id)).toEqual([1, 2]);
+    expect(result.map((item) => item.mal_id)).toEqual([3]);
   });
 
   it("treats different kinds as an and", () => {

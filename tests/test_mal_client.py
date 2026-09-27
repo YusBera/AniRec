@@ -178,3 +178,26 @@ def test_bearer_token_takes_precedence_when_both_credentials_are_supplied():
     )
 
     assert captured == {"Authorization": "Bearer fixture-token"}
+
+
+def test_a_401_on_a_client_id_request_means_the_client_id_was_refused():
+    """With no reader token sent, the only credential MyAnimeList can refuse is
+    this installation's Client ID: no reader should be told to reconnect."""
+    from errors import ClientIdRejectedError, presentable_error
+
+    client = MALClient(http_get=lambda *args, **kwargs: FakeResponse(status=401))
+    with pytest.raises(ClientIdRejectedError) as captured:
+        client.get_json("https://fixture.invalid", client_id="installation-id")
+    assert isinstance(captured.value, AuthError)   # onboarding's mapping still holds
+    shown = presentable_error(captured.value)
+    assert "Client ID" in shown.description
+    assert "reconnect" not in (shown.description + shown.solution).lower()
+
+
+def test_a_401_with_a_reader_token_is_still_a_connection_problem():
+    from errors import ClientIdRejectedError
+
+    client = MALClient(http_get=lambda *args, **kwargs: FakeResponse(status=401))
+    with pytest.raises(AuthError) as captured:
+        client.get_json("https://fixture.invalid", access_token="fake-token")
+    assert not isinstance(captured.value, ClientIdRejectedError)

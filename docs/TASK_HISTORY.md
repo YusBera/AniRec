@@ -7,6 +7,473 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-27 - Complete saved Discover ranking
+
+D-024 retires the 500-pick web preload. A run saves the complete eligible
+ranking with original ONNX ranks; a deterministic selection preserves page 1
+and carries skipped titles into later pages. Discover filters the saved list
+before returning a bounded 50-title page, including pick 501 and later, with
+no inference on Next page. An unchanged refresh reuses the ranking. A changed
+list, setting, model or catalogue identity rebuilds it. Profile ranking rows
+are compressed; immutable public anime metadata is shared in SQLite. Old
+inline results remain readable and old capped web results rebuild once.
+
+*Verification:* 185 targeted Python tests and frontend CI (API types,
+TypeScript, 162 tests) passed. Tests cover complete selection, persistence
+round-trips and corruption, page 501, genre intersection, unchanged refresh
+and changed-setting inference. Final review's stale-page finding was fixed.
+Diff check passed. API and site returned HTTP 200 after the API restart.
+
+*Remaining:* no live account analysis was run. Existing bulk per-profile CSV
+artifacts remain in place; removal needs an explicit migration.
+
+---
+
+## 2026-09-27 - Retire Discover explanations
+
+D-023 removes "Why this pick" from the Inspector and legacy reasons from
+Inspector/List. Removed explanation artwork requests and the retired frontend
+explanation components; the card control now says "Open details". Production
+generation skips heuristic and sequence explanations after selection, retaining
+scores, ranks, eligibility and selected picks. New results have null `why`;
+old saved explanations and explicit diagnostic builders remain compatible.
+No API endpoint or persisted-schema changes.
+
+*Verification:* new backend and frontend regressions first failed against the
+old behavior. Targeted pytest passed 81 tests; frontend CI passed generated
+types, TypeScript and 161 tests. Final review's List-view reason finding was
+fixed. Desktop/375px rendering, 44px actions, keyboard opening/dismissal and
+focus return were verified. Backend reloaded on loopback port 8770 and returned
+HTTP 200; frontend port 5173 remained live. Diff check passed. Existing
+dependency deprecation and Settings-test act warnings remain.
+
+*Remaining:* saved explanation data is preserved and hidden; no migration or
+fresh network import benchmark was performed. The preceding snapshot benchmark
+measured 14.316 s with explanations versus 6.074 s without. New regression
+confirms one ONNX scoring call and no removal calls during generation.
+
+---
+
+## 2026-09-27 - Initial import skeleton
+
+Reused the existing looping poster placeholders during initial list reading
+and fresh-profile analysis, increased from eight to twelve. Sample titles
+stay hidden while the first feed is prepared, including its final step;
+failure and cancellation end the loading state. Ordinary refreshes keep
+existing personal recommendations visible. No API or persisted-format changes.
+
+*Verification:* Frontend CI passed 175 tests, generated-type verification
+and TypeScript. A temporary labelled browser fixture confirmed twelve
+infinitely looping cards, accessible busy state and no horizontal overflow
+at desktop and 375px, then was removed. Design detector and diff check passed.
+
+## 2026-09-27 - Fixed card-title geometry correction
+
+Restored the original fixed title area so names cannot push metadata or
+buttons. Font fitting uses the available height and existing type sizes;
+exceptionally long names retain an ellipsis, full tooltip, accessible name
+and Inspector text. This supersedes the preceding unrestricted-wrap change.
+
+*Verification:* A temporary browser fixture measured identical metadata and
+button positions across short, Seraph and extreme-length titles. At 375px,
+card-relative button offsets matched and title touch targets measured 44px.
+The fixture was removed. No API or backend changes.
+Frontend CI passed 172 tests, generated-type verification and TypeScript;
+the design detector and diff check reported no errors.
+
+## 2026-09-27 - Fluid progress and complete card titles
+
+Replaced stepped progress motion with a smooth expanding sweep and transform
+transitions. Reduced-motion mode stays still. Removed nested title clamps;
+the fitter measures text separately from touch-target height and allows full
+wrapping for unusually long names. Existing fonts and portrait posters remain.
+
+*Verification:* A labelled temporary fixture confirmed full Seraph and long
+test-title rendering at desktop and 375px, no title/page overflow, and keyboard
+Inspector entry. The fixture was removed. No backend or API changes.
+Frontend CI passed all 172 tests, API-type verification and TypeScript;
+the design detector and diff check reported no errors.
+
+## 2026-09-27 - Import final-step progress
+
+Discover distinguishes the active stage from completed stages. The final
+step stays indeterminate with an explanatory live status instead of showing
+a full bar at 6/6. Reduced-motion mode also avoids a complete-looking bar.
+The indicator clears only after success, failure or cancellation.
+
+*Verification:* The regression first failed on the old completed-stage value.
+Frontend CI passed 172 tests, API-type checks and TypeScript. All three
+terminal-state cases passed after the fix; desktop and 375px visual
+checks passed using a labelled temporary fixture, which was removed.
+Backend processing, API contracts and persisted formats were unchanged.
+
+## 2026-09-27 - PV thumbnail preview
+
+Replaced the Inspector's PV button with a 16:9 thumbnail and play overlay
+using the validated video ID. Kept lazy lightbox playback, keyboard activation,
+and an unavailable-preview fallback. No API or persisted format changed.
+
+*Verification:* Frontend CI passed 170 tests, including thumbnail failure,
+title changes and keyboard playback activation. A labelled temporary video
+demo was checked at desktop and 375px, then removed. The design detector
+reported only the existing score-rail width-transition warning.
+
+## 2026-09-27 - Local offline anime reference integration
+
+Added an optional read-only adapter for the collector's anime-only staging
+SQLite reference. Observed community scores and counts join model candidates;
+posters, synopsis and optional YouTube PV join selected picks and saved display
+metadata. Saved ranking inputs and explanations remain immutable. Invalid or
+unobserved values stay unavailable; configured incompatible inputs fail startup.
+
+*Verification:* 91 targeted Python tests and frontend CI (169 tests) passed.
+The final adversarial review's saved-score and malformed-URL findings were
+fixed with regression tests. The real snapshot joined 25,086 eligible bundle
+candidates in 1.38 seconds. API restarted with the input enabled; API and site
+returned HTTP 200.
+
+*Left open:* private local preview only; public use of HTML-derived content
+still needs the recorded source/display-rights decision. The reference remains
+external, and future launches must set `ANIREC_ANIME_REFERENCE_DB`.
+
+---
+
+## 2026-09-25 - Discover layout and scanability refinement
+
+Grouped the Discover heading, sourced count and controls; widened the desktop
+content region while retaining six cards at common desktop widths. Cards show
+distinct personal rank and MAL readings, a single preferred title, media
+metadata, labelled decisions and aligned content regions. Studio choices use
+a bounded scroll area. A browser preference selects English or the original
+MAL title throughout recommendation views and Compare.
+
+*Verification:* frontend CI 159 passed. Labelled layout fixtures were rendered
+at 1440px and 375px, covering long and short titles, movie, OVA/ONA/special,
+missing scores and 300 studios; temporary fixtures were removed. The design
+detector reported an existing inspector width-transition warning.
+
+*Left open:* runtime cannot be shown until the API supplies it. A live feed
+and its actual artwork were not used for the isolated visual check.
+
+---
+
+## 2026-09-25 - Feed accuracy and inspector fixes
+
+An initial change fed MAL entries omitted by its default NSFW filter into taste
+and sequence-model history, which shifted the entire page. A follow-up keeps
+those entries only in a separate completed-ID exclusion input, preserving the
+previous ranking inputs and prerequisite checks. Missing MAL
+community scores are fetched through the official API; the saved-feed score
+tracks its source and is rechecked after 30 days. The inspector closes on a
+backdrop click, and sequence explanations initially show the three largest
+effects with clearer rank and unscored-history wording. A later community
+score is identified separately from the ranking-time heuristic input.
+
+*Verification:* failing regression tests before changes; frontend CI 153
+passed; focused Python tests 112 passed; full non-Qt suite 640 passed;
+mechanical UI detector returned no findings. API and site returned HTTP 200
+after the API restart; the owner's live feed still needs checking after a
+fresh analysis.
+
+*Left open:* the named completed title and UI need a live check after the API
+restarts; a MAL outage can leave the last saved score visible until retry.
+
+---
+
+## 2026-09-25 - Covers for feeds ranked from the installed catalogue
+
+The collector snapshot behind the ONNX bundle carries no picture URLs, so a
+rebuilt feed showed "No artwork" on all 50 picks. `CoverUrlService` fills
+missing covers from MyAnimeList's `main_picture` (official API, the
+installation's Client ID), cached per title in `cache/cover_urls.json`;
+`persisted()` in `_build_handler` fills after the merge.
+
+*Verification:* `tests/test_cover_url_service.py` 10 (written first; the
+current-feed case failed before the fill moved after the merge); non-Qt
+pytest passes.
+
+*Left open:* picture URLs in the collector snapshot (other repos).
+
+---
+
+## 2026-09-25 - Follow-ups from the first real-data run
+
+`ClientIdRejectedError` for a 401 on a Client-ID-only request (Refresh no
+longer tells a reader to reconnect); Compare returns `private-list`,
+`user-not-found`, `installation-refused`, `api-unavailable` or `network`
+instead of HTTP 500; no Sign in offer for a signed-in reader adding a list;
+icons inlined as data URIs; account dialog fields named for password
+managers, and the password kept until the dialog closes.
+
+*Verification:* failing tests first (`tests/test_mal_client.py`,
+`tests/test_api_workspace.py`, four vitest cases); non-Qt pytest 616
+passed; `npm run ci` 148; `vite build`; menu icons checked in the browser
+pane.
+
+*Left open:* the installation's Client ID needs replacing by its owner.
+
+---
+
+## 2026-09-24 - Accounts: password reset by email (D-021, phase 5)
+
+A `Mailer` seam (`infrastructure/mailer.py`, SMTP settings from
+`ANIREC_SMTP_*`, always encrypted, one background worker), a
+`password_resets` table (SHA-256 digests only, 30 minutes, single use,
+3 per address an hour, 100 an hour and 500 a day per installation), and
+two routes: the request always answers the same, and does no account work on
+the request path. The confirm route ends every session and clears the
+per-email lockout. The link's address comes only from `ANIREC_PUBLIC_URL`
+(the early review's blocker: an allowed `Origin` can be forged by any HTTP
+client). The frontend adds "Forgot your password?" in the sign-in dialog,
+"Email me a reset link" in Settings, and a `#/reset-password` page that
+strips the token from the address before the first render.
+
+Also: `list-sync` passes `synced_at` and its `MalSyncService` uses the data
+root.
+
+*Verification:* early design review (14 findings, applied before code);
+final review (8 findings, no blocker). Each of its 3 should-fix findings
+got a failing test first: a sign-in racing a reset, mail limits reset by a
+password change or re-registration, and a comma naming a second recipient.
+Its frontend findings were fixed the same way. Tests:
+`tests/test_account_password_reset.py` 56; `tests/test_api_list_sync.py` 1;
+every test module that does not import Qt, 609 passed; `npm run ci` 144.
+`tests/test_background_sync.py` (Qt) hangs now and then inside
+`theme.apply` on this branch and on the commit before it alike. In the browser
+pane at 375×812 against a scratch API: request by keyboard, a real token
+reset end to end, reuse refused, focus on Sign in, no overflow, targets
+44px or larger. No real SMTP server was used; the failed send logged only
+the exception class.
+
+*Left open:* email verification; the owner can be reset by email; the
+queue is in memory (see `ACCOUNTS.md` known limits).
+
+---
+
+## 2026-09-24 - Profile fact icons redrawn for a single glance
+
+The 17 icons on Profile's "NOT ON YOUR MAL PROFILE" board
+(`frontend/src/assets/shell/fact-*.svg`) now use familiar symbols in the same
+24px, 2px square-stroke style: thumbs down (hype kill), diamond (deep cut),
+replay (rewatched), broken heart (nemesis), shield with check (trusted),
+scales (divisive), calendar (era), snowflake / sprout / sun / leaf (seasons),
+people (community sync), star (rating bias), opposite arrows (contrarian),
+checked circle (completion), trending line (mainstream), question mark
+(unknown). File names are unchanged; `npm run ci` workspace tests pass.
+Follow-up: one design language throughout, straight strokes and mitred
+corners with no circles or curves (the repeat loop, angular heart, shield,
+checked square, octagon sun, square-headed people, angular leaves).
+
+---
+
+## 2026-09-24 - Accounts: account management (D-021)
+
+Per-reader preferences (adventurousness, minimum score, NSFW; the owner's
+are the installation's), change password, delete account with pending
+deletions (the desktop tool's profiles released, not deleted), a JSON data
+export, sessions that renew while used, and an hourly sweep that finishes
+deletions and prunes guests unused for 37 days.
+
+*Verification:* early design review (12 findings, applied before code);
+`tests/test_account_management.py` 16; pytest 610 passed with the same
+pre-existing failures; `npm run ci` 134; Chromium at 375×812.
+
+*Left open:* password reset (needs SMTP), Google, passkeys.
+
+---
+
+## 2026-09-24 - Accounts: hosted-launch gates (D-021)
+
+Switching between an account's own lists; per-visitor limits for new
+accounts, sign-in failures and one MyAnimeList budget (imports, lookups, live
+Compare, title look-ups) instead of process-wide caps; trusted proxies
+(`ANIREC_TRUSTED_PROXIES`) for the visitor's address and the `Secure`
+cookie; shutdown only for the launcher's token or the installation owner.
+
+*Verification:* `tests/test_account_phase2.py` written first (10, all failing
+before the change); pytest 586 passed with the same pre-existing failures;
+`npm run ci` 129; Chromium at 375×812 for the list switcher.
+
+*Left open:* change password, delete account, export, reader preferences
+split from installation settings, guest pruning.
+
+---
+
+## 2026-09-24 - Accounts, phase 1: every import belongs to an account (D-021)
+
+The user reported that anyone could import any MyAnimeList username and then
+see and change the saved decisions of whoever had imported it before. AniRec
+accounts (email and password, guest accounts that upgrade on registration)
+now own every import; every reader route derives its scope from the session;
+writes are Origin-checked and every request Host-checked; installation
+settings belong to an owner named from the console. Design and phase plan:
+`docs/ACCOUNTS.md`.
+
+*Verification:* early design review (13 findings, applied before code) and a
+final adversarial review (GO; three should-fix findings fixed with failing
+tests first). pytest 577 passed, with the same 7 failures and 39 Qt
+collection errors as before the change; `npm run ci` 126 passed; Chromium at
+1440×900 and 375×812: account creation end to end, no horizontal scroll, no
+dialog control under 44px.
+
+*Left open:* phase 2 (account management, import switching, preference
+split, guest pruning, per-client limits) before any hosted launch; Google,
+passkeys and email after it.
+
+---
+
+## 2026-09-24 - First-time setup from a MyAnimeList username (D-020)
+
+Added the setup pop-up and a username-only public-list import:
+`POST /api/onboarding/mal-profile` and
+`OnboardingService.import_public_mal_profile`. AniList and AniDB are shown
+as coming soon; "I'm new to anime" is shown but not active.
+
+*Verification:* `tests/test_onboarding_api.py` 13 passed; non-Qt pytest 460
+passed (the two Linux-only `test_api_lifecycle` failures predate this);
+`npm run ci` 112 passed; Chromium at 1440×900 and 375×812, no horizontal
+scroll, every control at least 44px. The import was not run against the real
+MyAnimeList API from this environment.
+
+*Final review (same day):* a 401 no longer reads as a private list, an
+outage no longer reads as the reader's connection, a known reader's profile
+is reactivated rather than overwritten or duplicated, a disk error is a
+reason rather than a 500, and the pop-up stays closed for a reader with a
+profile. `tests/test_onboarding_api.py` 25 passed; `npm run ci` 115 passed;
+the full pytest run's 7 failures and 39 collection errors (Qt without
+`libEGL`, Linux-only lifecycle) are identical without this change.
+
+*Left open:* the newcomer poster picker and its profile and model questions.
+
+---
+
+## 2026-09-24 - Familiar shell: top bar, notifications, account menu (D-019)
+
+Replaced the desktop-style left rail with a top bar: tabs for Discover, My
+Library and Compare; a notifications bell and the account picture top right;
+Profile and Settings in the picture's menu; a bottom tab bar on phones. The
+SYSTEM readout, ACTIVITY console and BUILD line became notifications from
+real operation outcomes and service outages; the version moved to Settings.
+
+*Verification:* `npm run ci` (105 tests); Chromium at 1440×900 and 375×812
+against a sample-only API: no horizontal scroll, every top-bar control and
+menu link at least 44px.
+
+*Follow-up (same day):* the Discover STATE readout, the upper-case status
+line, the "X // Y" page headings and the duplicate sample notes were replaced
+by a plain title, "N recommendations", plain headings, and the one banner.
+`npm run ci` 105 passed; checked at 1440×900 and 375×812.
+
+*Left open:* Profile's and Settings' upper-case legends.
+
+---
+
+## 2026-09-24 - Automatic refresh: final adversarial review (D-018)
+
+Reviewed commit 3010fd8 against five risks: digest parity between generation
+and refresh, engine identity including the fallback, "current" results never
+overwriting the feed, "more" and exclusivity, and the once-per-session client
+refresh. Fixed, each with a failing test first:
+- the per-reader fallback feed that rebuilt on every refresh;
+- a failed history fetch rebuilding the feed without history;
+- NaT and `<NA>` in the digest;
+- the client refresh loop when session storage cannot be written;
+- the 409 from another tab shown as a fault;
+- `auth_timeout` reconnect advice.
+
+*Verification:* non-Qt pytest, 447 passed (the two Linux-only
+`test_api_lifecycle` failures predate this work); `npm run ci`, 105 passed.
+
+*Left open:* no feed reload after another tab's run finishes; a history that
+became empty keeps an old `user_history.csv` and rebuilds each refresh.
+
+---
+
+## 2026-09-24 - Automatic feed refresh and continuous pages (D-018)
+
+"Recommend 5 more" and the stale-feed "Generate a new feed" button are
+replaced.
+- **Refresh:** a `refresh` operation, run automatically once per session and
+  from a small Refresh button. It syncs the list, then rebuilds the feed only
+  when it is missing, stale, or ranked by a different engine.
+- **Pages:** 50 per page, and "Next page" continues the same ranking with the
+  next 50.
+- **Shared check:** "more" and refresh now use one currency check
+  (`_snapshot_is_current`).
+
+*Verification:*
+- 6 new pipeline and API tests:
+  - a missing feed is generated;
+  - a current feed is kept untouched and still continuable;
+  - a changed list is rebuilt;
+  - an engine change is rebuilt;
+  - a pre-snapshot feed is rebuilt;
+  - the API accepts the kind.
+- Frontend tests:
+  - "Next page" continues and lands on the new page;
+  - the automatic refresh runs once per session, never on the sample feed;
+  - a stale refusal triggers a refresh.
+- `npm run ci` and the full `pytest`.
+
+A review found three blockers, all fixed before commit:
+- a restart read the model version as "unloaded";
+- daily community drift in the list changed the digest;
+- the rebuild did not rank like a full run.
+
+Tests pin each one:
+- a bundle-backed engine is named before ranking;
+- community drift stays "current";
+- a rebuilt feed equals `run_full` with the recommendation graph.
+
+---
+
+## 2026-09-24 - Review of the PySide design port (PR #5)
+
+Applied the user's decisions (D-017) and the review's findings; details are in
+`CURRENT_TASK.md`, "Review round".
+- **Removed:**
+  - RUN ANALYSIS;
+  - the Discover taste vector and its API field;
+  - the connect-account prompts;
+  - the decorative Japanese text.
+- **Fixed:**
+  - the Table rank;
+  - early stream loss;
+  - stale SYSTEM values;
+  - silently hidden tags;
+  - the all-caught-up state;
+  - inspector focus;
+  - uppercase buttons.
+
+The taste vector was also mislabelled. It called eras and sources "genres",
+with a zero count, and its test used a fixture production never produces.
+
+*Verification:*
+- `npm run ci`.
+- Full `pytest`.
+- The stream-loss tests were run against the old hook, where they failed,
+  before being run against the fix.
+
+---
+
+## 2026-09-24 - PySide design port of the web client (D-016)
+
+Implemented both work packages from `CURRENT_TASK.md`. Discover, My Library
+and the Score Inspector take the desktop card, header, explorer views and
+inspector layout; the shell gains the numbered rail, SYSTEM readout, ACTIVITY
+console, BUILD line, sample banner and first run; Profile, Compare and
+Settings take the desktop structure and wording. Like and Dislike are gone
+from the web UI (D-015). Compare shows no percentage. The Score Inspector
+carries the existing honest `why` inside PERSONAL FIT.
+
+*Verification:* `npm run ci` (88 tests), `vite build`, non-Qt pytest, and
+Chromium captures at 1440×900 and 375px against a sample-only API.
+
+*Left open:* bundled fonts; D-015 Library feedback after watching; the choices
+listed under "Completion notes" in `CURRENT_TASK.md` await the user's review.
+
+---
+
 ## 2026-09-24 - Test suite repaired: two Goal 3 regressions, one audit false positive
 
 The full suite had 5 failures and 4 modules that could not be collected. All of

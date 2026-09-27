@@ -2,12 +2,16 @@
 
 This records the established visual world, not a new theme.
 
-**The web client is the visual authority** (`docs/DECISIONS.md` D-004). The retired
-PySide screens are where this world came from and stay useful reference for
-palette, density and proportion, but they no longer govern layout: web-first means
-the browser client owns its own composition, at its own breakpoints. Preserving the
-feel does not mean reproducing desktop geometry. Current implementation takes
-precedence over stale dimensions and obsolete button descriptions.
+**The latest PySide client is the design reference** (`docs/DECISIONS.md` D-016,
+which revises D-004). It is the reference for:
+- structure and proportion;
+- which controls exist;
+- wording (`AniRec/gui/texts.py`).
+
+The web client is the product, and it adapts that design to the browser,
+including narrow breakpoints. It does not replace the design with its own.
+Where this file and the PySide code disagree, the PySide code wins, unless a
+domain rule forbids what it shows.
 
 ## Existing visual system
 
@@ -77,12 +81,13 @@ These are implemented React adaptations of approved C, not replacement rules
 for PySide. Sources: `frontend/src/workspace/workspace.css`, workspace components,
 and shared `frontend/src/styles`.
 
-- The desktop workspace has a sticky, full-height indexed navigation column
-  (214px) and a flexible content column. Pages cap at 1500px with 34px side padding.
-  At 1050px and below, navigation becomes 170px and side padding 22px;
-  Settings groups become one column.
-- At 700px and below, navigation becomes a wrapping top row, page side padding
-  becomes 16px, and buttons, fields and navigation have a 44px minimum height.
+- The shell is a sticky top bar (D-019): the name on the left, the pages as
+  tabs, and the notifications bell and account picture on the right; the
+  picture's menu holds Your profile and Settings. Pages cap at 1500px.
+  At 1050px and below, side padding narrows; Settings groups become one column.
+- At 700px and below, the tabs move to a bar along the bottom, page side
+  padding becomes 16px, and buttons, fields and navigation have a 44px
+  minimum height.
   Library cards put their small poster beside attached title evidence.
 - Library/Compare shelves use flexible columns with a 210px minimum and 16px
   gaps. Profile evidence pairs posters with scores and wraps into available width.

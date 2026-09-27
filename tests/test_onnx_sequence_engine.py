@@ -169,6 +169,23 @@ def test_onnx_engine_uses_typed_chronology_and_excludes_known_items(tmp_path):
     assert result.ranked_candidates[0]["Match Score Available"] is False
 
 
+def test_complete_onnx_ranking_ignores_the_legacy_candidate_pool_cap(tmp_path):
+    from dataclasses import replace
+
+    engine = OnnxSequenceRankingEngine(
+        _bundle(tmp_path), session_factory=lambda _path: FakeSession([0.2, 0.9, 0.7, 0.1])
+    )
+    history = ({"Anime ID": 1, "Status": "completed", "User Score": 8,
+                "Episodes Watched": 12, "Is Rewatching": False,
+                "Updated At": "2026-09-01T10:00:00+00:00"},)
+    request = _request(history)
+    limited = replace(request, parameters=replace(request.parameters,
+        recommendation_count=1, candidate_pool_size=1))
+    assert len(engine.rank(limited).ranked_candidates) == 1
+    complete = replace(limited, context={"full_ranking": True})
+    assert [row["Anime ID"] for row in engine.rank(complete).ranked_candidates] == [2, 3, 4]
+
+
 def test_missing_chronology_falls_back_and_reports_requested_engine(tmp_path):
     engine = FallbackRankingEngine(
         OnnxSequenceRankingEngine(

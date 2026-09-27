@@ -3,7 +3,7 @@
  * (AniRec/gui/recommendation_page.py:142).
  *
  * Kept identical on purpose, including the rules that are easy to get subtly
- * wrong: within one kind the values are an OR, across kinds an AND, matching
+ * wrong: selected genres are an AND, studios are an OR, across kinds an AND, matching
  * is case-folded, and a missing value sorts last rather than as zero - a title
  * with no MAL score must not rank above one scored 4.2.
  *
@@ -78,7 +78,7 @@ export function filterAndSort(
   const years = new Set(filters.years);
 
   const filtered = models.filter((model) => {
-    if (!intersects(filters.genres, model.genres)) return false;
+    if (!filters.genres.every((genre) => model.genres.map(fold).includes(fold(genre)))) return false;
     if (!intersects(filters.studios, model.studios)) return false;
     if (years.size > 0 && (model.year === null || !years.has(model.year))) return false;
     if (

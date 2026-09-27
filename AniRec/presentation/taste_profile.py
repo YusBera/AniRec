@@ -49,6 +49,7 @@ from typing import Protocol
 
 from ..infrastructure.paths import resource_path
 from ..services.taste_profile_service import (
+    ACTIVE_PROFILE,
     ProfileStatisticsService,
     ProfileStatisticsUnavailable,
     ProfileStatisticsUnavailableReason,
@@ -820,12 +821,15 @@ class LocalTasteProfileProvider:
         ),
     }
 
-    def __init__(self, statistics: ProfileStatisticsService) -> None:
+    def __init__(self, statistics: ProfileStatisticsService, *, profile=ACTIVE_PROFILE) -> None:
         self._statistics = statistics
+        # The web passes the requesting account's import (or None); only the
+        # desktop leaves it to the machine-wide active profile (D-021).
+        self._profile = profile
 
     def taste_profile(self) -> TasteProfile:
         try:
-            payload = self._statistics.profile_payload()
+            payload = self._statistics.profile_payload(self._profile)
         except ProfileStatisticsUnavailable as error:
             raise TasteProfileUnavailable(
                 self._REASONS[error.reason], error.message

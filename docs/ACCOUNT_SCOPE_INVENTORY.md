@@ -1,4 +1,8 @@
-# Account and profile scope: current implementation
+# Account and profile scope: before accounts
+
+> **Historical (2026-09-24).** This records the scope the code used before
+> accounts existed. D-021 replaced it: see `ACCOUNTS.md` for the design and
+> the call-site table of what changed.
 
 This is an inventory, not an account implementation approval. D-002 requires AniRec-owned
 accounts, but no AniRec account or browser session exists yet. The current

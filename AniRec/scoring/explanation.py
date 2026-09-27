@@ -1,8 +1,9 @@
 """Answer "why was this recommended to me?" from the ranking that produced it.
 
-Explanations are built after selection, for the rows actually served, from
-values the ranking engine recorded. Nothing here re-scores a title or borrows
-another engine's reasoning:
+These builders are retained for explicit diagnostics and legacy saved data.
+Discover generation does not call them (D-023). When explicitly invoked,
+they use values the ranking engine recorded and never borrow another engine's
+reasoning:
 
 * ``exact-additive`` (heuristic): the parts of the ranking score. They sum to
   ``total`` exactly. Taste parts carry evidence from the reader's own rated

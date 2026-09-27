@@ -32,11 +32,14 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
+from datetime import datetime, timezone
 from typing import Any, Callable, Iterator
 
-from fastapi import Body, FastAPI, HTTPException, Query, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -44,18 +47,34 @@ from ..application.pipeline import CancellationToken
 from ..models import PipelineProgress, PipelineResult, UserProfile
 from ..presentation import recommendation_view_models
 from ..services import ApiConnectionService
+from ..services.feed_query import query_feed, catalogue as feed_catalogue, fingerprint_rows
+from .models import FeedQuery
 from ..services.recommendation_event_service import (
     RecommendationEventService,
     activity_catalog_version,
     activity_model_version,
     feed_fingerprint,
 )
+from ..services.account_service import AccountError
+from contextlib import asynccontextmanager
+
+from .account_maintenance import AccountMaintenance
+from .accounts import (
+    ReaderScope, account_summary, accounts_router, is_installation_owner, reader_pipeline,
+    renew_cookie, resolve_scope,
+)
+from .limits import ClientLimits
 from .container import ApiContainer, build_container
+from .request_guard import RequestGuardMiddleware, allowed_hosts_from_environment
 from .workspace import workspace_router
+from .onboarding import onboarding_router
 from .models import (
     ActivityStatus, ActivitySetting, ActivityEvent, ActivityReceipt,
     Catalogue,
     ErrorEnvelope,
+    EvidenceArtworkRequest,
+    EvidenceArtworkResponse,
+    EvidencePoster,
     FeedbackRequest,
     FeedbackResponse,
     FeedResponse,
@@ -65,11 +84,14 @@ from .models import (
     OperationListResponse,
     OperationSnapshotResponse,
     OperationStartRequest,
+    PageMetadataRequest,
     ProfileSummary,
+    RecommendationViewModelResponse,
     SystemStateResponse,
 )
 from .operations import (
     OperationAlreadyRunningError,
+    ProfileClosedError,
     OperationRegistry,
     error_payload,
 )
@@ -89,6 +111,7 @@ SUPPORTED_KINDS = frozenset(
         "sync",
         "recommendation",
         "more-recommendations",
+        "refresh",
         "list-sync",
         "profile-lookup",
         "api-test",
@@ -108,10 +131,16 @@ EMPTY_LOCAL_STATE = LocalState(
 EMPTY_CATALOGUE = Catalogue(genres=(), studios=(), years=(), statuses=())
 
 
+# Operations that spend the visitor's MyAnimeList budget when started.
+BUDGETED_KINDS = frozenset({"profile-lookup", "api-test", "list-sync"})
+
 # Operations that write a profile's saved feed. Two of them overlapping for one
 # profile would let the later save overwrite the earlier (a "more" batch
 # computed from an older feed replacing a newer one), so they run one at a time.
-FEED_WRITING_KINDS = ("sync", "recommendation", "more-recommendations")
+FEED_WRITING_KINDS = ("sync", "recommendation", "more-recommendations", "refresh")
+
+# Web browsing pages a complete saved ranking.
+WEB_FEED_BATCH = 50
 
 
 def operation_key(kind: str, profile_id: str) -> str:
@@ -149,6 +178,7 @@ def create_app(
     allow_origins: tuple[str, ...] | None = None,
     token: str | None = None,
     on_shutdown_requested: Callable[[], None] | None = None,
+    limits: ClientLimits | None = None,
 ) -> FastAPI:
     """Build the app.
 
@@ -164,8 +194,21 @@ def create_app(
     operations = registry or OperationRegistry()
     resolved_token = token if token is not None else token_from_environment()
     origins = allow_origins if allow_origins is not None else _default_origins()
+    client_limits = limits or ClientLimits.from_environment()
+    maintenance = AccountMaintenance(services, operations)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        # Finishes interrupted deletions and prunes abandoned guests, at
+        # startup and hourly, off the request path (docs/ACCOUNTS.md).
+        maintenance.start()
+        try:
+            yield
+        finally:
+            maintenance.stop()
 
     app = FastAPI(
+        lifespan=lifespan,
         title="AniRec",
         version="0.1.0",
         summary="HTTP boundary over the existing AniRec service layer.",
@@ -176,7 +219,11 @@ def create_app(
     app.state.container = services
     app.state.operations = operations
     app.state.token_required = bool(resolved_token)
-    app.include_router(workspace_router(services))
+    app.state.limits = client_limits
+    app.state.maintenance = maintenance
+    app.include_router(workspace_router(services, client_limits))
+    app.include_router(onboarding_router(services, client_limits))
+    app.include_router(accounts_router(services, client_limits, maintenance))
 
     if resolved_token:
         app.add_middleware(TokenAuthMiddleware, token=resolved_token)
@@ -192,6 +239,26 @@ def create_app(
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "X-AniRec-Token"],
     )
+    # Outermost: a request from another site or an unknown Host is refused
+    # before anything else reads it (D-021, request_guard.py).
+    app.add_middleware(
+        RequestGuardMiddleware, origins=tuple(origins), hosts=allowed_hosts_from_environment()
+    )
+
+    def reader(request: Request, response: Response) -> ReaderScope:
+        """The requesting account and the import it owns (D-021)."""
+        scope = resolve_scope(services, request)
+        renew_cookie(request, response, scope, client_limits)
+        return scope
+
+    def visible(record, scope: ReaderScope) -> bool:
+        """An operation is seen only by the account that owns its import now."""
+        if scope.account is None:
+            return False
+        try:
+            return services.accounts.owns(scope.account.account_id, record.profile_id)
+        except AccountError:
+            return False
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_request: Request, error: StarletteHTTPException) -> JSONResponse:
@@ -254,8 +321,8 @@ def create_app(
         return HealthResponse(status="ok", version=app.version)
 
     @app.get("/api/system/state", response_model=SystemStateResponse)
-    def system_state() -> SystemStateResponse:
-        profile = services.profiles.active_profile()
+    def system_state(scope: ReaderScope = Depends(reader)) -> SystemStateResponse:
+        profile = scope.profile
         settings = services.settings.load()
         return SystemStateResponse(
             profile=(
@@ -263,15 +330,20 @@ def create_app(
                 if profile is None
                 else ProfileSummary(profile_id=profile.profile_id, username=profile.username)
             ),
-            needs_setup=services.onboarding.needs_setup(),
+            account=account_summary(services, scope),
+            # Per reader: setup is needed until this account has an import.
+            needs_setup=profile is None,
             mal_client_id_present=bool(settings.client_id),
+            password_reset_available=services.password_resets.available,
             active_operations=tuple(
-                OperationSnapshotResponse(**r.snapshot()) for r in operations.active()
+                OperationSnapshotResponse(**r.snapshot())
+                for r in operations.active()
+                if visible(r, scope)
             ),
         )
 
     @app.post("/api/system/shutdown", status_code=202)
-    def request_shutdown() -> dict[str, bool]:
+    def request_shutdown(scope: ReaderScope = Depends(reader)) -> dict[str, bool]:
         """Ask the process to stop serving. The launcher owns the actual exit.
 
         This flips ``uvicorn.Server.should_exit`` when ``__main__.py`` wired
@@ -287,6 +359,11 @@ def create_app(
         it if this does not result in exit within its own timeout - this
         route is the graceful path, not the only path.
         """
+        # Only whoever may stop this service: the launcher, which holds the
+        # per-launch token (checked by TokenAuthMiddleware before this runs),
+        # or the installation owner. Any other visitor is refused (D-021).
+        if not resolved_token and not is_installation_owner(services, scope):
+            raise HTTPException(status_code=403, detail="Only the owner of this AniRec installation can stop it.")
         if on_shutdown_requested is not None:
             on_shutdown_requested()
         return {"accepted": True}
@@ -294,18 +371,24 @@ def create_app(
     # -- discover ---------------------------------------------------------
 
     @app.get("/api/discover/feed", response_model=FeedResponse)
-    def discover_feed(include_hidden: bool = Query(False)) -> FeedResponse:
+    def discover_feed(
+        include_hidden: bool = Query(False), scope: ReaderScope = Depends(reader), query: str = ""
+    ) -> FeedResponse:
         """The feed, its local votes, and the terms it can be filtered by.
 
         One request rather than three. The three answers are derived from the
         same loaded result, and splitting them would let a client render cards
         against one generation while filtering them against another.
         """
-        profile = services.profiles.active_profile()
+        profile = scope.profile
         source = "profile"
         result = None
         if profile is not None:
             result = services.results.load(profile.profile_id)
+            if result is not None and not query and not result.user_stats.get("complete_ranking"):
+                if services.anime_reference is not None:
+                    result = services.anime_reference.enrich_result(result)
+                result = services.cover_urls.cached(result)
         if result is None or not result.recommendations:
             result = services.samples.load()
             source = "sample"
@@ -320,6 +403,30 @@ def create_app(
                 catalogue=EMPTY_CATALOGUE,
                 state=EMPTY_LOCAL_STATE,
                 user_stats={},
+            )
+
+        if source == "profile" and (query or result.user_stats.get("complete_ranking")):
+            try:
+                filters = FeedQuery.model_validate_json(query or "{}")
+            except ValueError:
+                raise HTTPException(status_code=422, detail="Invalid Discover query.")
+            state = services.recommendation_state.load(profile.profile_id)
+            hidden = set() if include_hidden or state.show_hidden else state.hidden_mal_ids
+            selected, total, page = query_feed(result.recommendations, filters, hidden)
+            page_result = replace(result, recommendations=selected)
+            if services.anime_reference is not None:
+                page_result = services.anime_reference.enrich_result(page_result)
+            page_result = services.cover_urls.cached(page_result)
+            models = recommendation_view_models(page_result.recommendations)
+            return FeedResponse(
+                source=source, ephemeral=False,
+                profile=ProfileSummary(profile_id=profile.profile_id, username=profile.username),
+                state_profile_id=profile.profile_id,
+                recommendations=tuple(view_model_to_dict(model) for model in models),
+                hidden_count=sum(r.anime.mal_id in state.hidden_mal_ids for r in result.recommendations),
+                catalogue=feed_catalogue(result.recommendations), state=local_state_to_dict(state),
+                user_stats=dict(result.user_stats), total=total, page=page, page_size=50,
+                activity_feed_id=feed_fingerprint(fingerprint_rows(result.recommendations), activity_model_version(result.user_stats)),
             )
 
         models = recommendation_view_models(result.recommendations)
@@ -365,35 +472,99 @@ def create_app(
             ),
         )
 
-    def activity_context():
-        profile = services.profiles.active_profile()
+    @app.post(
+        "/api/discover/page-metadata",
+        response_model=tuple[RecommendationViewModelResponse, ...],
+    )
+    def discover_page_metadata(
+        payload: PageMetadataRequest, scope: ReaderScope = Depends(reader)
+    ) -> tuple[RecommendationViewModelResponse, ...]:
+        """Fill public metadata only for saved picks visible on this page."""
+        if scope.profile is None:
+            raise HTTPException(status_code=409, detail="Connect a profile to load pick metadata.")
+        result = services.results.load(scope.profile.profile_id)
+        if result is None:
+            return ()
+        wanted = set(payload.mal_ids)
+        selected = tuple(
+            rec for rec in result.recommendations if rec.anime.mal_id in wanted
+        )
+        if not selected:
+            return ()
+        page_result = replace(result, recommendations=selected)
+        if services.anime_reference is not None:
+            page_result = services.anime_reference.enrich_result(page_result)
+        filled = services.cover_urls.fill(
+            page_result, services.settings.load().client_id
+        )
+        return tuple(
+            RecommendationViewModelResponse.model_validate(view_model_to_dict(model))
+            for model in recommendation_view_models(filled.recommendations)
+        )
+
+    @app.post("/api/discover/evidence-artwork", response_model=EvidenceArtworkResponse)
+    def discover_evidence_artwork(
+        payload: EvidenceArtworkRequest, scope: ReaderScope = Depends(reader)
+    ) -> EvidenceArtworkResponse:
+        """Look up only the strongest supporting titles of this reader's saved pick."""
+        if scope.profile is None:
+            raise HTTPException(status_code=409, detail="Connect a profile to load explanation artwork.")
+        result = services.results.load(scope.profile.profile_id)
+        recommendation = next(
+            (rec for rec in result.recommendations if rec.anime.mal_id == payload.pick_mal_id),
+            None,
+        ) if result is not None else None
+        if recommendation is None or recommendation.ranking_id != payload.ranking_id:
+            raise HTTPException(status_code=409, detail="This explanation changed. Reload the feed.")
+        posters = services.cover_urls.evidence_posters(
+            recommendation, services.settings.load().client_id,
+            profile_directory=services.profiles.directory(scope.profile.profile_id),
+        )
+        return EvidenceArtworkResponse(
+            posters=tuple(EvidencePoster(mal_id=mal_id, cover_url=url) for mal_id, url in posters)
+        )
+
+    def activity_context(scope: ReaderScope):
+        profile = scope.profile
         if profile is None:
             raise HTTPException(status_code=409, detail="Connect a profile to save local activity.")
         activity = RecommendationEventService(getattr(services.recommendation_state, "_root_override", None))
         return activity, profile.profile_id
 
     @app.get("/api/discover/activity", response_model=ActivityStatus)
-    def activity_status():
-        if services.profiles.active_profile() is None:
+    def activity_status(scope: ReaderScope = Depends(reader)):
+        if scope.profile is None:
             return ActivityStatus(enabled=False)
-        activity, profile = activity_context()
+        activity, profile = activity_context(scope)
         return ActivityStatus(**activity.status(profile))
 
     @app.post("/api/discover/activity/settings", response_model=ActivityStatus)
-    def activity_settings(payload: ActivitySetting):
-        activity, profile = activity_context()
+    def activity_settings(payload: ActivitySetting, scope: ReaderScope = Depends(reader)):
+        activity, profile = activity_context(scope)
         return ActivityStatus(**activity.set_enabled(profile, payload.enabled))
 
     @app.delete("/api/discover/activity", response_model=ActivityStatus)
-    def activity_clear():
-        activity, profile = activity_context()
+    def activity_clear(scope: ReaderScope = Depends(reader)):
+        activity, profile = activity_context(scope)
         activity.clear(profile)
         return ActivityStatus(**activity.status(profile))
 
+    def attribution_feed(scope, mal_id):
+        result = services.results.load(scope.profile.profile_id) if scope.profile else None
+        if result is None:
+            return discover_feed(include_hidden=True, scope=scope)
+        selected = tuple(r for r in result.recommendations if r.anime.mal_id == mal_id)
+        return FeedResponse(source="profile", ephemeral=False, profile=None,
+            state_profile_id=scope.profile.profile_id,
+            recommendations=tuple(view_model_to_dict(m) for m in recommendation_view_models(selected)),
+            hidden_count=0, catalogue=EMPTY_CATALOGUE, state=EMPTY_LOCAL_STATE,
+            user_stats=dict(result.user_stats),
+            activity_feed_id=feed_fingerprint(fingerprint_rows(result.recommendations), activity_model_version(result.user_stats)))
+
     @app.post("/api/discover/activity", response_model=ActivityReceipt)
-    def activity_event(payload: ActivityEvent):
-        activity, profile = activity_context()
-        feed = discover_feed(include_hidden=True)
+    def activity_event(payload: ActivityEvent, scope: ReaderScope = Depends(reader)):
+        activity, profile = activity_context(scope)
+        feed = attribution_feed(scope, payload.mal_id)
         if profile != payload.profile_id or feed.state_profile_id != profile or feed.ephemeral or feed.activity_feed_id != payload.feed_id:
             return ActivityReceipt(recorded=False)
         model = next((m for m in feed.recommendations if m.mal_id == payload.mal_id), None)
@@ -413,12 +584,14 @@ def create_app(
             adventurousness=model.adventurousness))
 
     @app.post("/api/discover/feedback", response_model=FeedbackResponse)
-    def discover_feedback(payload: FeedbackRequest) -> FeedbackResponse:
+    def discover_feedback(
+        payload: FeedbackRequest, scope: ReaderScope = Depends(reader)
+    ) -> FeedbackResponse:
         """One vote. Mirrors what the card's three controls write."""
         profile_id = payload.profile_id.strip()
         if not profile_id:
             raise HTTPException(status_code=400, detail="profile_id is required.")
-        profile = services.profiles.active_profile()
+        profile = scope.profile
         if profile is None or profile.profile_id != profile_id:
             raise HTTPException(status_code=409, detail="Active profile changed. Reload this view.")
         profile_id = profile.profile_id
@@ -433,7 +606,7 @@ def create_app(
             # (D-013). Attribution, genres and title come from the served row
             # when the vote is for the active profile's own feed.
             genres, title, attribution = tuple(payload.genres), payload.title, None
-            feed = discover_feed(include_hidden=True)
+            feed = attribution_feed(scope, payload.mal_id)
             served = next(
                 (m for m in feed.recommendations if m.mal_id == payload.mal_id), None
             )
@@ -470,17 +643,21 @@ def create_app(
     # -- operations -------------------------------------------------------
 
     @app.get("/api/operations", response_model=OperationListResponse)
-    def list_operations() -> OperationListResponse:
+    def list_operations(scope: ReaderScope = Depends(reader)) -> OperationListResponse:
         return OperationListResponse(
             operations=tuple(
-                OperationSnapshotResponse(**record.snapshot()) for record in operations.all()
+                OperationSnapshotResponse(**record.snapshot())
+                for record in operations.all()
+                if visible(record, scope)
             )
         )
 
     @app.get("/api/operations/{operation_id}", response_model=OperationSnapshotResponse)
-    def get_operation(operation_id: str) -> OperationSnapshotResponse:
+    def get_operation(
+        operation_id: str, scope: ReaderScope = Depends(reader)
+    ) -> OperationSnapshotResponse:
         record = operations.get(operation_id)
-        if record is None:
+        if record is None or not visible(record, scope):
             raise HTTPException(status_code=404, detail="Unknown operation.")
         return OperationSnapshotResponse(**record.snapshot())
 
@@ -490,13 +667,16 @@ def create_app(
         response_model=OperationAcceptedResponse,
     )
     def start_operation(
-        kind: str, payload: OperationStartRequest = Body(default=OperationStartRequest())
+        kind: str,
+        request: Request,
+        payload: OperationStartRequest = Body(default=OperationStartRequest()),
+        scope: ReaderScope = Depends(reader),
     ) -> OperationAcceptedResponse:
         if kind not in SUPPORTED_KINDS:
             raise HTTPException(
                 status_code=404, detail=f"Unsupported operation kind: {kind}"
             )
-        profile = services.profiles.active_profile()
+        profile = scope.profile
         if profile is None:
             raise HTTPException(
                 status_code=409,
@@ -513,8 +693,20 @@ def create_app(
             key = operation_key(kind, profile_id)
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
+        # Kinds a visitor can repeat at will that call MyAnimeList with this
+        # installation's Client ID share the visitor's budget (limits.py).
+        # sync and refresh read only the reader's own list and run one at a
+        # time per list, so they are not counted (docs/ACCOUNTS.md).
+        if kind in BUDGETED_KINDS and not client_limits.mal_calls.take(client_limits.client(request)):
+            raise HTTPException(
+                status_code=429,
+                detail="AniRec is limiting MyAnimeList look-ups for a while. Try again later.",
+            )
 
-        handler = _build_handler(services, kind, payload, username, profile_id, profile=profile)
+        handler = _build_handler(
+            services, kind, payload, username, profile_id, profile=profile,
+            pipeline=reader_pipeline(services, scope),
+        )
         exclusive_with = (
             tuple(
                 operation_key(other, profile_id)
@@ -533,6 +725,8 @@ def create_app(
                 serialize_result=any_to_dict,
                 exclusive_with=exclusive_with,
             )
+        except ProfileClosedError as error:
+            raise HTTPException(status_code=409, detail="This list is being deleted.") from error
         except OperationAlreadyRunningError as error:
             # 409, not 500: the desktop refuses the same start for the same
             # reason and the client's response is the same - do nothing, the
@@ -541,15 +735,20 @@ def create_app(
         return OperationAcceptedResponse(**record.snapshot())
 
     @app.delete("/api/operations/{operation_id}")
-    def cancel_operation(operation_id: str) -> dict[str, Any]:
-        if not operations.cancel(operation_id):
+    def cancel_operation(
+        operation_id: str, scope: ReaderScope = Depends(reader)
+    ) -> dict[str, Any]:
+        record = operations.get(operation_id)
+        if record is None or not visible(record, scope) or not operations.cancel(operation_id):
             raise HTTPException(
                 status_code=404, detail="No running operation with that id."
             )
         return {"cancelled": True, "id": operation_id}
 
     @app.get("/api/operations/{operation_id}/events")
-    def operation_events(operation_id: str) -> StreamingResponse:
+    def operation_events(
+        operation_id: str, scope: ReaderScope = Depends(reader)
+    ) -> StreamingResponse:
         """Server-sent events: ``started``, ``progress``/``step``, a terminal
         ``result``/``error``/``cancelled``, then ``finished``.
 
@@ -561,7 +760,7 @@ def create_app(
         declares these by hand for that reason.
         """
         record = operations.get(operation_id)
-        if record is None:
+        if record is None or not visible(record, scope):
             raise HTTPException(status_code=404, detail="Unknown operation.")
 
         def stream() -> Iterator[str]:
@@ -589,6 +788,7 @@ def _build_handler(
     profile_id: str,
     *,
     profile: UserProfile | None = None,
+    pipeline=None,
 ) -> Callable[[CancellationToken, Callable[[PipelineProgress], None]], Any]:
     """The one place a kind is bound to a service call.
 
@@ -597,6 +797,8 @@ def _build_handler(
     ``self.report_progress`` arriving as arguments instead of attributes.
     """
     settings = services.settings.load()
+    # The reader's own settings over the installation's (docs/ACCOUNTS.md).
+    ranking = pipeline or settings.pipeline
     binding = (
         {}
         if profile is None
@@ -612,14 +814,26 @@ def _build_handler(
         # reloads the saved feed when an operation finishes, so without this a
         # generated feed or "more" batch was computed and then never shown.
         if isinstance(result, PipelineResult):
-            return services.results.save_merged(profile_id, result)
+            merged = services.results.save_merged(profile_id, result)
+            if merged.user_stats.get("complete_ranking"):
+                return merged
+            if services.anime_reference is not None:
+                merged = services.anime_reference.enrich_result(merged)
+            # The installed catalogue has no pictures: covers are looked up
+            # once per title and cached (cover_url_service.py). Filled after
+            # the merge, so a refresh that finds the feed current fills the
+            # saved picks too.
+            filled = services.cover_urls.fill(merged, settings.client_id)
+            if filled is not merged:
+                services.results.save(profile_id, filled)
+            return filled
         return result
 
     if kind == "sync":
         def run_sync(token: CancellationToken, report) -> Any:
             return persisted(services.orchestrator.run_sync(
                 username,
-                settings.pipeline,
+                ranking,
                 progress_callback=report,
                 cancellation_token=token,
                 **binding,
@@ -628,18 +842,39 @@ def _build_handler(
         return run_sync
 
     if kind == "recommendation":
+        count = None
+
         def run_full(token: CancellationToken, report) -> Any:
             state = services.recommendation_state.load(profile_id)
             return persisted(services.orchestrator.run_full(
                 username,
-                settings.pipeline,
+                ranking,
                 progress_callback=report,
                 cancellation_token=token,
                 excluded_mal_ids=state.hidden_mal_ids,
+                count=count,
+                full_ranking=True,
                 **binding,
             ))
 
         return run_full
+
+    if kind == "refresh":
+        count = WEB_FEED_BATCH
+
+        def run_refresh(token: CancellationToken, report) -> Any:
+            return persisted(services.orchestrator.run_refresh(
+                username,
+                ranking,
+                existing=services.results.load(profile_id),
+                count=count,
+                full_ranking=True,
+                progress_callback=report,
+                cancellation_token=token,
+                **binding,
+            ))
+
+        return run_refresh
 
     if kind == "more-recommendations":
         count = max(1, int(payload.count or 5))
@@ -649,9 +884,11 @@ def _build_handler(
             if existing is None or not existing.recommendations:
                 raise ValueError("There is no generated feed to extend.")
             state = services.recommendation_state.load(profile_id)
+            if existing.user_stats.get("complete_ranking"):
+                return existing  # Every pick is already saved; paging never ranks again.
             return persisted(services.orchestrator.run_more(
                 username,
-                settings.pipeline,
+                ranking,
                 existing_recommendations=existing.recommendations,
                 excluded_mal_ids=state.hidden_mal_ids,
                 count=count,
@@ -669,8 +906,10 @@ def _build_handler(
                 profile_id,
                 username,
                 watch_later_mal_ids=state.watch_later_mal_ids,
+                # Required: the time this sync claims to have run.
+                synced_at=datetime.now(timezone.utc).isoformat(),
                 client_id=settings.client_id,
-                include_nsfw=settings.pipeline.include_nsfw,
+                include_nsfw=ranking.include_nsfw,
                 cancellation_token=token,
             )
 
