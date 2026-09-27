@@ -55,6 +55,25 @@ def test_health_reports_ok(client):
     assert client.get("/api/health").json()["status"] == "ok"
 
 
+def test_complete_feed_pages_and_filters_the_saved_ranking(client):
+    profile = _activate_local_profile(client, "fixture-reader")
+    from AniRec.models import Anime, Recommendation, PipelineResult
+    result = PipelineResult(recommendations=tuple(
+        Recommendation(Anime(f"Title {i}", mal_id=i, genres=("Suspense", "Girls Love") if i == 601 else ("Suspense",)), rank=i)
+        for i in range(1, 704)
+    ), user_stats={"complete_ranking": True})
+    client.app.state.container.results.save(profile.profile_id, result)
+    default_page = client.get("/api/discover/feed").json()
+    assert default_page["total"] == 703
+    assert len(default_page["recommendations"]) == 50
+    payload = client.get("/api/discover/feed", params={"query": json.dumps({"page": 10})}).json()
+    assert payload["total"] == 703 and payload["page_size"] == 50
+    assert payload["recommendations"][0]["mal_id"] == 501
+    filtered = client.get("/api/discover/feed", params={"query": json.dumps({"genres": ["Suspense", "Girls Love"]})}).json()
+    assert filtered["total"] == 1 and filtered["recommendations"][0]["mal_id"] == 601
+    assert filtered["activity_feed_id"] == payload["activity_feed_id"]
+
+
 def test_feed_falls_back_to_the_sample_library_without_a_profile(client):
     payload = client.get("/api/discover/feed").json()
     assert payload["source"] == "sample"

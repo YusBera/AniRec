@@ -28,7 +28,7 @@ def test_completed_anime_follows_paging_next_and_maps_list_status(monkeypatch):
                                     "title": "Alpha Show",
                                 "genres": [{"name": "Action"}],
                             },
-                            "list_status": {"score": 8},
+                            "list_status": {"status": "completed", "score": 8},
                         }
                     ],
                     "paging": {"next": "https://fixture.invalid/page-2"},
@@ -39,7 +39,7 @@ def test_completed_anime_follows_paging_next_and_maps_list_status(monkeypatch):
                     "data": [
                         {
                             "node": {"id": 2, "title": "Beta Show", "genres": []},
-                            "list_status": {},
+                            "list_status": {"status": "completed"},
                         }
                     ],
                     "paging": {},
@@ -75,9 +75,9 @@ def test_completed_anime_follows_paging_next_and_maps_list_status(monkeypatch):
         },
     ]
     assert calls[0][2] == {
-        "status": "completed",
         "fields": f"list_status,{ANIME_FIELDS}",
         "limit": 1000,
+        "status": "completed",
     }
     assert calls[1][0] == "https://fixture.invalid/page-2"
     assert calls[1][2] is None
@@ -145,7 +145,7 @@ def test_completed_anime_skips_malformed_records(monkeypatch):
                 "data": [
                     {},
                     {"node": {}},
-                    {"node": {"id": 10, "title": "Valid Fixture", "genres": []}},
+                    {"node": {"id": 10, "title": "Valid Fixture", "genres": []}, "list_status": {"status": "completed"}},
                 ],
                 "paging": {},
             }
@@ -196,3 +196,43 @@ def test_full_history_preserves_sequence_model_fields(monkeypatch):
     assert calls == [
         {"fields": "list_status", "limit": 1000, "sort": "list_updated_at"}
     ]
+
+
+def test_completed_scoring_history_keeps_the_previous_nsfw_filter(monkeypatch):
+    calls = []
+
+    def fake_get(url, headers, params, timeout):
+        calls.append(params)
+        return FakeResponse({
+            "data": [{
+                "node": {"id": 34403, "title": "Hajimete no Gal", "genres": []},
+                "list_status": {"status": "completed", "score": 0},
+            }],
+            "paging": {},
+        })
+
+    monkeypatch.setattr(user_data.requests, "get", fake_get)
+    result = user_data.get_user_completed_animes("fixture-user", "fake-token", include_nsfw=False)
+    assert result["Anime ID"].tolist() == [34403]
+    assert calls == [{
+        "fields": f"list_status,{ANIME_FIELDS}", "limit": 1000, "status": "completed",
+    }]
+
+
+def test_list_sync_reads_completed_nsfw_entry_when_recommendations_are_filtered(monkeypatch):
+    calls = []
+
+    def fake_get(url, headers, params, timeout):
+        calls.append(params)
+        return FakeResponse({
+            "data": [{
+                "node": {"id": 34403, "title": "Hajimete no Gal"},
+                "list_status": {"status": "completed", "updated_at": "2026-09-25T12:00:00+00:00"},
+            }],
+            "paging": {},
+        })
+
+    monkeypatch.setattr(user_data.requests, "get", fake_get)
+    entries = list(user_data.fetch_recent_list_entries("fixture-user", "fake-token", include_nsfw=False))
+    assert [entry["mal_id"] for entry in entries] == [34403]
+    assert calls[0]["nsfw"] == "true"

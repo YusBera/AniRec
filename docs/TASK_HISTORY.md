@@ -7,6 +7,179 @@ Each entry records what changed, how it was verified, and what was left open.
 
 ---
 
+## 2026-09-27 - Complete saved Discover ranking
+
+D-024 retires the 500-pick web preload. A run saves the complete eligible
+ranking with original ONNX ranks; a deterministic selection preserves page 1
+and carries skipped titles into later pages. Discover filters the saved list
+before returning a bounded 50-title page, including pick 501 and later, with
+no inference on Next page. An unchanged refresh reuses the ranking. A changed
+list, setting, model or catalogue identity rebuilds it. Profile ranking rows
+are compressed; immutable public anime metadata is shared in SQLite. Old
+inline results remain readable and old capped web results rebuild once.
+
+*Verification:* 185 targeted Python tests and frontend CI (API types,
+TypeScript, 162 tests) passed. Tests cover complete selection, persistence
+round-trips and corruption, page 501, genre intersection, unchanged refresh
+and changed-setting inference. Final review's stale-page finding was fixed.
+Diff check passed. API and site returned HTTP 200 after the API restart.
+
+*Remaining:* no live account analysis was run. Existing bulk per-profile CSV
+artifacts remain in place; removal needs an explicit migration.
+
+---
+
+## 2026-09-27 - Retire Discover explanations
+
+D-023 removes "Why this pick" from the Inspector and legacy reasons from
+Inspector/List. Removed explanation artwork requests and the retired frontend
+explanation components; the card control now says "Open details". Production
+generation skips heuristic and sequence explanations after selection, retaining
+scores, ranks, eligibility and selected picks. New results have null `why`;
+old saved explanations and explicit diagnostic builders remain compatible.
+No API endpoint or persisted-schema changes.
+
+*Verification:* new backend and frontend regressions first failed against the
+old behavior. Targeted pytest passed 81 tests; frontend CI passed generated
+types, TypeScript and 161 tests. Final review's List-view reason finding was
+fixed. Desktop/375px rendering, 44px actions, keyboard opening/dismissal and
+focus return were verified. Backend reloaded on loopback port 8770 and returned
+HTTP 200; frontend port 5173 remained live. Diff check passed. Existing
+dependency deprecation and Settings-test act warnings remain.
+
+*Remaining:* saved explanation data is preserved and hidden; no migration or
+fresh network import benchmark was performed. The preceding snapshot benchmark
+measured 14.316 s with explanations versus 6.074 s without. New regression
+confirms one ONNX scoring call and no removal calls during generation.
+
+---
+
+## 2026-09-27 - Initial import skeleton
+
+Reused the existing looping poster placeholders during initial list reading
+and fresh-profile analysis, increased from eight to twelve. Sample titles
+stay hidden while the first feed is prepared, including its final step;
+failure and cancellation end the loading state. Ordinary refreshes keep
+existing personal recommendations visible. No API or persisted-format changes.
+
+*Verification:* Frontend CI passed 175 tests, generated-type verification
+and TypeScript. A temporary labelled browser fixture confirmed twelve
+infinitely looping cards, accessible busy state and no horizontal overflow
+at desktop and 375px, then was removed. Design detector and diff check passed.
+
+## 2026-09-27 - Fixed card-title geometry correction
+
+Restored the original fixed title area so names cannot push metadata or
+buttons. Font fitting uses the available height and existing type sizes;
+exceptionally long names retain an ellipsis, full tooltip, accessible name
+and Inspector text. This supersedes the preceding unrestricted-wrap change.
+
+*Verification:* A temporary browser fixture measured identical metadata and
+button positions across short, Seraph and extreme-length titles. At 375px,
+card-relative button offsets matched and title touch targets measured 44px.
+The fixture was removed. No API or backend changes.
+Frontend CI passed 172 tests, generated-type verification and TypeScript;
+the design detector and diff check reported no errors.
+
+## 2026-09-27 - Fluid progress and complete card titles
+
+Replaced stepped progress motion with a smooth expanding sweep and transform
+transitions. Reduced-motion mode stays still. Removed nested title clamps;
+the fitter measures text separately from touch-target height and allows full
+wrapping for unusually long names. Existing fonts and portrait posters remain.
+
+*Verification:* A labelled temporary fixture confirmed full Seraph and long
+test-title rendering at desktop and 375px, no title/page overflow, and keyboard
+Inspector entry. The fixture was removed. No backend or API changes.
+Frontend CI passed all 172 tests, API-type verification and TypeScript;
+the design detector and diff check reported no errors.
+
+## 2026-09-27 - Import final-step progress
+
+Discover distinguishes the active stage from completed stages. The final
+step stays indeterminate with an explanatory live status instead of showing
+a full bar at 6/6. Reduced-motion mode also avoids a complete-looking bar.
+The indicator clears only after success, failure or cancellation.
+
+*Verification:* The regression first failed on the old completed-stage value.
+Frontend CI passed 172 tests, API-type checks and TypeScript. All three
+terminal-state cases passed after the fix; desktop and 375px visual
+checks passed using a labelled temporary fixture, which was removed.
+Backend processing, API contracts and persisted formats were unchanged.
+
+## 2026-09-27 - PV thumbnail preview
+
+Replaced the Inspector's PV button with a 16:9 thumbnail and play overlay
+using the validated video ID. Kept lazy lightbox playback, keyboard activation,
+and an unavailable-preview fallback. No API or persisted format changed.
+
+*Verification:* Frontend CI passed 170 tests, including thumbnail failure,
+title changes and keyboard playback activation. A labelled temporary video
+demo was checked at desktop and 375px, then removed. The design detector
+reported only the existing score-rail width-transition warning.
+
+## 2026-09-27 - Local offline anime reference integration
+
+Added an optional read-only adapter for the collector's anime-only staging
+SQLite reference. Observed community scores and counts join model candidates;
+posters, synopsis and optional YouTube PV join selected picks and saved display
+metadata. Saved ranking inputs and explanations remain immutable. Invalid or
+unobserved values stay unavailable; configured incompatible inputs fail startup.
+
+*Verification:* 91 targeted Python tests and frontend CI (169 tests) passed.
+The final adversarial review's saved-score and malformed-URL findings were
+fixed with regression tests. The real snapshot joined 25,086 eligible bundle
+candidates in 1.38 seconds. API restarted with the input enabled; API and site
+returned HTTP 200.
+
+*Left open:* private local preview only; public use of HTML-derived content
+still needs the recorded source/display-rights decision. The reference remains
+external, and future launches must set `ANIREC_ANIME_REFERENCE_DB`.
+
+---
+
+## 2026-09-25 - Discover layout and scanability refinement
+
+Grouped the Discover heading, sourced count and controls; widened the desktop
+content region while retaining six cards at common desktop widths. Cards show
+distinct personal rank and MAL readings, a single preferred title, media
+metadata, labelled decisions and aligned content regions. Studio choices use
+a bounded scroll area. A browser preference selects English or the original
+MAL title throughout recommendation views and Compare.
+
+*Verification:* frontend CI 159 passed. Labelled layout fixtures were rendered
+at 1440px and 375px, covering long and short titles, movie, OVA/ONA/special,
+missing scores and 300 studios; temporary fixtures were removed. The design
+detector reported an existing inspector width-transition warning.
+
+*Left open:* runtime cannot be shown until the API supplies it. A live feed
+and its actual artwork were not used for the isolated visual check.
+
+---
+
+## 2026-09-25 - Feed accuracy and inspector fixes
+
+An initial change fed MAL entries omitted by its default NSFW filter into taste
+and sequence-model history, which shifted the entire page. A follow-up keeps
+those entries only in a separate completed-ID exclusion input, preserving the
+previous ranking inputs and prerequisite checks. Missing MAL
+community scores are fetched through the official API; the saved-feed score
+tracks its source and is rechecked after 30 days. The inspector closes on a
+backdrop click, and sequence explanations initially show the three largest
+effects with clearer rank and unscored-history wording. A later community
+score is identified separately from the ranking-time heuristic input.
+
+*Verification:* failing regression tests before changes; frontend CI 153
+passed; focused Python tests 112 passed; full non-Qt suite 640 passed;
+mechanical UI detector returned no findings. API and site returned HTTP 200
+after the API restart; the owner's live feed still needs checking after a
+fresh analysis.
+
+*Left open:* the named completed title and UI need a live check after the API
+restarts; a MAL outage can leave the last saved score visible until retry.
+
+---
+
 ## 2026-09-25 - Covers for feeds ranked from the installed catalogue
 
 The collector snapshot behind the ONNX bundle carries no picture URLs, so a

@@ -162,7 +162,8 @@ def workspace_router(services: ApiContainer, limits: ClientLimits) -> APIRouter:
         found = {}
         result = services.results.load(profile_id)
         if result:
-            found.update((m.mal_id, m) for m in recommendation_view_models(result.recommendations) if m.mal_id in wanted)
+            saved = (rec for rec in result.recommendations if rec.anime.mal_id in wanted)
+            found.update((m.mal_id, m) for m in recommendation_view_models(tuple(saved)))
         for filename in (
             "completed_anime.csv",
             "candidate_catalogue.csv",

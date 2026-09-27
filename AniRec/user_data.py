@@ -43,15 +43,13 @@ def get_user_completed_animes(
     client=None,
     cancellation=None,
 ):
-    """Fetch a user's completed anime list from MyAnimeList."""
+    """Fetch completed titles used to learn the reader's taste."""
     url = f"{API_BASE_URL}/users/{quote(str(username), safe='')}/animelist"
     params = {
         "fields": f"list_status,{ANIME_FIELDS}",
         "limit": 1000,
     }
     if include_nsfw:
-        # MAL omits NSFW entries unless explicitly requested. Fetching the full
-        # list also preserves completed entries currently marked as rewatching.
         params["nsfw"] = "true"
     else:
         params["status"] = "completed"
@@ -185,8 +183,7 @@ def fetch_recent_list_entries(
         "limit": LIST_SYNC_PAGE_SIZE,
         "sort": LIST_SYNC_SORT,
     }
-    if include_nsfw:
-        params["nsfw"] = "true"
+    params["nsfw"] = "true"
     api_client = client or MALClient(http_get=http_get or requests.get)
 
     seen = 0

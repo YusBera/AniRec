@@ -409,7 +409,7 @@ export function DiscoverPage({ surface = "discover", onFeedChange, onOperationSt
                 <FeedView view={view} models={pageItems} rankOffset={currentPage * PAGE_SIZE} caption={`Recommendations — ${visibleCount} in feed`}
                   watchLater={isSaved} hidden={isHidden} pending={pending} disabledReason={decisionsUnavailable}
                   trackActivity={surface === "discover" && view === "cards"}
-                  onDetails={(model) => inspect(model, visible)} onExternal={external} onVote={vote} />
+                  onDetails={(model) => inspect(model, serverPaged ? pageItems : visible)} onExternal={external} onVote={vote} />
               )}
               {!firstFeedLoading && !hideSampleFeed ? <PageControls page={currentPage} total={visibleCount} onPageChange={changePage} label="Recommendations" /> : null}
             </section>

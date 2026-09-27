@@ -68,10 +68,17 @@ eligible pool, and `RecommendationService.recommend` applies the shared
 deterministic selector in `AniRec/scoring/selection.py` exactly once, for the
 heuristic, ONNX and fallback paths alike. The legacy CSV entry point
 `rank_recommendations` uses the same selector. After selection the service
-explains the served rows with the answering engine's own method
-(`AniRec/scoring/explanation.py`, D-012): exact score parts for the heuristic,
-counterfactual history removal for the sequence model. The engine's rank
-before selection is persisted as personal fit.
+drops internal score parts and enriches public metadata. Discover does not
+generate explanations for either engine (D-023); new saved picks carry no
+explanation. The engine's rank before selection is persisted as personal fit.
+Legacy explanation serialization and explicit diagnostic builders remain.
+
+The pipeline keeps taste and sequence-model history under the reader's NSFW
+preference. It separately fetches all completed MAL IDs into
+`completed_exclusion_ids.csv`, so those titles cannot be recommended without
+changing the inputs that rank the remaining titles or satisfy sequel
+prerequisites. The ID set participates in
+the feed's input digest; a newly completed title triggers a refresh rebuild.
 
 Measured behaviour of both engines is recorded in
 `docs/RECOMMENDER_EVALUATION.md`. Read it before changing ranking.
@@ -104,6 +111,28 @@ The installed serving bundle now removes per-user MyAnimeList catalogue traffic
 for configured model deployments. Making the collector catalogue independent of
 the model bundle, replacing MAL IDs as internal identity, and measuring the new
 candidate population with retained evidence remain roadmap work.
+
+For local integration, `ANIREC_ANIME_REFERENCE_DB` can point to a separate,
+anime-only, read-only SQLite reference (`offline-staging-1`). It joins observed
+community scores and counts to the model's existing candidate IDs before
+ranking; posters, synopsis and sourced YouTube PV links join only to served
+picks. It cannot introduce an ID outside the installed model catalogue or
+replace its release, content-rating, media-type or prerequisite policy. Saved
+ranking inputs remain fixed while display-only metadata can be refreshed from
+the reference. The private HTML-derived reference is not a licensed public
+catalogue release; the source and display-rights gate in
+`docs/PROJECT_DEFINITION.md` remains open.
+
+The web analysis stores the complete eligible rank once. `ResultService`
+atomically saves a compact per-profile `latest_result.json` with private scores,
+order and immutable public metadata references. Those references resolve from
+`catalogue/anime_metadata.sqlite` under the application data root; the database
+is durable data, outside Clear cache. Legacy inline results still load. The
+Discover API filters all saved ranks before slicing a 50-title page and joins
+display-only metadata for that page. A bounded two-profile read cache avoids
+re-decoding the full ranking for every page request. A changed model,
+catalogue, input or adventurousness setting invalidates the saved ranking on
+refresh.
 
 Item identity must be internal, with MyAnimeList as one external mapping among
 several. Using MAL IDs as the primary key is a dependency that cannot be removed

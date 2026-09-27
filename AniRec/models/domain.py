@@ -104,6 +104,8 @@ class Anime:
     alternative_titles: tuple[str, ...] = ()
     genres: tuple[str, ...] = ()
     mean_score: float | None = None
+    # A later public MAL lookup, rather than the catalogue value used to rank.
+    mean_score_source: str | None = None
     cover_url: str | None = None
     large_cover_url: str | None = None
     episodes: int | None = None
@@ -117,6 +119,7 @@ class Anime:
     source: str | None = None
     media_type: str | None = None
     scoring_users: int | None = None
+    pv_youtube_url: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "title", _optional_text(self.title) or UNKNOWN_TITLE)
@@ -131,12 +134,19 @@ class Anime:
             "mal_url",
             "source",
             "media_type",
+            "pv_youtube_url",
         ):
             object.__setattr__(self, name, _optional_text(getattr(self, name)))
         object.__setattr__(self, "alternative_titles", _text_tuple(self.alternative_titles))
         object.__setattr__(self, "genres", _text_tuple(self.genres))
         object.__setattr__(self, "studios", _text_tuple(self.studios))
         object.__setattr__(self, "mean_score", _optional_float(self.mean_score))
+        object.__setattr__(
+            self, "mean_score_source",
+            self.mean_score_source if self.mean_score_source in {
+                "mal-api", "offline-snapshot", "offline-absent"
+            } else None,
+        )
         if self.scoring_users is not None:
             # A tally, so zero is a legitimate value rather than an absence.
             count = int(self.scoring_users)
@@ -173,6 +183,7 @@ class Anime:
             "alternative_titles": list(self.alternative_titles),
             "genres": list(self.genres),
             "mean_score": self.mean_score,
+            "mean_score_source": self.mean_score_source,
             "cover_url": self.cover_url,
             "large_cover_url": self.large_cover_url,
             "episodes": self.episodes,
@@ -186,6 +197,7 @@ class Anime:
             "source": self.source,
             "media_type": self.media_type,
             "scoring_users": self.scoring_users,
+            "pv_youtube_url": self.pv_youtube_url,
         }
 
     @classmethod

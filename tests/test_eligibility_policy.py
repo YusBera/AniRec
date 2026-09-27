@@ -99,6 +99,37 @@ def test_consumed_direct_prequel_makes_the_later_entry_eligible():
     assert audit.excluded_candidates == 0
 
 
+def test_completed_id_is_excluded_even_when_it_is_absent_from_model_history():
+    eligible, audit = FinalEligibilityPolicy().apply(
+        ({"Anime ID": 34403, "Title": "Already completed"},
+         {"Anime ID": 5, "Title": "Unseen"}),
+        known_mal_ids={34403},
+        user_history=(),
+        as_of=date(2026, 9, 21),
+    )
+    assert [row["Anime ID"] for row in eligible] == [5]
+    assert audit.excluded_by_reason["already_in_history"] == 1
+
+
+def test_exclusion_only_id_does_not_unlock_a_sequel():
+    context = EligibilityContext(
+        catalog_by_mal_id={5: _catalog_row()},
+        covered_mal_ids=frozenset({5}),
+        prerequisites_by_mal_id={5: frozenset({34403})},
+        strict_release_dates=True,
+    )
+
+    eligible, audit = FinalEligibilityPolicy().apply(
+        ({"Anime ID": 5, "Title": "Season two"},),
+        context=context,
+        known_mal_ids={34403},
+        as_of=date(2026, 9, 21),
+    )
+
+    assert eligible == ()
+    assert audit.excluded_by_reason["missing_prerequisite"] == 1
+
+
 @pytest.mark.parametrize(
     ("catalog_change", "reason"),
     [

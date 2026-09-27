@@ -5,6 +5,67 @@ accepted decision without a new reason from the user.
 
 ---
 
+## D-024 - Save the complete eligible ranking and page it without inference
+**2026-09-27 - Accepted by the user**
+
+One web analysis saves every eligible title from the installed ranking, its
+model score and original model rank. Discover filters the saved ranking before
+pagination, then returns at most 50 titles per page. Next page never reruns
+the model; a reader can reach title 501 and later after restarting AniRec.
+Multiple selected genres must all match. The first page retains D-011's
+deterministic diversity selection; titles it passes over remain in later
+pages, so each eligible title appears exactly once. Explanations remain retired
+under D-023.
+
+The profile stores a compact, versioned ranking and its input, engine,
+catalogue, settings and selection identity. Immutable public anime metadata
+is shared under the application data root. An unchanged refresh reuses the
+ranking. Changed ranking inputs, adventurousness, model or catalogue identity
+rebuild it. Legacy inline results remain readable; an old capped feed is
+rebuilt once. This supersedes D-018's 50-title generation and “more” page flow
+for the web, and extends D-011's selection from one bounded feed to complete
+pages. The legacy operation remains for old clients and desktop compatibility.
+
+*Why:* the 500-title subset made rare filter combinations falsely empty and
+forced repeat inference merely to browse later pages.
+
+---
+
+## D-023 - Retire Discover explanations
+**2026-09-27 - Accepted by the user**
+
+Discover no longer generates or displays "Why this pick" for either engine,
+including heuristic fallback. Keep personal rank and answering engine visible.
+Remove legacy reason strings and explanation artwork requests from the Inspector.
+Retain nullable explanation fields and legacy deserialization for saved feeds;
+explicit engine diagnostic builders remain outside recommendation generation.
+
+*Why:* testers mistook a few supporting titles for the sole cause of a pick.
+The measured snapshot rebuild took 14.316 s with sequence explanations versus
+6.074 s without; explanations added 220 ONNX calls after scoring and selection.
+Ranking, eligibility and feed selection are unchanged. This supersedes D-022
+and the Discover explanation requirement in D-012/D-016.
+
+---
+
+## D-022 - Sequence explanations lead with a few supporting titles
+**2026-09-25 - Accepted**
+
+The sequence-model inspector shows up to three positive title effects from
+the strongest effects saved with that pick. Each title has a small 2:3 poster
+when public artwork is available. Negative title and group effects remain in
+one collapsed disclosure; the full genre inventory is not the main view.
+Posters load when the inspector opens, through an account-scoped lookup of
+the saved pick. This changes presentation and artwork requests, not model
+inputs, effect values, or ranking order. `docs/UI_CONTRACT.md` defines the
+display and unavailable-artwork wording.
+
+*Why:* a long list of genre groups obscures the few titles that help a reader
+understand a recommendation. Preloading every explanation poster would add
+unnecessary requests across a saved feed.
+
+---
+
 ## D-014 - AniRec account data isolation (direction accepted; local mode open)
 **2026-09-23 - Hosted direction accepted; account implementation pending local-mode choice**
 
@@ -87,6 +148,13 @@ but do not define different product eligibility rules.
 When both a candidate row and the verified catalogue contain release, airing,
 rating, or media-type facts, either source may make the title ineligible. A
 candidate overlay cannot weaken a catalogue restriction.
+
+The "Include NSFW anime" preference filters recommendation candidates and
+the taste/sequence-model inputs as before. AniRec separately requests all
+completed IDs for known-title exclusion even when that preference is off;
+otherwise a completed entry omitted by MAL's default list filter could be
+recommended again. Those extra IDs do not train taste, reorder model history,
+or satisfy sequel prerequisites.
 
 *Why:* model availability must not decide whether AniRec can recommend a future,
 restricted, unsupported-media, already-known, or prerequisite-blocked title. A

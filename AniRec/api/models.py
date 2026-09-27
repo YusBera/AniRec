@@ -208,6 +208,7 @@ class RecommendationViewModelResponse(ApiModel):
     cover_url: str | None
     large_cover_url: str | None
     mal_url: str | None
+    pv_youtube_url: str | None = None
     media_type: str | None
     fit_rank: int | None = Field(
         default=None,
@@ -278,6 +279,39 @@ class FeedResponse(ApiModel):
     state: LocalState
     user_stats: dict[str, Any]
     activity_feed_id: str = ""
+    total: int | None = None
+    page: int | None = None
+    page_size: int | None = None
+
+
+class FeedQuery(ApiModel):
+    page: int = Field(default=0, ge=0)
+    genres: tuple[str, ...] = ()
+    studios: tuple[str, ...] = ()
+    years: tuple[int, ...] = ()
+    minimumMalScore: float | None = Field(default=None, ge=0, le=10)
+    status: str | None = None
+    minimumEpisodes: int | None = Field(default=None, ge=0)
+    maximumEpisodes: int | None = Field(default=None, ge=0)
+    sort: Literal["personal-match", "mal-score", "year", "title"] = "personal-match"
+
+
+class PageMetadataRequest(ApiModel):
+    mal_ids: tuple[int, ...] = Field(min_length=1, max_length=50)
+
+
+class EvidenceArtworkRequest(ApiModel):
+    pick_mal_id: int = Field(gt=0)
+    ranking_id: str | None
+
+
+class EvidencePoster(ApiModel):
+    mal_id: int
+    cover_url: str | None
+
+
+class EvidenceArtworkResponse(ApiModel):
+    posters: tuple[EvidencePoster, ...]
 
 
 FeedbackAction = Literal["hidden", "watch_later", "sentiment"]

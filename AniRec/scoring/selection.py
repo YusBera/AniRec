@@ -121,6 +121,59 @@ def select_feed(
     return tuple(sorted(selected))
 
 
+def select_complete_feed(ranked_rows, adventurousness, page_size=50) -> tuple[int, ...]:
+    """Preserve the first page's selection and carry every skipped row forward."""
+    if page_size <= 0:
+        raise ValueError("page_size must be positive.")
+    if max_leap(adventurousness) == 0:
+        return tuple(range(len(ranked_rows)))
+    from collections import deque
+
+    remaining = deque(range(len(ranked_rows)))
+    carry = []
+    chosen = []
+    while carry or remaining:
+        window = carry
+        while remaining and len(window) < page_size + max_leap(adventurousness):
+            window.append(remaining.popleft())
+        positions = select_feed([ranked_rows[i] for i in window], page_size, adventurousness)
+        picked = set(positions)
+        chosen.extend(window[i] for i in positions)
+        carry = [value for i, value in enumerate(window) if i not in picked]
+    return tuple(chosen)
+
+
+def select_feed_pages(
+    ranked_rows: Sequence[Mapping[str, object]],
+    count: int,
+    adventurousness: object,
+    page_size: int,
+) -> tuple[int, ...]:
+    """Prepare pages once, preserving the existing first-page selection.
+
+    Each page selects from the next bounded rank window. Unselected rows in
+    that window are skipped, so ranks increase across the saved pages. When
+    the pool is short, the window shrinks to leave enough rows for later pages.
+    """
+    if page_size <= 0:
+        raise ValueError("page_size must be positive.")
+    target = max(int(count), 0)
+    cursor = 0
+    chosen: list[int] = []
+    leap = max_leap(adventurousness)
+    while cursor < len(ranked_rows) and len(chosen) < target:
+        remaining_target = target - len(chosen)
+        page_count = min(page_size, remaining_target, len(ranked_rows) - cursor)
+        spare = max(0, len(ranked_rows) - cursor - remaining_target)
+        window_size = page_count + min(leap, spare)
+        positions = select_feed(
+            ranked_rows[cursor:cursor + window_size], page_count, adventurousness
+        )
+        chosen.extend(cursor + position for position in positions)
+        cursor += window_size
+    return tuple(chosen)
+
+
 def _facets(row: Mapping[str, object]) -> tuple[frozenset[str], ...]:
     return tuple(_labels(row.get(column)) for column, _weight in FACET_WEIGHTS)
 

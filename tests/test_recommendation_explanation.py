@@ -1,8 +1,7 @@
-"""Personal fit as a rank, and "why was this recommended to me?" (Goal 2).
+"""Personal ranks, feed lifecycle, and explicit legacy explanation diagnostics.
 
-Every test runs the shipped path: the pipeline or ``RecommendationService`` with
-the real engines, then persistence, the shared view model and the strict API
-model. Nothing in the ranking, selection or explanation path is mocked.
+Discover no longer generates explanations. Diagnostic tests explicitly invoke
+the retained builders against the actual ranking request and score parts.
 """
 
 from __future__ import annotations
@@ -10,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import date, datetime, timezone
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -27,6 +27,7 @@ from AniRec.scoring.engines import (
     HeuristicRankingEngine,
     OnnxSequenceRankingEngine,
 )
+from AniRec.scoring.explanation import explain_additive, unavailable_explanation
 from AniRec.services import (
     AnimeDataService,
     ProfileService,
@@ -118,11 +119,52 @@ def _segment_sum(why):
     return math.fsum(segment["value"] for segment in why["segments"])
 
 
+def _diagnostic_recommend(service, *args, **kwargs):
+    """Opt in to retired diagnostics in tests, outside the production path."""
+    captured = []
+    rank = service._ranker.rank
+
+    def recording_rank(request):
+        result = rank(request)
+        captured.append((request, result))
+        return result
+
+    with patch.object(service._ranker, "rank", side_effect=recording_rank):
+        feed = service.recommend(*args, **kwargs)
+    request, result = captured[0]
+    by_id = {row["Anime ID"]: row for row in result.ranked_candidates}
+    rows = [dict(by_id[row["Anime ID"]]) for row in feed.to_dict("records")]
+    if result.metadata.explanation_type == "exact-additive":
+        history = kwargs.get("rated_history")
+        explanations = explain_additive(
+            rows, rated_history=history.to_dict("records") if history is not None else None,
+            taste_adjustments=kwargs.get("genre_adjustments"),
+        )
+    elif result.metadata.explanation_type == "sequence-score" and not result.metadata.fallback_used:
+        explanations = service._ranker.explain(request, rows)
+    else:
+        explanations = [unavailable_explanation("engine-cannot-explain") for row in rows]
+    for row, explanation in zip(rows, explanations):
+        row.pop("Score Parts", None)
+        row["Explanation"] = explanation
+    diagnostic = pd.DataFrame.from_records(rows)
+    diagnostic.attrs.update(feed.attrs)
+    return diagnostic
+
+
+class _DiagnosticService(RecommendationService):
+    def recommend(self, *args, **kwargs):
+        # Use a separate instance to avoid recursion; this opt-in exists only
+        # for legacy persistence and diagnostic tests.
+        service = RecommendationService(ranker=self._ranker)
+        return _diagnostic_recommend(service, *args, **kwargs)
+
+
 # --- heuristic: exact, evidence-backed breakdown ------------------------------
 
 
 def test_heuristic_why_sums_exactly_to_the_ranking_score(system_temp_dir):
-    result = _orchestrator(system_temp_dir).run_full("fixture-user", SETTINGS)
+    result = _orchestrator(system_temp_dir, _DiagnosticService()).run_full("fixture-user", SETTINGS)
 
     assert result.recommendations
     for item in result.recommendations:
@@ -138,7 +180,7 @@ def test_heuristic_why_sums_exactly_to_the_ranking_score(system_temp_dir):
 
 
 def test_taste_evidence_quotes_only_real_ratings_in_the_part_direction(system_temp_dir):
-    orchestrator = _orchestrator(system_temp_dir)
+    orchestrator = _orchestrator(system_temp_dir, _DiagnosticService())
     initial = orchestrator.run_full("fixture-user", SETTINGS)
     more = orchestrator.run_more(
         "fixture-user", SETTINGS,
@@ -171,7 +213,7 @@ def test_taste_evidence_quotes_only_real_ratings_in_the_part_direction(system_te
 
 def test_community_part_is_separate_and_flags_a_missing_score():
     catalogue = _catalogue()
-    feed = RecommendationService().recommend(
+    feed = _DiagnosticService().recommend(
         catalogue,
         _profile_frame(),
         PipelineSettings(recommendation_count=24, candidate_pool_size=24,
@@ -191,7 +233,7 @@ def test_community_part_is_separate_and_flags_a_missing_score():
 
 
 def test_feedback_adjustment_is_recorded_on_the_genre_part():
-    feed = RecommendationService().recommend(
+    feed = _DiagnosticService().recommend(
         _catalogue(),
         _profile_frame(),
         PipelineSettings(recommendation_count=24, candidate_pool_size=24,
@@ -345,8 +387,9 @@ def _onnx_service(tmp_path, session):
     ))
 
 
-def _serve(service, history, count=4):
-    return service.recommend(
+def _serve(service, history, count=4, *, diagnostics=False):
+    recommend = (lambda *args, **kwargs: _diagnostic_recommend(service, *args, **kwargs)) if diagnostics else service.recommend
+    return recommend(
         service.candidate_catalog(as_of=AS_OF), _profile_frame(),
         PipelineSettings(recommendation_count=count, candidate_pool_size=8,
                          top_anime_limit=12, randomness_factor=1),
@@ -371,7 +414,7 @@ def _brute_force_rank(session, history_items, target, eligible):
 
 def test_onnx_removal_effects_match_the_model_exactly(tmp_path):
     session = _AdditiveSession(12, _weights(12))
-    feed = _serve(_onnx_service(tmp_path, session), _history([1, 2, 3, 4]))
+    feed = _serve(_onnx_service(tmp_path, session), _history([1, 2, 3, 4]), diagnostics=True)
     weights = _weights(12)
     genres = {item: ["Action", GENRE_POOL[item % 6]] for item in (1, 2, 3, 4)}
     eligible = list(range(5, 13))
@@ -433,7 +476,7 @@ def test_onnx_removal_explanation_is_deterministic_under_interactions(tmp_path):
         session = _AdditiveSession(
             12, _weights(12), interaction=(1, 2, np.full(12, 3.0))
         )
-        return _serve(_onnx_service(root, session), _history([1, 2, 3, 4]))
+        return _serve(_onnx_service(root, session), _history([1, 2, 3, 4]), diagnostics=True)
 
     first, again = serve(tmp_path / "a"), serve(tmp_path / "b")
     assert list(first["Explanation"]) == list(again["Explanation"])
@@ -454,6 +497,7 @@ def test_onnx_explanation_failure_keeps_the_feed_and_says_unavailable(tmp_path):
     feed = _serve(
         _onnx_service(tmp_path, BreaksOnShorterHistory(12, _weights(12))),
         _history([1, 2, 3, 4]),
+        diagnostics=True,
     )
     assert len(feed) == 4
     for why in feed["Explanation"]:
@@ -462,7 +506,7 @@ def test_onnx_explanation_failure_keeps_the_feed_and_says_unavailable(tmp_path):
         assert why["segments"] == []
 
 
-def test_fallback_rows_carry_the_answering_engines_explanation(tmp_path):
+def test_fallback_rows_keep_engine_ownership_without_explanations(tmp_path):
     def unavailable(_path):
         raise RuntimeError("runtime unavailable")
 
@@ -480,16 +524,15 @@ def test_fallback_rows_carry_the_answering_engines_explanation(tmp_path):
     )
 
     assert feed.attrs["ranking_engine"].fallback_used
-    for why in feed["Explanation"]:
-        assert why["method"] == "exact-additive"
-        assert _segment_sum(why) == pytest.approx(why["total"], abs=1e-12)
+    assert feed.attrs["ranking_engine"].engine_id == "heuristic"
+    assert "Explanation" not in feed.columns
 
 
 # --- persistence and the strict API contract -------------------------------
 
 
 def test_fit_and_why_survive_persistence_and_the_strict_api_model(system_temp_dir):
-    result = _orchestrator(system_temp_dir).run_full("fixture-user", SETTINGS)
+    result = _orchestrator(system_temp_dir, _DiagnosticService()).run_full("fixture-user", SETTINGS)
     store = ResultService(root_override=system_temp_dir / "results")
     store.save("fixture-user", result)
     loaded = store.load("fixture-user")
@@ -570,8 +613,7 @@ def test_more_ranks_one_population_with_the_same_signals(system_temp_dir):
         # the single full ordering of every eligible candidate.
         assert item.model_rank == order[item.anime.mal_id].model_rank
         assert item.raw_score == order[item.anime.mal_id].raw_score
-        kinds = [segment["kind"] for segment in item.explanation["segments"]]
-        assert "similar-viewers" in kinds
+        assert item.explanation is None
     # The franchise exclusion the first feed applied still holds in "more".
     assert 511 not in {item.anime.mal_id for item in combined}
     assert 511 not in order
@@ -590,7 +632,7 @@ def test_a_genre_vote_never_moves_a_same_named_source_or_type():
         {"Anime ID": 11, "Title": "Music genre title", "Genres": ["Music"],
          "Source": "manga", "Media Type": "tv", "Mean Score": 8.0},
     ])
-    service = RecommendationService()
+    service = _DiagnosticService()
     profile = service.calculate_genre_importance(completed, candidates)
     settings = PipelineSettings(recommendation_count=2, candidate_pool_size=2,
                                 top_anime_limit=2)
@@ -622,7 +664,7 @@ def test_onnx_ranks_resolve_exact_ties_like_the_engine(tmp_path):
             self.bias = np.ones(12)          # every candidate ties on score
 
     session = TiedSession()
-    feed = _serve(_onnx_service(tmp_path, session), _history([1, 2, 3, 4]))
+    feed = _serve(_onnx_service(tmp_path, session), _history([1, 2, 3, 4]), diagnostics=True)
     eligible = list(range(5, 13))
     # Equal scores and unavailable community means fall back to MAL ID.
     assert [int(v) for v in feed["Anime ID"]] == [5, 6, 7, 8]
@@ -661,7 +703,7 @@ def test_results_saved_before_personal_fit_still_load_and_serve():
 
 
 def test_unknown_rated_history_is_reported_as_unknown_not_zero():
-    feed = RecommendationService().recommend(
+    feed = _DiagnosticService().recommend(
         _catalogue(), _profile_frame(),
         PipelineSettings(recommendation_count=4, candidate_pool_size=24,
                          top_anime_limit=24, randomness_factor=1),
@@ -828,9 +870,8 @@ def test_more_refuses_when_eligibility_filters_changed(system_temp_dir, changed)
         )
 
 
-def test_web_generate_and_more_are_saved_for_the_feed_to_show(system_temp_dir):
-    """The web client reloads the saved feed when an operation finishes; the
-    API must persist each result or "Recommend 5 more" silently shows nothing."""
+def test_web_generate_saves_complete_feed_and_more_reuses_it(system_temp_dir):
+    """A legacy count cannot cap web generation; more reuses its saved ranking."""
     from types import SimpleNamespace
 
     from AniRec.api.app import _build_handler
@@ -848,7 +889,8 @@ def test_web_generate_and_more_are_saved_for_the_feed_to_show(system_temp_dir):
         orchestrator=orchestrator,
         results=ResultService(root_override=root),
         recommendation_state=RecommendationStateService(root_override=root),
-        cover_urls=CoverUrlService(root_override=root),
+            cover_urls=CoverUrlService(root_override=root),
+            anime_reference=None,
     )
 
     def run(kind, **payload):
@@ -857,13 +899,15 @@ def test_web_generate_and_more_are_saved_for_the_feed_to_show(system_temp_dir):
         )
         return handler(CancellationToken(), lambda _progress: None)
 
-    run("recommendation")
+    run("recommendation", count=12)
     saved = services.results.load(profile_id)
-    assert len(saved.recommendations) == SETTINGS.recommendation_count
+    assert len(saved.recommendations) == 24
+    assert saved.user_stats["complete_ranking"] is True
 
     run("more-recommendations", count=4)
     extended = services.results.load(profile_id)
-    assert len(extended.recommendations) == SETTINGS.recommendation_count + 4
+    assert len(extended.recommendations) == 24
+    assert extended.recommendations == saved.recommendations
     _assert_one_ranking(extended.recommendations)
 
 
@@ -1006,7 +1050,8 @@ def test_votes_are_collected_but_never_change_what_is_recommended(system_temp_di
             orchestrator=orchestrator,
             results=ResultService(root_override=root / "app-data"),
             recommendation_state=state,
-            cover_urls=CoverUrlService(root_override=root / "app-data"),
+                cover_urls=CoverUrlService(root_override=root / "app-data"),
+                anime_reference=None,
         )
         for kind, payload in (("recommendation", {}), ("more-recommendations", {"count": 4})):
             _build_handler(
@@ -1061,6 +1106,33 @@ def test_refresh_keeps_a_current_feed_untouched(system_temp_dir):
     _more(orchestrator, merged)   # still continuable
 
 
+def test_refresh_preloads_a_larger_fixed_feed_once(system_temp_dir):
+    orchestrator = _orchestrator(system_temp_dir)
+    short = _refresh(orchestrator, None, count=6)
+
+    preloaded = _refresh(orchestrator, short, count=30)
+    assert preloaded.user_stats["feed_refresh"] == "preload-changed"
+    assert preloaded.user_stats["feed_preload_target"] == 30
+    assert len(preloaded.recommendations) == len(_catalogue())
+
+    current = _refresh(orchestrator, preloaded, count=30)
+    assert current.user_stats["feed_refresh"] == "current"
+    assert current.recommendations == ()
+
+
+def test_a_short_full_run_clears_an_older_preload_marker(system_temp_dir):
+    orchestrator = _orchestrator(system_temp_dir)
+    preloaded = _refresh(orchestrator, None, count=30)
+    saved = ResultService(root_override=system_temp_dir / "app-data")
+    profile_id = orchestrator._profiles.resolve_profile("fixture-user").profile_id
+    saved.save(profile_id, preloaded)
+
+    short = orchestrator.run_full("fixture-user", SETTINGS)
+    merged = saved.save_merged(profile_id, short)
+    assert merged.user_stats["feed_preload_target"] is None
+    assert _refresh(orchestrator, merged, count=30).user_stats["feed_refresh"] == "preload-changed"
+
+
 def test_refresh_rebuilds_when_the_synced_list_changed(system_temp_dir):
     completed = {"frame": _completed()}
     orchestrator = PipelineOrchestrator(
@@ -1084,6 +1156,42 @@ def test_refresh_rebuilds_when_the_synced_list_changed(system_temp_dir):
     assert refreshed.user_stats["feed_refresh"] == "inputs-changed"
     assert refreshed.recommendations[0].ranking_id != initial.recommendations[0].ranking_id
     assert 509 not in {item.anime.mal_id for item in refreshed.recommendations}
+
+
+def test_refresh_excludes_new_completed_id_without_changing_taste_scores(system_temp_dir):
+    extra = {"mal_id": None}
+    base = _completed()
+
+    def completed_fetcher(_username, _access_token=None, *, include_nsfw=False, **_kwargs):
+        if not include_nsfw or extra["mal_id"] is None:
+            return base.copy()
+        watched = base.iloc[[0]].assign(**{
+            "Anime ID": extra["mal_id"], "Title": "Newly completed elsewhere",
+            "User Score": 1,
+        })
+        return pd.concat([base, watched], ignore_index=True)
+
+    orchestrator = PipelineOrchestrator(
+        anime_data=AnimeDataService(
+            top_fetcher=lambda **_kwargs: _catalogue(),
+            completed_fetcher=completed_fetcher,
+        ),
+        profiles=ProfileService(root_override=system_temp_dir / "app-data", clock=lambda: NOW),
+        recommendations=RecommendationService(),
+        storage=CsvStorage(),
+        access_token_provider=lambda: "fake-access-token",
+        clock=lambda: NOW,
+    )
+    initial = _refresh(orchestrator, None)
+    extra["mal_id"] = initial.recommendations[0].anime.mal_id
+    refreshed = _refresh(orchestrator, initial)
+
+    assert refreshed.user_stats["feed_refresh"] == "inputs-changed"
+    assert refreshed.user_stats["completed_count"] == initial.user_stats["completed_count"]
+    assert extra["mal_id"] not in {item.anime.mal_id for item in refreshed.recommendations}
+    initial_scores = {item.anime.mal_id: item.raw_score for item in initial.recommendations}
+    assert all(item.raw_score == initial_scores[item.anime.mal_id]
+               for item in refreshed.recommendations if item.anime.mal_id in initial_scores)
 
 
 def test_refresh_rebuilds_when_a_different_engine_would_rank(system_temp_dir):
@@ -1295,6 +1403,30 @@ def test_a_failed_history_fetch_keeps_the_feed_instead_of_rebuilding_without_his
     assert again.user_stats["feed_refresh"] == "current"
     assert again.recommendations == ()
     assert (directory / "user_history.csv").read_bytes() == saved_history
+
+
+def test_preload_upgrade_waits_for_current_history(system_temp_dir):
+    from AniRec.errors import NetworkError
+
+    history = {"fetch": _refresh_history}
+    orchestrator = PipelineOrchestrator(
+        anime_data=AnimeDataService(
+            top_fetcher=lambda **_kwargs: _catalogue(),
+            completed_fetcher=lambda *_args, **_kwargs: _completed(),
+            history_fetcher=lambda *_args, **_kwargs: history["fetch"](),
+        ),
+        profiles=ProfileService(root_override=system_temp_dir / "app-data", clock=lambda: NOW),
+        recommendations=_declining_service(requires_history=True),
+        storage=CsvStorage(),
+        access_token_provider=lambda: "fake-access-token",
+        clock=lambda: NOW,
+    )
+    initial = _refresh(orchestrator, None, count=6)
+    history["fetch"] = lambda: (_ for _ in ()).throw(NetworkError("offline"))
+
+    attempted = _refresh(orchestrator, initial, count=30)
+    assert attempted.user_stats["feed_refresh"] == "current"
+    assert attempted.recommendations == ()
 
 
 def test_the_refresh_digest_survives_a_csv_round_trip_of_missing_values(system_temp_dir):

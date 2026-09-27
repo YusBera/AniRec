@@ -26,6 +26,7 @@ from ..infrastructure.mailer import Mailer, SmtpMailer
 from ..infrastructure.mal_client import MALClient
 from ..services.account_service import AccountService
 from ..services.cover_url_service import CoverUrlService
+from ..services.offline_anime_catalogue import OfflineAnimeCatalogue
 from ..services.password_reset_service import PasswordResetService, public_url_from_environment
 from ..services import (
     AnimeDataService,
@@ -70,6 +71,7 @@ class ApiContainer:
     accounts: AccountService
     password_resets: PasswordResetService
     cover_urls: CoverUrlService
+    anime_reference: OfflineAnimeCatalogue | None
 
 
 def build_container(root_override: str | Path | None = None, *, mailer: Mailer | None = None) -> ApiContainer:
@@ -86,6 +88,7 @@ def build_container(root_override: str | Path | None = None, *, mailer: Mailer |
     )
     auth = AuthService(token_store=tokens)
     accounts = AccountService(root_override=root_override)
+    anime_reference = OfflineAnimeCatalogue.from_environment()
 
     def access_token_provider() -> str:
         # Never the machine-wide active profile: every API call passes a
@@ -95,7 +98,7 @@ def build_container(root_override: str | Path | None = None, *, mailer: Mailer |
     orchestrator = PipelineOrchestrator(
         anime_data=AnimeDataService(),
         profiles=profiles,
-        recommendations=build_recommendation_service(),
+        recommendations=build_recommendation_service(anime_reference=anime_reference),
         storage=CsvStorage(),
         access_token_provider=access_token_provider,
         client_id_provider=lambda: settings.load().client_id or "",
@@ -124,6 +127,7 @@ def build_container(root_override: str | Path | None = None, *, mailer: Mailer |
         statistics=ProfileStatisticsService(profiles),
         accounts=accounts,
         cover_urls=CoverUrlService(root_override=root_override),
+        anime_reference=anime_reference,
         password_resets=PasswordResetService(
             accounts, mailer or SmtpMailer.from_environment(), public_url_from_environment()
         ),

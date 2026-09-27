@@ -10,7 +10,6 @@ from ..models import Recommendation
 
 
 NOT_AVAILABLE = "Not available"
-NOT_RATED = "Not rated"
 NO_GENRES = "Genres not available"
 NO_STUDIOS = "Studio not available"
 NO_SYNOPSIS = "No synopsis is available."
@@ -89,6 +88,7 @@ class RecommendationViewModel:
     cover_url: str | None
     large_cover_url: str | None
     mal_url: str | None
+    pv_youtube_url: str | None = None
     personal_match_available: bool = True
     genre_contributions: tuple[tuple[str, float], ...] = ()
     # Personal fit as a checkable rank: this title's position in the ranking
@@ -172,7 +172,7 @@ class RecommendationViewModel:
             ),
             mal_score=mal_score,
             mal_score_text=(
-                f"MAL score: {mal_score:.2f} / 10" if mal_score is not None else f"MAL score: {NOT_RATED}"
+                f"MAL score: {mal_score:.2f} / 10" if mal_score is not None else "MAL score unavailable"
             ),
             genres=genres,
             genres_text=" · ".join(genres) if genres else NO_GENRES,
@@ -195,6 +195,7 @@ class RecommendationViewModel:
             cover_url=_safe_https_url(anime.cover_url),
             large_cover_url=_safe_https_url(anime.large_cover_url),
             mal_url=_safe_mal_url(anime.mal_url, anime.mal_id),
+            pv_youtube_url=_safe_https_url(anime.pv_youtube_url),
             personal_match_available=False,
             genre_contributions=contributions,
             fit_rank=fit_rank,

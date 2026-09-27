@@ -97,7 +97,7 @@ def test_missing_values_never_render_python_literals_or_nan():
     )
 
     assert model.personal_match_text == "Personal match unavailable"
-    assert "Not rated" in model.mal_score_text
+    assert model.mal_score_text == "MAL score unavailable"
     assert model.genres_text == NO_GENRES
     assert model.status == "Not available"
     assert model.synopsis == NO_SYNOPSIS

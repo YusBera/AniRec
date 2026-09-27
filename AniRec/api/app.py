@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterator
 
@@ -46,6 +47,8 @@ from ..application.pipeline import CancellationToken
 from ..models import PipelineProgress, PipelineResult, UserProfile
 from ..presentation import recommendation_view_models
 from ..services import ApiConnectionService
+from ..services.feed_query import query_feed, catalogue as feed_catalogue, fingerprint_rows
+from .models import FeedQuery
 from ..services.recommendation_event_service import (
     RecommendationEventService,
     activity_catalog_version,
@@ -69,6 +72,9 @@ from .models import (
     ActivityStatus, ActivitySetting, ActivityEvent, ActivityReceipt,
     Catalogue,
     ErrorEnvelope,
+    EvidenceArtworkRequest,
+    EvidenceArtworkResponse,
+    EvidencePoster,
     FeedbackRequest,
     FeedbackResponse,
     FeedResponse,
@@ -78,7 +84,9 @@ from .models import (
     OperationListResponse,
     OperationSnapshotResponse,
     OperationStartRequest,
+    PageMetadataRequest,
     ProfileSummary,
+    RecommendationViewModelResponse,
     SystemStateResponse,
 )
 from .operations import (
@@ -131,8 +139,7 @@ BUDGETED_KINDS = frozenset({"profile-lookup", "api-test", "list-sync"})
 # computed from an older feed replacing a newer one), so they run one at a time.
 FEED_WRITING_KINDS = ("sync", "recommendation", "more-recommendations", "refresh")
 
-# How many picks a web refresh generates, and how many the web client shows
-# per page; the next page continues the same ranking (D-018).
+# Web browsing pages a complete saved ranking.
 WEB_FEED_BATCH = 50
 
 
@@ -365,7 +372,7 @@ def create_app(
 
     @app.get("/api/discover/feed", response_model=FeedResponse)
     def discover_feed(
-        include_hidden: bool = Query(False), scope: ReaderScope = Depends(reader)
+        include_hidden: bool = Query(False), scope: ReaderScope = Depends(reader), query: str = ""
     ) -> FeedResponse:
         """The feed, its local votes, and the terms it can be filtered by.
 
@@ -378,6 +385,10 @@ def create_app(
         result = None
         if profile is not None:
             result = services.results.load(profile.profile_id)
+            if result is not None and not query and not result.user_stats.get("complete_ranking"):
+                if services.anime_reference is not None:
+                    result = services.anime_reference.enrich_result(result)
+                result = services.cover_urls.cached(result)
         if result is None or not result.recommendations:
             result = services.samples.load()
             source = "sample"
@@ -392,6 +403,30 @@ def create_app(
                 catalogue=EMPTY_CATALOGUE,
                 state=EMPTY_LOCAL_STATE,
                 user_stats={},
+            )
+
+        if source == "profile" and (query or result.user_stats.get("complete_ranking")):
+            try:
+                filters = FeedQuery.model_validate_json(query or "{}")
+            except ValueError:
+                raise HTTPException(status_code=422, detail="Invalid Discover query.")
+            state = services.recommendation_state.load(profile.profile_id)
+            hidden = set() if include_hidden or state.show_hidden else state.hidden_mal_ids
+            selected, total, page = query_feed(result.recommendations, filters, hidden)
+            page_result = replace(result, recommendations=selected)
+            if services.anime_reference is not None:
+                page_result = services.anime_reference.enrich_result(page_result)
+            page_result = services.cover_urls.cached(page_result)
+            models = recommendation_view_models(page_result.recommendations)
+            return FeedResponse(
+                source=source, ephemeral=False,
+                profile=ProfileSummary(profile_id=profile.profile_id, username=profile.username),
+                state_profile_id=profile.profile_id,
+                recommendations=tuple(view_model_to_dict(model) for model in models),
+                hidden_count=sum(r.anime.mal_id in state.hidden_mal_ids for r in result.recommendations),
+                catalogue=feed_catalogue(result.recommendations), state=local_state_to_dict(state),
+                user_stats=dict(result.user_stats), total=total, page=page, page_size=50,
+                activity_feed_id=feed_fingerprint(fingerprint_rows(result.recommendations), activity_model_version(result.user_stats)),
             )
 
         models = recommendation_view_models(result.recommendations)
@@ -437,6 +472,58 @@ def create_app(
             ),
         )
 
+    @app.post(
+        "/api/discover/page-metadata",
+        response_model=tuple[RecommendationViewModelResponse, ...],
+    )
+    def discover_page_metadata(
+        payload: PageMetadataRequest, scope: ReaderScope = Depends(reader)
+    ) -> tuple[RecommendationViewModelResponse, ...]:
+        """Fill public metadata only for saved picks visible on this page."""
+        if scope.profile is None:
+            raise HTTPException(status_code=409, detail="Connect a profile to load pick metadata.")
+        result = services.results.load(scope.profile.profile_id)
+        if result is None:
+            return ()
+        wanted = set(payload.mal_ids)
+        selected = tuple(
+            rec for rec in result.recommendations if rec.anime.mal_id in wanted
+        )
+        if not selected:
+            return ()
+        page_result = replace(result, recommendations=selected)
+        if services.anime_reference is not None:
+            page_result = services.anime_reference.enrich_result(page_result)
+        filled = services.cover_urls.fill(
+            page_result, services.settings.load().client_id
+        )
+        return tuple(
+            RecommendationViewModelResponse.model_validate(view_model_to_dict(model))
+            for model in recommendation_view_models(filled.recommendations)
+        )
+
+    @app.post("/api/discover/evidence-artwork", response_model=EvidenceArtworkResponse)
+    def discover_evidence_artwork(
+        payload: EvidenceArtworkRequest, scope: ReaderScope = Depends(reader)
+    ) -> EvidenceArtworkResponse:
+        """Look up only the strongest supporting titles of this reader's saved pick."""
+        if scope.profile is None:
+            raise HTTPException(status_code=409, detail="Connect a profile to load explanation artwork.")
+        result = services.results.load(scope.profile.profile_id)
+        recommendation = next(
+            (rec for rec in result.recommendations if rec.anime.mal_id == payload.pick_mal_id),
+            None,
+        ) if result is not None else None
+        if recommendation is None or recommendation.ranking_id != payload.ranking_id:
+            raise HTTPException(status_code=409, detail="This explanation changed. Reload the feed.")
+        posters = services.cover_urls.evidence_posters(
+            recommendation, services.settings.load().client_id,
+            profile_directory=services.profiles.directory(scope.profile.profile_id),
+        )
+        return EvidenceArtworkResponse(
+            posters=tuple(EvidencePoster(mal_id=mal_id, cover_url=url) for mal_id, url in posters)
+        )
+
     def activity_context(scope: ReaderScope):
         profile = scope.profile
         if profile is None:
@@ -462,10 +549,22 @@ def create_app(
         activity.clear(profile)
         return ActivityStatus(**activity.status(profile))
 
+    def attribution_feed(scope, mal_id):
+        result = services.results.load(scope.profile.profile_id) if scope.profile else None
+        if result is None:
+            return discover_feed(include_hidden=True, scope=scope)
+        selected = tuple(r for r in result.recommendations if r.anime.mal_id == mal_id)
+        return FeedResponse(source="profile", ephemeral=False, profile=None,
+            state_profile_id=scope.profile.profile_id,
+            recommendations=tuple(view_model_to_dict(m) for m in recommendation_view_models(selected)),
+            hidden_count=0, catalogue=EMPTY_CATALOGUE, state=EMPTY_LOCAL_STATE,
+            user_stats=dict(result.user_stats),
+            activity_feed_id=feed_fingerprint(fingerprint_rows(result.recommendations), activity_model_version(result.user_stats)))
+
     @app.post("/api/discover/activity", response_model=ActivityReceipt)
     def activity_event(payload: ActivityEvent, scope: ReaderScope = Depends(reader)):
         activity, profile = activity_context(scope)
-        feed = discover_feed(include_hidden=True, scope=scope)
+        feed = attribution_feed(scope, payload.mal_id)
         if profile != payload.profile_id or feed.state_profile_id != profile or feed.ephemeral or feed.activity_feed_id != payload.feed_id:
             return ActivityReceipt(recorded=False)
         model = next((m for m in feed.recommendations if m.mal_id == payload.mal_id), None)
@@ -507,7 +606,7 @@ def create_app(
             # (D-013). Attribution, genres and title come from the served row
             # when the vote is for the active profile's own feed.
             genres, title, attribution = tuple(payload.genres), payload.title, None
-            feed = discover_feed(include_hidden=True, scope=scope)
+            feed = attribution_feed(scope, payload.mal_id)
             served = next(
                 (m for m in feed.recommendations if m.mal_id == payload.mal_id), None
             )
@@ -716,6 +815,10 @@ def _build_handler(
         # generated feed or "more" batch was computed and then never shown.
         if isinstance(result, PipelineResult):
             merged = services.results.save_merged(profile_id, result)
+            if merged.user_stats.get("complete_ranking"):
+                return merged
+            if services.anime_reference is not None:
+                merged = services.anime_reference.enrich_result(merged)
             # The installed catalogue has no pictures: covers are looked up
             # once per title and cached (cover_url_service.py). Filled after
             # the merge, so a refresh that finds the feed current fills the
@@ -739,6 +842,8 @@ def _build_handler(
         return run_sync
 
     if kind == "recommendation":
+        count = None
+
         def run_full(token: CancellationToken, report) -> Any:
             state = services.recommendation_state.load(profile_id)
             return persisted(services.orchestrator.run_full(
@@ -747,13 +852,15 @@ def _build_handler(
                 progress_callback=report,
                 cancellation_token=token,
                 excluded_mal_ids=state.hidden_mal_ids,
+                count=count,
+                full_ranking=True,
                 **binding,
             ))
 
         return run_full
 
     if kind == "refresh":
-        count = max(1, int(payload.count or WEB_FEED_BATCH))
+        count = WEB_FEED_BATCH
 
         def run_refresh(token: CancellationToken, report) -> Any:
             return persisted(services.orchestrator.run_refresh(
@@ -761,6 +868,7 @@ def _build_handler(
                 ranking,
                 existing=services.results.load(profile_id),
                 count=count,
+                full_ranking=True,
                 progress_callback=report,
                 cancellation_token=token,
                 **binding,
@@ -776,6 +884,8 @@ def _build_handler(
             if existing is None or not existing.recommendations:
                 raise ValueError("There is no generated feed to extend.")
             state = services.recommendation_state.load(profile_id)
+            if existing.user_stats.get("complete_ranking"):
+                return existing  # Every pick is already saved; paging never ranks again.
             return persisted(services.orchestrator.run_more(
                 username,
                 ranking,

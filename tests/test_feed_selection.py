@@ -29,7 +29,7 @@ from scoring.engines import (
     HeuristicRankingEngine,
     OnnxSequenceRankingEngine,
 )
-from scoring.selection import select_feed
+from scoring.selection import select_feed, select_feed_pages
 
 
 AS_OF = date(2026, 9, 20)
@@ -198,7 +198,7 @@ def _heuristic_candidates():
     return pd.DataFrame(rows)
 
 
-def _heuristic_feed(candidates, *, count=10, adventurousness=5, seed=None):
+def _heuristic_feed(candidates, *, count=10, adventurousness=5, seed=None, page_size=None):
     return RecommendationService().recommend(
         candidates,
         PROFILE,
@@ -209,6 +209,7 @@ def _heuristic_feed(candidates, *, count=10, adventurousness=5, seed=None):
             randomness_factor=adventurousness,
             seed=seed,
         ),
+        selection_page_size=page_size,
     )
 
 
@@ -251,6 +252,26 @@ def test_candidate_input_order_does_not_change_the_feed(tmp_path):
         tmp_path / "b", catalog, logits, count=4, adventurousness=10, reverse=True
     )
     assert _ids(forward) == _ids(backward)
+
+
+def test_preloaded_feed_keeps_one_rank_order_across_pages():
+    candidates = _heuristic_candidates()
+    first = _heuristic_feed(candidates, count=5, adventurousness=10)
+    preloaded = _heuristic_feed(candidates, count=10, adventurousness=10, page_size=5)
+
+    assert _ids(preloaded)[:5] == _ids(first)
+    assert len(_ids(preloaded)) == len(set(_ids(preloaded))) == 10
+    assert preloaded["Model Rank"].tolist() == sorted(preloaded["Model Rank"].tolist())
+
+
+def test_ten_preloaded_pages_keep_the_existing_first_fifty():
+    rows = [{"Genres": ["Action" if i % 3 else "Romance"]} for i in range(680)]
+    first = select_feed(rows, 50, 10)
+    all_pages = select_feed_pages(rows, 500, 10, 50)
+
+    assert all_pages[:50] == first
+    assert len(all_pages) == len(set(all_pages)) == 500
+    assert list(all_pages) == sorted(all_pages)
 
 
 _CROSS_PROCESS_SCRIPT = r"""

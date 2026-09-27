@@ -35,15 +35,13 @@ try:
     )
     from ..scoring.explanation import (
         EXPLANATION_COLUMN,
-        METHOD_EXACT_ADDITIVE,
         SCORE_PARTS_COLUMN,
-        explain_additive,
-        unavailable_explanation,
     )
-    from ..scoring.selection import select_feed
+    from ..scoring.selection import select_feed, select_feed_pages, select_complete_feed
     from ..scoring.serialization import profile_to_frame
     from ..scoring.taste import build_taste_profile
     from ..title_utils import normalize_title_key
+    from .offline_anime_catalogue import OfflineAnimeCatalogue
 except ImportError:  # Compatibility with the S01 top-level test import path.
     from candidate_generation import filter_recommendation_candidates
     from genre_importance import calculate_genre_importance
@@ -71,15 +69,13 @@ except ImportError:  # Compatibility with the S01 top-level test import path.
     )
     from scoring.explanation import (
         EXPLANATION_COLUMN,
-        METHOD_EXACT_ADDITIVE,
         SCORE_PARTS_COLUMN,
-        explain_additive,
-        unavailable_explanation,
     )
-    from scoring.selection import select_feed
+    from scoring.selection import select_feed, select_feed_pages, select_complete_feed
     from scoring.serialization import profile_to_frame
     from scoring.taste import build_taste_profile
     from title_utils import normalize_title_key
+    from services.offline_anime_catalogue import OfflineAnimeCatalogue
 
 
 class RecommendationService:
@@ -89,12 +85,14 @@ class RecommendationService:
         random_int: Callable[[int, int], int] | None = None,
         ranker: RankingEngine | None = None,
         eligibility_policy: FinalEligibilityPolicy | None = None,
+        anime_reference: OfflineAnimeCatalogue | None = None,
     ) -> None:
         # ``random_int`` is accepted for older callers only. Feed selection is
         # deterministic and never draws from a random source.
         del random_int
         self._ranker = ranker if ranker is not None else HeuristicRankingEngine()
         self._eligibility_policy = eligibility_policy or FinalEligibilityPolicy()
+        self._anime_reference = anime_reference
         self._last_ranking_metadata: RankingEngineMetadata | None = None
         self._last_eligibility_audit: EligibilityAudit | None = None
 
@@ -189,6 +187,8 @@ class RecommendationService:
         rows = provider(include_nsfw=include_nsfw, as_of=as_of)
         if rows is None:
             return None
+        if self._anime_reference is not None:
+            rows = self._anime_reference.enrich_candidates(list(rows))
         return pd.DataFrame.from_records(rows)
 
     def recommend(
@@ -204,11 +204,14 @@ class RecommendationService:
         user_history: pd.DataFrame | None = None,
         fallback_candidates: pd.DataFrame | None = None,
         consumed_mal_ids: set[int] | frozenset[int] = frozenset(),
+        known_mal_ids: set[int] | frozenset[int] = frozenset(),
         include_nsfw: bool = False,
         as_of: date | None = None,
         rated_history: pd.DataFrame | None = None,
         already_shown_mal_ids: set[int] | frozenset[int] = frozenset(),
         already_shown_titles: set[str] | frozenset[str] = frozenset(),
+        selection_page_size: int | None = None,
+        full_ranking: bool = False,
     ) -> pd.DataFrame:
         """Rank, select and explain a feed.
 
@@ -232,6 +235,7 @@ class RecommendationService:
             context=context,
             user_history=history_records,
             consumed_mal_ids=consumed_mal_ids,
+            known_mal_ids=known_mal_ids,
             excluded_mal_ids=excluded_mal_ids,
             excluded_titles=excluded_titles,
             include_nsfw=include_nsfw,
@@ -245,6 +249,7 @@ class RecommendationService:
                 context=context,
                 user_history=history_records,
                 consumed_mal_ids=consumed_mal_ids,
+                known_mal_ids=known_mal_ids,
                 excluded_mal_ids=excluded_mal_ids,
                 excluded_titles=excluded_titles,
                 include_nsfw=include_nsfw,
@@ -252,6 +257,7 @@ class RecommendationService:
             )
         request_context: dict[str, object] = {
             "eligibility": candidate_audit.as_dict(),
+            "full_ranking": full_ranking,
         }
         if fallback_records is not None:
             request_context.update(
@@ -300,24 +306,39 @@ class RecommendationService:
         ]
         # Engines return their ordered, final-eligible pool. The feed is chosen
         # here, once, by the one shared policy, whichever engine answered.
-        positions = select_feed(
-            selectable,
-            settings.recommendation_count,
-            settings.randomness_factor,
+        positions = (
+            select_complete_feed(selectable, settings.randomness_factor)
+            if full_ranking else
+            select_feed_pages(
+                selectable, settings.recommendation_count,
+                settings.randomness_factor, selection_page_size,
+            )
+            if selection_page_size is not None
+            else select_feed(
+                selectable, settings.recommendation_count,
+                settings.randomness_factor,
+            )
         )
         selected_rows = [dict(selectable[position]) for position in positions]
-        self._explain(
-            selected_rows,
-            result.metadata,
-            request,
-            rated_history=rated_history,
-            taste_adjustments=genre_adjustments,
-        )
+        # Discover serves ranks, without explanation work or removal inferences.
+        # Drop internal score parts and any legacy explanation carried by a row.
+        for row in selected_rows:
+            row.pop(SCORE_PARTS_COLUMN, None)
+            row.pop(EXPLANATION_COLUMN, None)
+        if self._anime_reference is not None:
+            if full_ranking:
+                selected_rows[:50] = self._anime_reference.enrich_selected(selected_rows[:50])
+            else:
+                selected_rows = self._anime_reference.enrich_selected(selected_rows)
         columns = [
-            column for column in result.columns if column != SCORE_PARTS_COLUMN
+            column for column in result.columns
+            if column not in (SCORE_PARTS_COLUMN, EXPLANATION_COLUMN)
         ]
         if columns:
-            columns.append(EXPLANATION_COLUMN)
+            if self._anime_reference is not None:
+                columns = list(dict.fromkeys((
+                    *columns, "Picture URL", "Large Picture URL", "Synopsis", "PV YouTube URL"
+                )))
         self._last_ranking_metadata = result.metadata
         eligibility_audit = (
             fallback_audit
@@ -329,10 +350,21 @@ class RecommendationService:
             selected_rows,
             columns=columns or None,
         )
+        ranked.attrs["complete_ranking"] = full_ranking
         ranked.attrs["ranking_engine"] = result.metadata
         ranked.attrs["ranking_warnings"] = result.warnings
         ranked.attrs["eligibility_audit"] = eligibility_audit
         return ranked
+
+    def complete_ranking_identity(self):
+        provider = getattr(self._ranker, "eligibility_context", None)
+        context = provider() if callable(provider) else EligibilityContext()
+        reference = None
+        if self._anime_reference is not None:
+            stat = self._anime_reference.path.stat()
+            reference = (stat.st_size, stat.st_mtime_ns)
+        return {"catalogue": context.catalog_version, "reference": reference,
+                "selection": "complete-carry-v1"}
 
     @staticmethod
     def _already_shown(row, shown_ids, shown_titles) -> bool:
@@ -344,41 +376,6 @@ class RecommendationService:
             return True
         return bool(shown_titles) and normalize_title_key(row.get("Title")) in shown_titles
 
-    def _explain(self, rows, metadata, request, *, rated_history, taste_adjustments):
-        """Attach the answering engine's own explanation to each served row.
-
-        Heuristic rows (including a fallback) are explained from their recorded
-        score parts. Sequence-model rows are explained by the model engine
-        itself; nothing is borrowed from another engine.
-        """
-        explain = getattr(self._ranker, "explain", None)
-        if metadata.explanation_type == METHOD_EXACT_ADDITIVE:
-            explanations = explain_additive(
-                rows,
-                rated_history=(
-                    rated_history.to_dict("records")
-                    if rated_history is not None
-                    else None
-                ),
-                taste_adjustments=taste_adjustments,
-            )
-        elif (
-            metadata.explanation_type == SEQUENCE_EXPLANATION_TYPE
-            and not metadata.fallback_used
-            and callable(explain)
-        ):
-            explanations = explain(request, rows)
-        else:
-            explanations = [
-                unavailable_explanation("engine-cannot-explain") for _row in rows
-            ]
-        for row, explanation in zip(rows, explanations):
-            row.pop(SCORE_PARTS_COLUMN, None)
-            row[EXPLANATION_COLUMN] = explanation
-
-
-# ``explanation_type`` the sequence engine reports in its ranking metadata.
-SEQUENCE_EXPLANATION_TYPE = "sequence-score"
 
 MODEL_BUNDLE_ENV = "ANIREC_MODEL_BUNDLE"
 
@@ -387,13 +384,16 @@ def build_recommendation_service(
     *,
     model_bundle: str | None = None,
     random_int: Callable[[int, int], int] | None = None,
+    anime_reference: OfflineAnimeCatalogue | None = None,
 ) -> RecommendationService:
     """Use the verified ONNX model when configured, with honest fallback."""
     bundle = model_bundle or os.environ.get(MODEL_BUNDLE_ENV)
+    reference = anime_reference if anime_reference is not None else OfflineAnimeCatalogue.from_environment()
     if not bundle:
-        return RecommendationService(random_int=random_int)
+        return RecommendationService(random_int=random_int, anime_reference=reference)
     return RecommendationService(
         random_int=random_int,
+        anime_reference=reference,
         ranker=FallbackRankingEngine(
             OnnxSequenceRankingEngine(bundle),
             HeuristicRankingEngine(),

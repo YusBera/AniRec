@@ -5,6 +5,7 @@ verified bundle. The current serving contract is bundle version 3.
 
 ```powershell
 $env:ANIREC_MODEL_BUNDLE = 'C:\Users\yusuf\AniRecTrainerWork\exports\sasrec-typed-d256-seed0-split28eb91cde4-v3'
+$env:ANIREC_ANIME_REFERENCE_DB = '<path to anime-only offline reference SQLite>' # optional local integration
 .\.venv\Scripts\python.exe -B -m AniRec.api --port 8770
 ```
 
@@ -47,14 +48,21 @@ is explicitly recorded as `mal-ranking-legacy`; it is not presented as owned
 data. An installed catalogue that is valid but contains zero eligible rows fails
 closed and never switches sources silently.
 
+When the optional anime reference is configured, it must be the anime-only
+`offline-staging-1` schema; a missing or incompatible file fails startup rather
+than silently changing metadata sources. Its observed score and scorer count
+enter the candidate catalogue before ranking, so a minimum MAL-score setting
+can use known scores. A confirmed absent score remains unavailable. The
+reference adds poster URLs, synopsis and PV only for served picks; saved
+score inputs and counterfactual evidence are not rewritten on feed reads.
+New analysis is required to use refreshed score/count data for ranking.
+
 Raw model logits are retained for diagnostics and are never displayed as match
 percentages. Personal fit is the pick's rank among the eligible candidates.
-Each served row is explained by counterfactual removal: the model is rerun,
-batch size one, without each genre group of the reader's input history and
-without each single input title, and the pick's score drop and rank are
-measured among the same candidates. This covers only the most recent titles
-the model reads (`history_window`). A failure yields an "unavailable"
-explanation, never a lost feed. Recommendation activity remains opt-in and local-only; new results
+Discover does not generate explanations (D-023). Successful sequence ranking
+uses its scoring inference without additional history-removal inferences.
+The removal builder remains available for explicit diagnostics and legacy
+saved explanations still load. Recommendation activity remains opt-in and local-only; new results
 store the actual ranking engine ID and version with each event.
 
 The current verified bundle is `sasrec-typed-d256-seed0-split28eb91cde4-v3`
