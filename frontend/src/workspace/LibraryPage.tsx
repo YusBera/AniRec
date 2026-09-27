@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, AniRecApiError } from "../api/client";
 import type { Feed, RecommendationViewModel } from "../api/types";
 import { FeedView, ViewToggle, type ViewMode } from "../discover/FeedViews";
+import { preferredTitle, useTitleLanguage } from "../discover/titlePreference";
 import type { Decision } from "../discover/RecommendationCard";
 import { EmptyPanel } from "../discover/states";
 import { PageHeading, PAGE_SIZE, PageControls } from "./common";
@@ -36,6 +37,7 @@ export function LibraryPage({ feed, pending, disabledReason, notice = "", error 
   onDetails: (model: RecommendationViewModel, list: RecommendationViewModel[]) => void;
   onExternal?: (model: RecommendationViewModel) => void;
 }) {
+  const titleLanguage = useTitleLanguage();
   const [collection, setCollection] = useState<Collection>("watch_later");
   const [view, setView] = useState<ViewMode>("cards");
   const [query, setQuery] = useState("");
@@ -70,7 +72,7 @@ export function LibraryPage({ feed, pending, disabledReason, notice = "", error 
   const recommendations = feed?.recommendations ?? [];
   const available = [...recommendations, ...extra.filter(m => !recommendations.some(current => current.mal_id === m.mal_id))];
   const models = available.filter(m => m.mal_id !== null && ids.includes(m.mal_id));
-  const shown = models.filter(m => m.display_title.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  const shown = models.filter(m => preferredTitle(m, titleLanguage).toLocaleLowerCase().includes(query.toLocaleLowerCase()));
   const missing = ids.filter(id => !models.some(m => m.mal_id === id));
   const currentPage = Math.min(page, Math.max(0, Math.ceil(shown.length / PAGE_SIZE) - 1));
   const pageItems = shown.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);

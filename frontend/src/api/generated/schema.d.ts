@@ -246,6 +246,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/discover/evidence-artwork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discover Evidence Artwork
+         * @description Look up only the strongest supporting titles of this reader's saved pick.
+         */
+        post: operations["discover_evidence_artwork_api_discover_evidence_artwork_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/discover/feed": {
         parameters: {
             query?: never;
@@ -284,6 +304,26 @@ export interface paths {
          * @description One vote. Mirrors what the card's three controls write.
          */
         post: operations["discover_feedback_api_discover_feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discover/page-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discover Page Metadata
+         * @description Fill public metadata only for saved picks visible on this page.
+         */
+        post: operations["discover_page_metadata_api_discover_page_metadata_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -859,6 +899,25 @@ export interface components {
         ErrorEnvelope: {
             error: components["schemas"]["ApiError"];
         };
+        /** EvidenceArtworkRequest */
+        EvidenceArtworkRequest: {
+            /** Pick Mal Id */
+            pick_mal_id: number;
+            /** Ranking Id */
+            ranking_id: string | null;
+        };
+        /** EvidenceArtworkResponse */
+        EvidenceArtworkResponse: {
+            /** Posters */
+            posters: components["schemas"]["EvidencePoster"][];
+        };
+        /** EvidencePoster */
+        EvidencePoster: {
+            /** Cover Url */
+            cover_url: string | null;
+            /** Mal Id */
+            mal_id: number;
+        };
         /**
          * Explanation
          * @description Why the ranking engine placed a title where it did.
@@ -982,6 +1041,10 @@ export interface components {
             ephemeral: boolean;
             /** Hidden Count */
             hidden_count: number;
+            /** Page */
+            page?: number | null;
+            /** Page Size */
+            page_size?: number | null;
             profile: components["schemas"]["ProfileSummary"] | null;
             /** Recommendations */
             recommendations: components["schemas"]["RecommendationViewModelResponse"][];
@@ -993,6 +1056,8 @@ export interface components {
             state: components["schemas"]["LocalState"];
             /** State Profile Id */
             state_profile_id: string | null;
+            /** Total */
+            total?: number | null;
             /** User Stats */
             user_stats: {
                 [key: string]: unknown;
@@ -1401,6 +1466,11 @@ export interface components {
             /** Username */
             username?: string | null;
         };
+        /** PageMetadataRequest */
+        PageMetadataRequest: {
+            /** Mal Ids */
+            mal_ids: number[];
+        };
         /** PasswordChange */
         PasswordChange: {
             /** Current Password */
@@ -1585,6 +1655,8 @@ export interface components {
             personal_match_available: boolean;
             /** Personal Match Text */
             personal_match_text: string;
+            /** Pv Youtube Url */
+            pv_youtube_url?: string | null;
             /** Rank */
             rank: number | null;
             /** Ranking Id */
@@ -1690,6 +1762,8 @@ export interface components {
             personal_match_available: boolean;
             /** Personal Match Text */
             personal_match_text: string;
+            /** Pv Youtube Url */
+            pv_youtube_url?: string | null;
             /** Rank */
             rank: number | null;
             /**
@@ -2420,10 +2494,44 @@ export interface operations {
             };
         };
     };
+    discover_evidence_artwork_api_discover_evidence_artwork_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvidenceArtworkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceArtworkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     discover_feed_api_discover_feed_get: {
         parameters: {
             query?: {
                 include_hidden?: boolean;
+                query?: string;
             };
             header?: never;
             path?: never;
@@ -2471,6 +2579,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedbackResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discover_page_metadata_api_discover_page_metadata_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PageMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecommendationViewModelResponse"][];
                 };
             };
             /** @description Validation Error */

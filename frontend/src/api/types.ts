@@ -34,6 +34,7 @@ export type RecommendationViewModel = Schemas["RecommendationViewModelResponse"]
 export type Explanation = Schemas["Explanation"];
 export type ExplanationSegment = Schemas["ExplanationSegment"];
 export type ExplanationEvidence = Schemas["ExplanationEvidence"];
+export type EvidenceArtwork = Schemas["EvidenceArtworkResponse"];
 export type Catalogue = Schemas["Catalogue"];
 export type LocalState = Schemas["LocalState"];
 export type ProfileSummary = Schemas["ProfileSummary"];

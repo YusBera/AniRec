@@ -14,6 +14,7 @@ import type { Feed } from "../api/types";
 import { DiscoverPage, applyVote, feedCount } from "./DiscoverPage";
 import { Workspace } from "../workspace/Workspace";
 import { LibraryPage } from "../workspace/LibraryPage";
+import { setTitleLanguage } from "./titlePreference";
 
 const CARD = {
   secondary_title: null,
@@ -126,6 +127,8 @@ function stubFetch(feed: Feed = FEED) {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "#/discover");
+  act(() => setTitleLanguage("english"));
   // jsdom has no native dialog lifecycle. The real focus trap and Escape are
   // verified in Chromium; this models asynchronous close events, including
   // the StrictMode cleanup/reopen sequence that previously dismissed it.
@@ -189,18 +192,28 @@ describe("DiscoverPage", () => {
   it("renders a skeleton before the feed arrives, then the cards", async () => {
     stubFetch();
     const { container } = render(<DiscoverPage />);
-    expect(container.querySelectorAll(".skeleton").length).toBeGreaterThan(0);
+    expect(container.querySelector(".discover")!.querySelectorAll(".skeleton")).toHaveLength(12);
     expect(await screen.findByText("Death Note")).toBeInTheDocument();
     expect(screen.getByText("Steins;Gate")).toBeInTheDocument();
     expect(container.querySelectorAll(".skeleton")).toHaveLength(0);
   });
 
+  it("replaces sample titles with twelve placeholders while the initial list is being read", async () => {
+    stubFetch();
+    const { container, rerender } = render(<DiscoverPage initialImporting />);
+    await waitFor(() => expect(screen.getByText("Reading your MyAnimeList list…")).toBeInTheDocument());
+    expect(container.querySelector(".discover")!.querySelectorAll(".skeleton")).toHaveLength(12);
+    expect(screen.queryByRole("button", { name: "Inspect Death Note" })).not.toBeInTheDocument();
+    rerender(<DiscoverPage initialImporting={false} />);
+    expect(await screen.findByText("Death Note")).toBeInTheDocument();
+  });
+
   it("states the feed in plain words, without a second sample note under the shell's banner", async () => {
     stubFetch();
     render(<DiscoverPage />);
-    expect(await screen.findByText("2 recommendations")).toBeInTheDocument();
+    expect(await screen.findByText(/Anime picked for you.*2 recommendations/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Discover" })).toBeInTheDocument();
-    expect(screen.getByText("Anime picked for you.")).toBeInTheDocument();
+    expect(screen.getByText(/Anime picked for you/)).toBeInTheDocument();
     expect(screen.queryByText(/Decisions reset on reload/)).not.toBeInTheDocument();
     expect(screen.queryByText(/IN FEED|SET ASIDE|STATE|READY/)).not.toBeInTheDocument();
   });
@@ -278,7 +291,7 @@ describe("DiscoverPage", () => {
     const card = await screen.findByRole("article", { name: "Death Note" });
     await user.click(within(card).getByRole("button", { name: "Not interested" }));
     expect(screen.queryByRole("article", { name: "Death Note" })).not.toBeInTheDocument();
-    expect(screen.getByText("1 recommendation")).toBeInTheDocument();
+    expect(screen.getByText(/1 recommendation/)).toBeInTheDocument();
     expect(screen.getByText(/Death Note marked Not interested in this preview/)).toBeInTheDocument();
     await user.click(screen.getByRole("checkbox", { name: "Show not interested" }));
     const restored = await screen.findByRole("article", { name: "Death Note" });
@@ -297,18 +310,42 @@ describe("DiscoverPage", () => {
     expect(dialog).toHaveAttribute("open");
     expect(within(dialog).getByText(/SCORE INSPECTOR/)).toBeInTheDocument();
     expect(within(dialog).getByText("Ranked #4 of 13,458 for you")).toBeInTheDocument();
-    expect(within(dialog).getByText("+2.4")).toBeInTheDocument();
-    expect(within(dialog).getByText("Community rating")).toBeInTheDocument();
+    expect(within(dialog).queryByText("+2.4")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Community rating")).not.toBeInTheDocument();
     expect(dialog.querySelector(".inspector-position")).toHaveTextContent("02 / 02");
     await user.click(within(dialog).getByRole("button", { name: "Inspect next recommendation" }));
     expect(within(dialog).getByRole("heading", { level: 2, name: "Steins;Gate" })).toBeInTheDocument();
     expect(dialog.querySelector(".inspector-position")).toHaveTextContent("01 / 02");
-    expect(within(dialog).getByText("This pick can't be explained")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "READ SYNOPSIS +" }));
-    expect(within(dialog).getByRole("button", { name: "HIDE SYNOPSIS −" })).toHaveAttribute("aria-expanded", "true");
+    expect(within(dialog).queryByText("This pick can't be explained")).not.toBeInTheDocument();
+    expect(within(dialog).getByText("No synopsis available.")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Close score inspector" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(within(screen.getByRole("article", { name: "Steins;Gate" })).getByRole("button", { name: "Steins;Gate" })).toHaveFocus());
+  });
+
+  it("closes the inspector from the backdrop but keeps clicks inside it", async () => {
+    stubFetch();
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: "Death Note" }));
+    const dialog = await screen.findByRole("dialog", { name: "Death Note" });
+    vi.spyOn(dialog, "getBoundingClientRect").mockReturnValue({
+      left: 100, top: 100, right: 500, bottom: 500, width: 400, height: 400, x: 100, y: 100,
+      toJSON: () => ({}),
+    });
+    fireEvent.click(dialog, { clientX: 150, clientY: 150 });
+    expect(dialog).toHaveAttribute("open");
+    fireEvent.click(dialog, { clientX: 50, clientY: 50 });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("states a missing community score as unavailable instead of asserting the title is unrated", async () => {
+    stubFetch({ ...FEED, recommendations: [{ ...FEED.recommendations[0]!, mal_score: null }] });
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    expect(await screen.findByText("MAL unavailable")).toHaveAttribute("title", "MAL score unavailable");
+    await user.click(screen.getByRole("button", { name: "Death Note" }));
+    expect(within(screen.getByRole("dialog", { name: "Death Note" })).getByText("Unavailable")).toBeInTheDocument();
   });
 
   it("keeps a readable placeholder when the artwork request fails", async () => {
@@ -374,47 +411,6 @@ describe("DiscoverPage", () => {
     expect(screen.getByRole("region", { name: "Recommendations" })).toHaveFocus();
   });
 
-  it("rebuilds the feed by itself when continuing refuses a stale ranking", async () => {
-    class FakeEventSource {
-      static instances: FakeEventSource[] = [];
-      listeners = new Map<string, Array<(event: Event) => void>>();
-      constructor(readonly url: string) { FakeEventSource.instances.push(this); }
-      addEventListener(type: string, listener: (event: Event) => void) {
-        this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
-      }
-      close() {}
-      emit(type: string, data: unknown) {
-        for (const listener of this.listeners.get(type) ?? []) listener(new MessageEvent(type, { data: JSON.stringify(data) }));
-      }
-    }
-    vi.stubGlobal("EventSource", FakeEventSource);
-    const profileFeed = { ...FEED, ephemeral: false, state_profile_id: "test-profile" };
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(profileFeed), { headers: { "Content-Type": "application/json" } });
-      if (url.endsWith("/api/discover/activity")) return new Response(JSON.stringify({ enabled: false }), { headers: { "Content-Type": "application/json" } });
-      if (url.includes("/api/operations/")) return new Response(JSON.stringify({ id: url.endsWith("/refresh") ? "refresh-1" : "more-1" }), { headers: { "Content-Type": "application/json" } });
-      return new Response("{}", { headers: { "Content-Type": "application/json" } });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const user = userEvent.setup();
-    render(<DiscoverPage />);
-    await user.click(await screen.findByRole("button", { name: "Next page, load the next 50 recommendations" }));
-    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    const operations = () => fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes("/api/operations/") && !url.includes("/events"));
-    expect(operations().at(-1)).toMatch(/\/api\/operations\/more-recommendations$/);
-    act(() => FakeEventSource.instances[0]!.emit("error", {
-      code: "stale_ranking",
-      title: "Feed is out of date",
-      description: "Ranking inputs changed. Generate a new feed to continue.",
-      solution: "Generate a new feed.",
-      retryable: false,
-    }));
-    await waitFor(() => expect(operations().at(-1)).toMatch(/\/api\/operations\/refresh$/));
-    expect(screen.queryByRole("button", { name: "Generate a new feed" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("article")).toHaveLength(2);
-  });
-
   it("disables generation when there is no profile to generate for", async () => {
     stubFetch();
     render(<DiscoverPage />);
@@ -473,7 +469,7 @@ it("loads saved metadata outside the feed and retains honest missing-score state
   const details = vi.fn();
   render(<LibraryPage feed={feed} pending={false} onVote={vi.fn()} onDetails={details} />);
   expect(await screen.findByRole("heading", { name: "Monster" })).toBeInTheDocument();
-  expect(screen.getByText("Personal match unavailable")).toBeInTheDocument();
+  expect(screen.getByText("Personal unavailable")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Inspect Monster" }));
   expect(details).toHaveBeenCalledWith(model, [model]);
 });
@@ -507,8 +503,8 @@ it("paginates unresolved saved IDs instead of mounting the whole missing list", 
   expect(screen.getByText(/MAL #30059/)).toBeInTheDocument();
 });
 
-describe("the PySide card and header", () => {
-  it("builds the card in recommendation_card.py order, with nothing over the poster and two verdicts", async () => {
+describe("the Discover card and header", () => {
+  it("groups sourced rank and MAL score ahead of the title, with labelled decisions", async () => {
     stubFetch({ ...FEED, recommendations: [{ ...FEED.recommendations[0]!, reason: "Matches your interests in Psychological.", mal_url: "https://myanimelist.net/anime/1535" }] });
     render(<DiscoverPage />);
     const card = await screen.findByRole("article", { name: "Death Note" });
@@ -516,14 +512,18 @@ describe("the PySide card and header", () => {
     expect(art.children).toHaveLength(1);
     expect(art.textContent).not.toMatch(/#\d|Ranked|%/);
     const order = [...card.children].map((node) => node.className.split(" ")[0]);
-    expect(order).toEqual(["card-art", "card-fit", "card-title", "card-secondary", "card-verdicts", "card-tags", "card-meta", "card-mal", "card-reason", "card-utilities"]);
-    expect(within(card).getByText("Ranked #4 of 13,458 for you")).toBeInTheDocument();
-    expect(within(card).getByText("Matches your interests in Psychological.")).toBeInTheDocument();
+    expect(order).toEqual(["card-art", "card-stats", "card-title", "card-meta", "card-verdicts", "card-tags", "card-utilities"]);
+    expect(within(card).getByText("PERSONAL #4")).toHaveAttribute("title", "Ranked #4 of 13,458 for you");
+    expect(within(card).getByText("MAL 8.62")).toBeInTheDocument();
+    expect(within(card).getByText("2006 · TV · 37 eps")).toBeInTheDocument();
+    expect(within(card).getByText("Finished")).toBeInTheDocument();
+    expect(within(card).queryByText("Matches your interests in Psychological.")).not.toBeInTheDocument();
     const verdicts = within(within(card).getByRole("group", { name: "Decisions for Death Note" })).getAllByRole("button");
     expect(verdicts.map((button) => button.getAttribute("aria-label"))).toEqual(["Save for later", "Not interested"]);
+    expect(verdicts.map((button) => button.textContent)).toEqual(["Later", "Hide"]);
     expect(verdicts[1]).toHaveAttribute("title", "Stop recommending this anime. It stays in Not interested.");
     expect(within(card).queryByRole("button", { name: /like/i })).not.toBeInTheDocument();
-    expect(within(card).getByRole("button", { name: "Open the full breakdown for Death Note" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Open details for Death Note" })).toBeInTheDocument();
     expect(within(card).getByRole("link", { name: "Open Death Note on MyAnimeList (external)" })).toBeInTheDocument();
   });
 
@@ -531,8 +531,179 @@ describe("the PySide card and header", () => {
     stubFetch({ ...FEED, recommendations: [{ ...FEED.recommendations[1]!, fit_rank: null, fit_pool_size: null, reason: "" }] });
     render(<DiscoverPage />);
     const card = await screen.findByRole("article", { name: "Steins;Gate" });
-    expect(card.querySelector(".card-reason")).toBeEmptyDOMElement();
-    expect(within(card).getByText("Personal match unavailable")).toBeInTheDocument();
+    expect(card.querySelector(".card-reason")).toBeNull();
+    expect(within(card).getByText("Personal unavailable")).toBeInTheDocument();
+  });
+
+  it("shows sourced database links, clickable chips, and the inspector synopsis before reasoning", async () => {
+    const model = { ...FEED.recommendations[0]!, synopsis: "A detective pursues a mysterious notebook.",
+      mal_url: "https://myanimelist.net/anime/1535", anidb_url: "https://anidb.net/anime/4563",
+      anilist_url: "https://anilist.co/anime/1535" };
+    stubFetch({ ...FEED, recommendations: [model] });
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    const card = await screen.findByRole("article", { name: "Death Note" });
+    expect(within(card).getAllByRole("link", { name: /external/ })).toHaveLength(3);
+    expect(within(card).getByRole("link", { name: "Explore studio Madhouse" })).toHaveAttribute("href", "#/discover?studio=Madhouse");
+    await user.click(within(card).getByRole("button", { name: "Open details for Death Note" }));
+    const inspector = screen.getByRole("dialog", { name: "Death Note" });
+    const synopsis = within(inspector).getByText("A detective pursues a mysterious notebook.");
+    expect(synopsis.compareDocumentPosition(within(inspector).getByText("PERSONAL FIT")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(inspector.querySelector(".inspector-media .external-links-row a")).toBeInTheDocument();
+    expect(within(inspector).queryByRole("button", { name: /Play PV/ })).not.toBeInTheDocument();
+  });
+
+  it("loads PV only when opened and removes its iframe on close", async () => {
+    const model = { ...FEED.recommendations[0]!, pv_youtube_url: "https://www.youtube.com/watch?v=abcdefghijk" };
+    stubFetch({ ...FEED, recommendations: [model] });
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: "Inspect Death Note" }));
+    const inspector = screen.getByRole("dialog", { name: "Death Note" });
+    expect(inspector.querySelector("iframe")).toBeNull();
+    const preview = within(inspector).getByRole("button", { name: /Play PV/ });
+    expect(preview.querySelector("img")).toHaveAttribute("src", "https://i.ytimg.com/vi/abcdefghijk/mqdefault.jpg");
+    preview.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByTitle("PV for Death Note")).toHaveAttribute("src", "https://www.youtube-nocookie.com/embed/abcdefghijk?autoplay=1");
+    await user.click(screen.getByRole("button", { name: "Close PV" }));
+    await waitFor(() => expect(inspector.querySelector("iframe")).toBeNull());
+    expect(inspector).toHaveAttribute("open");
+  });
+
+  it("keeps PV playback available if its thumbnail fails and resets for the next title", async () => {
+    stubFetch({ ...FEED, recommendations: [
+      { ...FEED.recommendations[0]!, pv_youtube_url: "https://youtu.be/abcdefghijk" },
+      { ...FEED.recommendations[1]!, pv_youtube_url: "https://youtu.be/lmnopqrstuv" },
+    ] });
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: "Inspect Death Note" }));
+    const inspector = screen.getByRole("dialog", { name: "Death Note" });
+    const preview = within(inspector).getByRole("button", { name: /Play PV/ });
+    fireEvent.error(preview.querySelector("img")!);
+    expect(preview).toHaveTextContent("PV preview unavailable");
+    expect(preview.querySelector("img")).toBeNull();
+    await user.click(preview);
+    expect(screen.getByTitle("PV for Death Note")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close PV" }));
+    await user.click(within(inspector).getByRole("button", { name: "Inspect next recommendation" }));
+    expect(within(inspector).getByRole("button", { name: /Play PV/ }).querySelector("img"))
+      .toHaveAttribute("src", "https://i.ytimg.com/vi/lmnopqrstuv/mqdefault.jpg");
+    expect(within(inspector).queryByText("PV preview unavailable")).not.toBeInTheDocument();
+  });
+
+  it("expands a long synopsis and resets it for the next title", async () => {
+    const synopsis = "A detailed account of the journey and its characters. ".repeat(12);
+    stubFetch({ ...FEED, recommendations: [
+      { ...FEED.recommendations[0]!, synopsis, alternative_titles: ["A much longer alternate title for this particular anime"] },
+      { ...FEED.recommendations[1]!, synopsis: "A short premise." },
+    ] });
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: "Inspect Death Note" }));
+    const inspector = screen.getByRole("dialog", { name: "Death Note" });
+    expect(within(inspector).getByText(/A much longer alternate title/)).toBeInTheDocument();
+    expect(inspector.querySelector(".synopsis")?.textContent).not.toBe(synopsis);
+    await user.click(within(inspector).getByRole("button", { name: "Read more" }));
+    expect(inspector.querySelector(".synopsis")).toHaveTextContent(synopsis.trim());
+    await user.click(within(inspector).getByRole("button", { name: "Inspect next recommendation" }));
+    expect(within(inspector).getByText("A short premise.")).toBeInTheDocument();
+    expect(within(inspector).queryByRole("button", { name: "Read more" })).not.toBeInTheDocument();
+  });
+
+  it("hydrates a shared Discover URL and restores it after navigation", async () => {
+    window.history.replaceState(null, "", "#/discover?genre=Comedy&studio=White+Fox&sort=mal-score&view=list");
+    stubFetch();
+    render(<DiscoverPage />);
+    expect(await screen.findByText("Steins;Gate")).toBeInTheDocument();
+    expect(screen.queryByText("Death Note")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /List/ })).toHaveAttribute("aria-pressed", "true");
+    act(() => { window.history.replaceState(null, "", "#/discover?genre=Psychological"); window.dispatchEvent(new PopStateEvent("popstate")); });
+    expect(await screen.findByText("Death Note")).toBeInTheDocument();
+    expect(screen.queryByText("Steins;Gate")).not.toBeInTheDocument();
+  });
+
+  it("requests hidden titles when a shared URL asks to show them", async () => {
+    window.history.replaceState(null, "", "#/discover?hidden=show");
+    const feed: Feed = { ...FEED, source: "profile", ephemeral: false, state_profile_id: "p", hidden_count: 1 };
+    const fetchMock = stubFetch(feed);
+    render(<DiscoverPage />);
+    expect(await screen.findByRole("checkbox", { name: "Show not interested" })).toBeChecked();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("include_hidden=true"))).toBe(true);
+  });
+
+  it("restores filters through browser Back and Forward", async () => {
+    stubFetch();
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await screen.findByText("Death Note");
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    await user.click(screen.getByText("Genre"));
+    await user.click(screen.getByRole("button", { name: "Comedy" }));
+    expect(window.location.hash).toContain("genre=Comedy");
+    await user.click(screen.getByRole("button", { name: "Psychological" }));
+    expect(window.location.hash).toContain("genre=Psychological");
+    act(() => window.history.back());
+    await waitFor(() => expect(window.location.hash).toBe("#/discover?genre=Comedy"));
+    expect(screen.queryByText("Death Note")).not.toBeInTheDocument();
+    act(() => window.history.forward());
+    await waitFor(() => expect(window.location.hash).toContain("genre=Psychological"));
+    expect(screen.queryByText("Death Note")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Psychological" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("replaces an invalid deep-linked page so Back can leave it", async () => {
+    window.history.replaceState(null, "", "#/discover?sort=year");
+    window.history.pushState(null, "", "#/discover?page=99");
+    stubFetch();
+    render(<DiscoverPage />);
+    await screen.findByText("Death Note");
+    await waitFor(() => expect(window.location.hash).toBe("#/discover"));
+    act(() => window.history.back());
+    await waitFor(() => expect(window.location.hash).toBe("#/discover?sort=year"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Year", hidden: true })).toHaveAttribute("aria-pressed", "true"));
+  });
+
+  it("keeps movie and OVA metadata honest and names missing MAL values", async () => {
+    stubFetch({ ...FEED, recommendations: [
+      { ...FEED.recommendations[0]!, display_title: "BLEACH", media_type: "movie", episodes: 1, mal_score: null },
+      { ...FEED.recommendations[1]!, display_title: "A Very Long Anime Title That Cannot Possibly Fit Within Two Lines At The Largest Card Size", media_type: "ova", episodes: 3, studios: ["A Studio With An Extremely Long Production Name"] },
+    ] });
+    render(<DiscoverPage />);
+    const movie = await screen.findByRole("article", { name: "BLEACH" });
+    expect(within(movie).getByText("2006 · MOVIE")).toBeInTheDocument();
+    expect(within(movie).queryByText(/1 eps/)).not.toBeInTheDocument();
+    expect(within(movie).getByText("MAL unavailable")).toHaveAttribute("title", "MAL score unavailable");
+    const ova = screen.getByRole("article", { name: /A Very Long Anime Title/ });
+    expect(within(ova).getByText("2011 · OVA · 3 eps")).toBeInTheDocument();
+    expect(ova.querySelector(".card-title button")).toHaveAttribute("title", expect.stringContaining("A Very Long Anime Title"));
+    expect(ova.querySelector(".card-tag.studio")).not.toHaveAttribute("title");
+  });
+
+  it("uses a persistent original-title display preference with English fallback", async () => {
+    stubFetch({ ...FEED, recommendations: [
+      { ...FEED.recommendations[0]!, display_title: "English Title", secondary_title: "Original Title" },
+      { ...FEED.recommendations[1]!, display_title: "Only Original", secondary_title: null },
+    ] });
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: "Filters" }));
+    await user.click(screen.getByRole("button", { name: "Original" }));
+    expect(screen.getByRole("article", { name: "Original Title" })).toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Only Original" })).toBeInTheDocument();
+    expect(screen.queryByText("English Title")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("anirec.titleLanguage")).toBe("original");
+  });
+
+  it("keeps hundreds of studios in a labelled scroll region", async () => {
+    stubFetch({ ...FEED, catalogue: { ...FEED.catalogue, studios: Array.from({ length: 300 }, (_, index) => `Studio ${index}`) } });
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await user.click(await screen.findByRole("button", { name: "Filters" }));
+    await user.click(screen.getByText(/300 options/));
+    expect(screen.getByRole("region", { name: "Studio choices" })).toHaveClass("studio-term-row");
+    expect(within(screen.getByRole("region", { name: "Studio choices" })).getAllByRole("button")).toHaveLength(300);
   });
 
   it("counts the feed in plain words (D-019)", () => {
@@ -553,7 +724,7 @@ describe("the PySide card and header", () => {
     expect(screen.queryByText(/Updating your recommendations/)).not.toBeInTheDocument();
   });
 
-  it("refreshes, says it is updating with the stream's progress, and reloads the feed when it succeeds", async () => {
+  it.each(["succeeded", "failed", "cancelled"] as const)("keeps the final step active until the stream reports %s", async (outcome) => {
     class FakeEventSource {
       static instances: FakeEventSource[] = [];
       listeners = new Map<string, Array<(event: Event) => void>>();
@@ -579,11 +750,23 @@ describe("the PySide card and header", () => {
     act(() => FakeEventSource.instances[0]!.emit("progress", { stage_id: "fetch", message: "Fetch completed anime", current: 1, total: 4, cancellable: true }));
     expect(screen.getByText(/Updating your recommendations…/)).toBeInTheDocument();
     expect(screen.getAllByText(/Fetch completed anime/).length).toBeGreaterThan(0);
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "0");
+    expect(screen.getByText("Step 1 of 4 · in progress")).toBeInTheDocument();
+    act(() => FakeEventSource.instances[0]!.emit("progress", { stage_id: "generate_recommendations", message: "Generate recommendations", current: 6, total: 6, cancellable: true }));
+    const finalProgress = screen.getByRole("progressbar");
+    expect(finalProgress).not.toHaveAttribute("aria-valuenow");
+    expect(finalProgress).not.toHaveAttribute("aria-valuemax");
+    expect(finalProgress).toHaveAttribute("aria-valuetext", "Step 6 of 6 · in progress");
+    expect(screen.getByText("Step 6 of 6 · in progress")).toBeInTheDocument();
+    expect(screen.getByText(/The final step is still running/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
     const feedCalls = () => fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/discover/feed")).length;
     const before = feedCalls();
-    act(() => FakeEventSource.instances[0]!.emit("finished", { state: "succeeded" }));
-    await waitFor(() => expect(feedCalls()).toBe(before + 1));
+    act(() => FakeEventSource.instances[0]!.emit("finished", { state: outcome }));
+    await waitFor(() => expect(feedCalls()).toBe(before + (outcome === "succeeded" ? 1 : 0)));
     expect(screen.queryByText(/Updating your recommendations/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.queryByText(/The final step is still running/)).not.toBeInTheDocument();
   });
 
   it("words a 409 as another operation already running, not as a failed request", async () => {
@@ -817,7 +1000,7 @@ describe("automatic refresh and continuous pages (D-018)", () => {
     fit_rank: index + 1, fit_pool_size: 22_000, fit_top_percent: null, ranking_id: "r".repeat(64), why: null,
   }));
 
-  function stubProfile(feeds: Feed[]) {
+  function stubProfile(feeds: Feed[], evidencePosters: { mal_id: number; cover_url: string | null }[] = []) {
     ScriptedEventSource.instances = [];
     vi.stubGlobal("EventSource", ScriptedEventSource);
     let read = 0;
@@ -827,6 +1010,12 @@ describe("automatic refresh and continuous pages (D-018)", () => {
         const feed = feeds[Math.min(read, feeds.length - 1)]!;
         read += 1;
         return new Response(JSON.stringify(feed), { headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/discover/page-metadata")) {
+        return new Response("[]", { headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/discover/evidence-artwork")) {
+        return new Response(JSON.stringify({ posters: evidencePosters }), { headers: { "Content-Type": "application/json" } });
       }
       if (url.includes("/api/operations/") && init?.method === "POST") {
         const kind = url.split("/").at(-1);
@@ -839,27 +1028,123 @@ describe("automatic refresh and continuous pages (D-018)", () => {
   }
   const profileFeed = (count: number): Feed => ({ ...FEED, source: "profile", ephemeral: false, state_profile_id: "p", recommendations: titles(count) });
   const posted = (fetchMock: ReturnType<typeof vi.fn>) => fetchMock.mock.calls
-    .filter(([, init]) => (init as RequestInit | undefined)?.method === "POST")
+    .filter(([input, init]) => String(input).includes("/api/operations/") && (init as RequestInit | undefined)?.method === "POST")
     .map(([input, init]) => [String(input).split("/").at(-1), JSON.parse(String((init as RequestInit).body ?? "{}"))]);
 
-  it("continues the ranking with the next 50 from the last page and lands on the new page", async () => {
-    const fetchMock = stubProfile([profileFeed(50), profileFeed(100)]);
+  it("ignores legacy explanations and does not request evidence artwork", async () => {
+    const feed = profileFeed(1);
+    const pick = feed.recommendations[0]!;
+    feed.recommendations[0] = { ...pick, reason: "Legacy recommendation reason", why: {
+      schema_version: 1, method: "counterfactual-removal", unit: "model-score",
+      baseline: null, total: null, full_score: 0.8, full_rank: 1,
+      ranked_candidate_count: 22_000, history_window: 2, unavailable_reason: null,
+      segments: [], influences: [
+        { mal_id: 21, title: "History title", user_score: null, list_status: "watching", value: 0.7, rank_without: 2 },
+      ],
+    } };
+    const fetchMock = stubProfile([feed], [{ mal_id: 21, cover_url: "https://cdn/21.jpg" }]);
     const user = userEvent.setup();
     render(<DiscoverPage />);
-    expect(await screen.findByRole("heading", { name: "Pick 50" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Next page, load the next 50 recommendations" }));
-    await waitFor(() => expect(ScriptedEventSource.instances).toHaveLength(1));
-    expect(posted(fetchMock).at(-1)).toEqual(["more-recommendations", expect.objectContaining({ count: 50 })]);
-    act(() => ScriptedEventSource.instances[0]!.emit("finished", { state: "succeeded" }));
+    const card = await screen.findByRole("article", { name: "Pick 1" });
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/discover/evidence-artwork"))).toBe(false);
+    await user.click(within(card).getByRole("button", { name: "Inspect Pick 1" }));
+    const inspector = screen.getByRole("dialog");
+    expect(within(inspector).getByText(/Ranked #1/)).toBeInTheDocument();
+    expect(within(inspector).queryByText("Why this pick")).not.toBeInTheDocument();
+    expect(within(inspector).queryByText("History title")).not.toBeInTheDocument();
+    expect(within(inspector).queryByText("Legacy recommendation reason")).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/discover/evidence-artwork"))).toBe(false);
+    await user.click(within(inspector).getByRole("button", { name: "Close score inspector" }));
+    await user.click(screen.getByRole("button", { name: "List" }));
+    expect(screen.queryByText("Legacy recommendation reason")).not.toBeInTheDocument();
+  });
+
+  it("loads pick 501 and later from the same ranking without another model operation", async () => {
+    window.history.replaceState(null, "", "#/discover?page=11");
+    const full = profileFeed(703);
+    const fetchMock = stubProfile([
+      { ...full, recommendations: full.recommendations.slice(500, 550), total: 703, page: 10, page_size: 50 },
+      { ...full, recommendations: full.recommendations.slice(550, 600), total: 703, page: 11, page_size: 50 },
+    ]);
+    render(<DiscoverPage />);
+    expect(await screen.findByRole("heading", { name: "Pick 501" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next recommendations page" }));
+    expect(await screen.findByRole("heading", { name: "Pick 551" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pick 501" })).not.toBeInTheDocument();
+    expect(posted(fetchMock)).toEqual([]);
+    const reads = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/discover/feed"));
+    expect(reads.some(([input]) => JSON.parse(new URL(String(input), "http://localhost").searchParams.get("query")!).page === 11)).toBe(true);
+  });
+
+  it("reloads and clamps the last page after its only pick is hidden", async () => {
+    window.history.replaceState(null, "", "#/discover?page=2");
+    const full = profileFeed(51);
+    const hiddenId = full.recommendations[50]!.mal_id!;
+    const initial: Feed = {
+      ...full, recommendations: full.recommendations.slice(50), total: 51, page: 1, page_size: 50,
+    };
+    const afterHide: Feed = {
+      ...full, recommendations: full.recommendations.slice(0, 50), total: 50, page: 0,
+      page_size: 50, hidden_count: 1,
+      state: { ...full.state, hidden_mal_ids: [hiddenId] },
+    };
+    const read = stubProfile([initial, afterHide]);
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("/api/discover/feedback")) {
+        return Promise.resolve(new Response(JSON.stringify({ state: afterHide.state })));
+      }
+      return read(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
     expect(await screen.findByRole("heading", { name: "Pick 51" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Pick 1" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Not interested" }));
+    expect(await screen.findByRole("heading", { name: "Pick 1" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).not.toContain("page=2"));
+    expect(screen.queryByRole("heading", { name: "Pick 51" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next recommendations page" })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/discover/feed")).length).toBeGreaterThan(1);
+    expect(posted(fetchMock)).toEqual([]);
+  });
+
+  it("ends at the final prepared page without generating another batch", async () => {
+    const fetchMock = stubProfile([profileFeed(50)]);
+    render(<DiscoverPage />);
+    expect(await screen.findByRole("heading", { name: "Pick 50" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next recommendations page" })).not.toBeInTheDocument();
+    expect(posted(fetchMock)).toEqual([]);
+  });
+
+  it("fills public metadata for the opened page without replacing its saved ranking", async () => {
+    const feed = profileFeed(51);
+    const last = { ...feed.recommendations[50]!, mal_score: null, cover_url: null };
+    feed.recommendations[50] = last;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/api/discover/feed")) return new Response(JSON.stringify(feed));
+      if (url.includes("/api/discover/page-metadata")) {
+        const ids = JSON.parse(String(init?.body)).mal_ids as number[];
+        return new Response(JSON.stringify(ids.includes(last.mal_id!)
+          ? [{ ...last, mal_score: 7.42, cover_url: "https://cdn.test/pick.jpg" }] : []));
+      }
+      return new Response(JSON.stringify({ enabled: false }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(<DiscoverPage />);
+    await screen.findByRole("heading", { name: "Pick 1" });
+    await user.click(screen.getByRole("button", { name: "Next recommendations page" }));
+    expect(await screen.findByText("MAL 7.42")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pick 51" })).toBeInTheDocument();
+    expect(posted(fetchMock)).toEqual([]);
   });
 
   it("refreshes a profile's feed once per session when the workspace opens it, never the sample", async () => {
     sessionStorage.clear();
     const fetchMock = stubProfile([profileFeed(3)]);
     const { unmount } = render(<DiscoverPage autoRefresh />);
-    await waitFor(() => expect(posted(fetchMock)).toEqual([["refresh", expect.objectContaining({ count: 50 })]]));
+    await waitFor(() => expect(posted(fetchMock)).toEqual([["refresh", {}]]));
     act(() => ScriptedEventSource.instances[0]!.emit("finished", { state: "succeeded" }));
     unmount();
     render(<DiscoverPage autoRefresh />);
@@ -899,6 +1184,7 @@ describe("automatic refresh review fixes", () => {
         read += 1;
         return new Response(JSON.stringify(feed), { headers: { "Content-Type": "application/json" } });
       }
+      if (url.includes("/api/discover/page-metadata")) return new Response("[]", { headers: { "Content-Type": "application/json" } });
       if (url.includes("/api/operations/") && init?.method === "POST") {
         const kind = url.split("/").at(-1);
         return new Response(JSON.stringify({ id: `${kind}-${Source.instances.length}`, kind, profile_id: "p", state: "running", event_count: 0 }), { status: 202, headers: { "Content-Type": "application/json" } });
@@ -909,47 +1195,44 @@ describe("automatic refresh review fixes", () => {
     return fetchMock;
   }
   const kinds = (fetchMock: ReturnType<typeof vi.fn>) => fetchMock.mock.calls
-    .filter(([, init]) => (init as RequestInit | undefined)?.method === "POST")
+    .filter(([input, init]) => String(input).includes("/api/operations/") && (init as RequestInit | undefined)?.method === "POST")
     .map(([input]) => String(input).split("/").at(-1));
-  const stale = { code: "invalid_request", title: "Feed is out of date", description: "Generate a new feed to see more recommendations.", solution: "", retryable: false };
-
-  it("lands on the page holding the first new pick when fewer than a full last page were shown", async () => {
-    stub([profileFeed(73), profileFeed(123)]);
+  it("stops at a partial last page without asking for more picks", async () => {
+    const fetchMock = stub([profileFeed(73)]);
     const user = userEvent.setup();
     render(<DiscoverPage />);
     await screen.findByRole("heading", { name: "Pick 1" });
     await user.click(screen.getByRole("button", { name: "Next recommendations page" }));
-    await user.click(screen.getByRole("button", { name: "Next page, load the next 50 recommendations" }));
-    await waitFor(() => expect(Source.instances).toHaveLength(1));
-    act(() => Source.instances[0]!.emit("finished", { state: "succeeded" }));
-    expect(await screen.findByRole("heading", { name: "Pick 74" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pick 51" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next recommendations page" })).toBeDisabled();
+    expect(kinds(fetchMock)).toEqual([]);
   });
 
-  it("rebuilds once on a stale refusal, then reports a second refusal in the service's own words", async () => {
-    const fetchMock = stub([profileFeed(3)]);
-    const user = userEvent.setup();
-    render(<DiscoverPage />);
-    await user.click(await screen.findByRole("button", { name: "Next page, load the next 50 recommendations" }));
-    await waitFor(() => expect(Source.instances).toHaveLength(1));
-    act(() => Source.instances[0]!.emit("error", stale));
-    await waitFor(() => expect(kinds(fetchMock)).toEqual(["more-recommendations", "refresh"]));
-    await waitFor(() => expect(Source.instances).toHaveLength(2));
-    act(() => Source.instances[1]!.emit("finished", { state: "failed" }));
-    await user.click(screen.getByRole("button", { name: "Next page, load the next 50 recommendations" }));
-    await waitFor(() => expect(Source.instances).toHaveLength(3));
-    act(() => Source.instances[2]!.emit("error", stale));
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Feed is out of date");
-    expect(alert).not.toHaveTextContent("rebuilding");
-    expect(kinds(fetchMock)).toEqual(["more-recommendations", "refresh", "more-recommendations"]);
-  });
-
-  it("refreshes an active profile that has no feed yet, although the sample library is shown", async () => {
+  it("loops twelve placeholders through a fresh profile's final step until its feed arrives", async () => {
     sessionStorage.clear();
-    const fetchMock = stub([FEED]);
-    render(<DiscoverPage autoRefresh activeProfileId="p" />);
+    const fetchMock = stub([FEED, profileFeed(3)]);
+    const { container } = render(<DiscoverPage autoRefresh activeProfileId="p" />);
     await waitFor(() => expect(kinds(fetchMock)).toEqual(["refresh"]));
+    expect(container.querySelectorAll(".skeleton")).toHaveLength(12);
+    expect(screen.queryByRole("button", { name: "Inspect Death Note" })).not.toBeInTheDocument();
+    act(() => Source.instances[0]!.emit("progress", { stage_id: "generate_recommendations", message: "Generate recommendations", current: 6, total: 6, cancellable: true }));
+    expect(container.querySelectorAll(".skeleton")).toHaveLength(12);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    act(() => Source.instances[0]!.emit("finished", { state: "succeeded" }));
+    await screen.findByRole("heading", { name: "Pick 1" });
+    expect(container.querySelectorAll(".skeleton")).toHaveLength(0);
+  });
+
+  it.each(["failed", "cancelled"] as const)("ends initial placeholders when a fresh profile's analysis is %s", async (outcome) => {
+    sessionStorage.clear();
+    stub([FEED]);
+    const { container } = render(<DiscoverPage autoRefresh activeProfileId="p" />);
+    await waitFor(() => expect(Source.instances).toHaveLength(1));
+    expect(container.querySelectorAll(".skeleton")).toHaveLength(12);
+    act(() => Source.instances[0]!.emit("finished", { state: outcome }));
+    expect(container.querySelectorAll(".skeleton")).toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "No recommendations yet" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Inspect Death Note" })).not.toBeInTheDocument();
   });
 
   it("does not repeat a reconnect advice the web client cannot follow", async () => {

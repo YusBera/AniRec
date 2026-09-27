@@ -14,6 +14,7 @@ import { api } from "../api/client";
 import type { CompareRead } from "../api/types";
 import { Icon } from "../assets/Icon";
 import { malScoreText, metaLine, PosterArt } from "../discover/RecommendationCard";
+import { preferredTitle, useTitleLanguage } from "../discover/titlePreference";
 import { PageHeading, number, useRead } from "./common";
 
 type Report = NonNullable<CompareRead["report"]>;
@@ -38,10 +39,10 @@ const whole = (value: number | null | undefined) => value == null ? "N/A" : valu
 function ComparisonCard({ entry }: { entry: Entry }) {
   const model = entry.model;
   const scores = entry.scores;
-  return <article className="card comparison-card" aria-label={model.display_title}>
+  const title = preferredTitle(model, useTitleLanguage());
+  return <article className="card comparison-card" aria-label={title}>
     <div className="card-art"><PosterArt model={model} /></div>
-    <h3 className="card-title">{model.display_title}</h3>
-    <div className="card-secondary">{model.secondary_title || " "}</div>
+    <h3 className="card-title">{title}</h3>
     <div className="card-tags">
       {model.studios[0] ? <span className="card-tag studio"><span className="visually-hidden">Studio: </span>{model.studios[0]}</span> : null}
       {model.genres.map((genre) => <span className="card-tag" key={genre}><span className="visually-hidden">Genre: </span>{genre}</span>)}

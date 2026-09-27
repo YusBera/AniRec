@@ -14,6 +14,7 @@ import type { RecommendationViewModel } from "../api/types";
 import { Icon } from "../assets/Icon";
 import { PosterArt, RecommendationCard, type Decision } from "./RecommendationCard";
 import { fitRankText } from "./ScoreRail";
+import { preferredTitle, useTitleLanguage } from "./titlePreference";
 
 export type ViewMode = "cards" | "list" | "table";
 
@@ -88,18 +89,20 @@ function Decisions({ model, props, compact = false }: { model: RecommendationVie
 }
 
 function ListView(props: FeedViewProps) {
+  const language = useTitleLanguage();
   return <ul className="feed-list" aria-label={props.caption}>
     {props.models.map((model) => {
+      const title = preferredTitle(model, language);
       const facts = factsLine(model);
       return <li key={model.mal_id ?? model.display_title} className="feed-row" data-card-id={model.mal_id ?? undefined}
         data-hidden={props.hidden(model.mal_id)}>
-        <button type="button" className="row-art" aria-label={`Inspect ${model.display_title}`} onClick={() => props.onDetails(model)}>
+        <button type="button" className="row-art" aria-label={`Inspect ${title}`} onClick={() => props.onDetails(model)}>
           <PosterArt model={model} />
         </button>
         <div className="row-text">
-          <h2 className="row-title"><button type="button" onClick={() => props.onDetails(model)}>{model.display_title}</button></h2>
+          <h2 className="row-title"><button type="button" onClick={() => props.onDetails(model)}>{title}</button></h2>
           {facts ? <p className="row-facts">{facts}</p> : null}
-          <p className="row-reason">{model.reason?.trim() || model.genres.join(" · ")}</p>
+          <p className="row-reason">{model.genres.join(" · ")}</p>
         </div>
         <div className="row-tags">
           <span className="row-fit">{fitRankText(model)}</span>
@@ -116,6 +119,7 @@ function ListView(props: FeedViewProps) {
 }
 
 function TableView(props: FeedViewProps) {
+  const language = useTitleLanguage();
   return <div className="table-scroll" role="region" aria-label={`${props.caption} table, scroll horizontally for all columns`} tabIndex={0}>
     <table className="feed-table">
       <caption>{props.caption}</caption>
@@ -130,10 +134,10 @@ function TableView(props: FeedViewProps) {
         data-hidden={props.hidden(model.mal_id)}>
         <td>{(props.rankOffset ?? 0) + index + 1}</td>
         <th scope="row"><button type="button" className="table-title" onClick={() => props.onDetails(model)}>
-          <span className="table-thumb" aria-hidden="true"><PosterArt model={model} /></span><span>{model.display_title}</span>
+          <span className="table-thumb" aria-hidden="true"><PosterArt model={model} /></span><span>{preferredTitle(model, language)}</span>
         </button></th>
         <td className="table-fit">{fitRankText(model)}</td>
-        <td>{model.mal_score === null ? "Not rated" : model.mal_score.toFixed(2)}</td>
+        <td>{model.mal_score === null ? "Unavailable" : model.mal_score.toFixed(2)}</td>
         <td>{model.genres.join(" · ") || "Not available"}</td>
         <td>{model.year ?? "Not available"}</td>
         <td>{model.status}</td>

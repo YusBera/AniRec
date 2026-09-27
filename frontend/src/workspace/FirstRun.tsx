@@ -46,13 +46,14 @@ export function importProblem(reason: string, username: string): string {
 
 const SOON = [["AniList", "anilist"], ["AniDB", "anidb"]] as const;
 
-export function FirstRun({ clientIdPresent, onImported, onClose, onSignIn }: {
+export function FirstRun({ clientIdPresent, onImported, onClose, onSignIn, onImportingChange }: {
   /** From `/api/system/state`: whether this installation can read MyAnimeList lists. */
   clientIdPresent: boolean;
   onImported: (profile: ProfileSummary) => void;
   onClose: () => void;
   /** "Already have an account?": closes this and opens sign-in. */
   onSignIn?: () => void;
+  onImportingChange?: (importing: boolean) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -62,6 +63,8 @@ export function FirstRun({ clientIdPresent, onImported, onClose, onSignIn }: {
   const newcomerId = useId();
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
+  useEffect(() => { onImportingChange?.(busy); }, [busy, onImportingChange]);
+  useEffect(() => () => onImportingChange?.(false), [onImportingChange]);
   const [problem, setProblem] = useState("");
   const imported = useRef<ProfileSummary | null>(null);
   const signIn = useRef(false);

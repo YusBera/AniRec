@@ -13,7 +13,7 @@ import type { ReactNode } from "react";
 import type { ApiError } from "../api/types";
 import { Icon, type IconName } from "../assets/Icon";
 
-export function FeedSkeleton({ count = 8 }: { count?: number }) {
+export function FeedSkeleton({ count = 12 }: { count?: number }) {
   return (
     <div className="feed" aria-busy="true" aria-label="Loading recommendations">
       {Array.from({ length: count }, (_, index) => (

@@ -2,15 +2,12 @@
  * The Score Inspector, as `gui/recommendation_detail_dialog.py` lays it out.
  *
  * A rack headed "ANIREC / SCORE INSPECTOR" with previous/next across the
- * visible feed and Close; a large 2:3 poster beside the title and a grid of
- * facts; the PERSONAL FIT panel; the two decisions as text buttons with
- * "Open on MyAnimeList"; and the synopsis folded behind "READ SYNOPSIS +".
+ * visible feed and Close. The media column holds the 2:3 poster, optional PV,
+ * and sourced database links. Identity, metadata, and synopsis precede the
+ * PERSONAL FIT panel and the two decisions.
  *
- * The PERSONAL FIT panel carries the honest `why` (DOMAIN_RULES,
- * "Explanation"): exact additive parts for the heuristic engine,
- * counterfactual removal for the sequence model, or a stated absence. The
- * desktop's contribution rail and "SUMS TO" row are gone with the percentage
- * they summed to, so nothing here is presented as shares of a score.
+ * PERSONAL FIT shows the persisted personal rank and answering engine.
+ * Legacy explanation payloads are not displayed or fetched.
  *
  * A native modal <dialog> supplies focus containment and Escape. On close,
  * focus goes back to the card of the title being inspected, which after
@@ -19,9 +16,11 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { RecommendationViewModel } from "../api/types";
+import { preferredTitle, useTitleLanguage } from "./titlePreference";
 import { Icon } from "../assets/Icon";
-import { MalLink, PosterArt, type Decision } from "./RecommendationCard";
-import { fitRankText, rankingEngineLabel, WhyExplanation } from "./ScoreRail";
+import { PosterArt, type Decision } from "./RecommendationCard";
+import { fitRankText, rankingEngineLabel } from "./ScoreRail";
+import { ExternalLinks, MetadataChips, pvEmbedUrl, pvThumbnailUrl } from "./MetadataLinks";
 
 interface Props {
   model: RecommendationViewModel;
@@ -42,14 +41,31 @@ interface Props {
 
 const two = (value: number) => String(value).padStart(2, "0");
 
+function PvPreview({ thumbnail, title, onPlay }: { thumbnail: string; title: string; onPlay: () => void }) {
+  const [failed, setFailed] = useState(false);
+  return <button type="button" className="pv-entry" aria-label={`Play PV for ${title}`} onClick={onPlay}>
+    <span className="pv-preview-image">
+      {!failed ? <img src={thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} /> : null}
+      <span className="pv-preview-play" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 6 19 12 9 18Z" /></svg>
+      </span>
+      {failed ? <span className="pv-preview-fallback">PV preview unavailable</span> : null}
+    </span>
+    <span className="pv-preview-caption"><span>Play PV</span><span>YouTube</span></span>
+  </button>;
+}
+
 export function ScoreInspector({
   model, position, total, engineId, watchLater, hidden, pending, disabledReason,
   onPrevious, onNext, onClose, onVote, onExternal,
 }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const videoDialog = useRef<HTMLDialogElement>(null);
+  const title = preferredTitle(model, useTitleLanguage());
   const headingId = useId();
   const synopsisId = useId();
   const [synopsis, setSynopsis] = useState(false);
+  const [videoOpen, setVideoOpen] = useState(false);
   const current = useRef(model.mal_id);
   current.current = model.mal_id;
 
@@ -59,7 +75,11 @@ export function ScoreInspector({
     return () => node.close();
   }, []);
   // A new title starts folded, as set_model resets the toggle.
-  useEffect(() => setSynopsis(false), [model.mal_id]);
+  useEffect(() => { setSynopsis(false); setVideoOpen(false); }, [model.mal_id]);
+  useEffect(() => {
+    if (videoOpen) videoDialog.current?.showModal();
+    return () => { if (videoDialog.current?.open) videoDialog.current.close(); };
+  }, [videoOpen]);
 
   const closeAndReturn = () => {
     onClose();
@@ -83,20 +103,32 @@ export function ScoreInspector({
   const malId = model.mal_id;
   const locked = malId === null || pending || !!disabledReason;
   const navigable = total > 1;
+  const videoUrl = pvEmbedUrl(model);
+  const videoThumbnail = pvThumbnailUrl(model);
+  const synopsisText = model.synopsis?.trim() || "";
+  const synopsisLong = synopsisText.length > 360;
+  const synopsisPreview = synopsisLong ? `${synopsisText.slice(0, 360).replace(/\s+\S*$/, "")}…` : synopsisText;
   const facts: [string, string | null][] = [
-    ["MAL score", model.mal_score === null ? "Not rated" : `${model.mal_score.toFixed(2)} / 10`],
+    ["MAL score", model.mal_score === null ? "Unavailable" : `${model.mal_score.toFixed(2)} / 10`],
+    ["Type", model.media_type],
     ["Episodes", model.episodes_text],
     ["Status", model.status],
     ["Airing year", model.year_text],
     ["Aired", model.aired_text],
-    ["Studio", model.studios.join(" · ") || "Not available"],
-    ["Genres", model.genres.join(" · ") || "Not available"],
   ];
 
   return <dialog ref={dialog} className="inspector" aria-labelledby={headingId}
+    onClick={(event) => {
+      if (event.target !== event.currentTarget) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right
+          || event.clientY < bounds.top || event.clientY > bounds.bottom) {
+        event.currentTarget.close();
+      }
+    }}
     onKeyDown={(event) => {
       const target = event.target as HTMLElement;
-      if (target.closest("summary, input, textarea, select")) return;
+      if (target.closest("summary, input, textarea, select, .pv-lightbox")) return;
       if (event.key === "ArrowLeft" && navigable) { event.preventDefault(); onPrevious(); }
       if (event.key === "ArrowRight" && navigable) { event.preventDefault(); onNext(); }
     }}
@@ -123,14 +155,27 @@ export function ScoreInspector({
 
     <div className="inspector-body">
       <div className="inspector-hero">
-        <div className="inspector-poster"><PosterArt key={model.mal_id ?? model.display_title} model={model} large /></div>
+        <div className="inspector-media">
+          <div className="inspector-poster"><PosterArt key={model.mal_id ?? model.display_title} model={model} large /></div>
+          {videoUrl && videoThumbnail ? <PvPreview key={videoUrl} thumbnail={videoThumbnail} title={title} onPlay={() => setVideoOpen(true)} /> : null}
+          <ExternalLinks model={model} onExternal={onExternal} labelled />
+        </div>
         <div className="inspector-column">
-          <h2 id={headingId}>{model.display_title}</h2>
-          {model.secondary_title ? <p className="inspector-secondary">{model.secondary_title}</p> : null}
+          <h2 id={headingId}>{title}</h2>
           {model.alternative_titles.length ? <p className="inspector-alternatives">Alternative titles: {model.alternative_titles.join(" · ")}</p> : null}
           <dl className="inspector-facts">
             {facts.filter(([, value]) => value !== null).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
           </dl>
+          <div className="inspector-metadata">
+            {model.studios.length ? <div><span className="lbl">STUDIO</span><MetadataChips model={{ ...model, genres: [] }} onNavigate={() => dialog.current?.close()} /></div> : null}
+            {model.genres.length ? <div><span className="lbl">GENRES</span><MetadataChips model={{ ...model, studios: [] }} onNavigate={() => dialog.current?.close()} /></div> : null}
+          </div>
+          <section className="synopsis-panel" aria-label="Synopsis">
+            <h3 className="lbl">SYNOPSIS</h3>
+            <p id={synopsisId} className="synopsis">{synopsisText ? synopsis && synopsisLong ? synopsisText : synopsisPreview : "No synopsis available."}</p>
+            {synopsisLong ? <button type="button" className="synopsis-toggle" aria-expanded={synopsis} aria-controls={synopsisId}
+              onClick={() => setSynopsis((open) => !open)}>{synopsis ? "Read less" : "Read more"}</button> : null}
+          </section>
 
           <section className="fit-panel" aria-labelledby={`${headingId}-fit`}>
             <header>
@@ -140,11 +185,6 @@ export function ScoreInspector({
             <div className="fit-readout">
               <strong>{fitRankText(model)}</strong>
               {model.fit_rank != null ? <span className="fit-engine">Ranked by the {rankingEngineLabel(engineId)}</span> : null}
-              {model.reason?.trim() ? <p className="fit-reason">{model.reason}</p> : null}
-            </div>
-            <div className="fit-why">
-              <h4>Why this pick</h4>
-              <WhyExplanation why={model.why} />
             </div>
           </section>
 
@@ -153,19 +193,17 @@ export function ScoreInspector({
               onClick={() => malId !== null && onVote(malId, "watch_later", !watchLater, model)}>{watchLater ? "Remove saved" : "Watch Later"}</button>
             <button type="button" className="btn" data-action="hide" aria-pressed={hidden} disabled={locked} title={disabledReason}
               onClick={() => malId !== null && onVote(malId, "hidden", !hidden, model)}>{hidden ? "Show again" : "Not interested"}</button>
-            <span className="spacer" />
-            <MalLink model={model} onExternal={onExternal} className="inspector-mal" label={`Open on MyAnimeList: ${model.display_title} (external)`}>Open on MyAnimeList <span aria-hidden="true">↗</span></MalLink>
           </div>
         </div>
       </div>
 
-      <section className="synopsis-panel">
-        <button type="button" className="synopsis-toggle" aria-expanded={synopsis} aria-controls={synopsisId}
-          onClick={() => setSynopsis((open) => !open)}>
-          {synopsis ? "HIDE SYNOPSIS −" : "READ SYNOPSIS +"}
-        </button>
-        <p id={synopsisId} className="synopsis" hidden={!synopsis}>{model.synopsis || "No synopsis available."}</p>
-      </section>
     </div>
+    {videoOpen && videoUrl ? <dialog ref={videoDialog} className="pv-lightbox" aria-label={`PV for ${title}`}
+      onClose={() => setVideoOpen(false)} onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
+      <div className="pv-lightbox-content">
+        <button type="button" className="btn" autoFocus onClick={() => videoDialog.current?.close()}>Close PV</button>
+        <iframe title={`PV for ${title}`} src={videoUrl} allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+      </div>
+    </dialog> : null}
   </dialog>;
 }

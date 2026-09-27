@@ -40,6 +40,7 @@ export function Workspace() {
   const [visited, setVisited] = useState<Set<Page>>(() => new Set([route()]));
   const [feed, setFeed] = useState<Feed | null>(null);
   const [firstRun, setFirstRun] = useState<null | "welcome">(null);
+  const [initialImporting, setInitialImporting] = useState(false);
   const [accountDialog, setAccountDialog] = useState<AccountMode | null>(null);
   // Bumped when the signed-in account changes: every page remounts and reads
   // the new account's data, so nothing from the previous one stays on screen.
@@ -169,7 +170,7 @@ export function Workspace() {
       </section> : null}
       <DiscoverPage key={generation} surface={page === "discover" || page === "library" ? page : "inactive"}
         onFeedChange={onFeedChange} onOperationStarted={shell.nudge} autoRefresh
-        activeProfileId={shell.system?.profile?.profile_id ?? null} />
+        activeProfileId={shell.system?.profile?.profile_id ?? null} initialImporting={initialImporting} />
       <div hidden={page !== "profile"}>{visited.has("profile") ? <ProfilePage key={generation} /> : null}</div>
       <div hidden={page !== "compare"}>{visited.has("compare") ? <ComparePage key={generation} /> : null}</div>
       <div hidden={page !== "settings"}>{visited.has("settings") ? <SettingsPage key={generation} version={shell.version}
@@ -183,7 +184,7 @@ export function Workspace() {
           shell.notify({ tone: "done", title: "Password changed", detail: "Sign in with your new password." });
         }} /> : null}</div>
     </div>
-    {firstRun ? <FirstRun clientIdPresent={!!shell.system?.mal_client_id_present}
+    {firstRun ? <FirstRun clientIdPresent={!!shell.system?.mal_client_id_present} onImportingChange={setInitialImporting}
       onImported={(profile) => {
         shell.notify({ tone: "done", title: `Added ${profile.username}'s MyAnimeList list`, detail: "AniRec is reading it now." });
         // The new list is now the one shown: reload the pages for it; its

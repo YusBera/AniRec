@@ -259,8 +259,9 @@ describe("first-time setup (D-020)", () => {
   const renderSetup = (clientIdPresent = true) => {
     const onImported = vi.fn();
     const onClose = vi.fn();
-    render(<FirstRun clientIdPresent={clientIdPresent} onImported={onImported} onClose={onClose} />);
-    return { onImported, onClose, dialog: screen.getByRole("dialog", { name: "Welcome to AniRec" }) };
+    const onImportingChange = vi.fn();
+    render(<FirstRun clientIdPresent={clientIdPresent} onImported={onImported} onClose={onClose} onImportingChange={onImportingChange} />);
+    return { onImported, onClose, onImportingChange, dialog: screen.getByRole("dialog", { name: "Welcome to AniRec" }) };
   };
 
   it("lays out MyAnimeList as a field, AniList and AniDB as coming soon, and the newcomer path as not active yet", () => {
@@ -302,7 +303,7 @@ describe("first-time setup (D-020)", () => {
   it("keeps the button's visible words inside its accessible name while it works", async () => {
     let finish!: (value: { profile: null; reason: string }) => void;
     vi.spyOn(api, "importMalProfile").mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-    const { dialog } = renderSetup();
+    const { dialog, onImportingChange } = renderSetup();
     const user = userEvent.setup();
     await user.type(within(dialog).getByRole("textbox", { name: "MyAnimeList" }), "reader_01");
     await user.keyboard("{Enter}");
@@ -311,7 +312,9 @@ describe("first-time setup (D-020)", () => {
       .map((node) => node.textContent).join("").trim();
     expect(visible).toBe("Reading…");
     expect(button).toHaveAccessibleName(expect.stringContaining(visible));
+    expect(onImportingChange).toHaveBeenLastCalledWith(true);
     await act(async () => finish({ profile: null, reason: "network" }));
+    expect(onImportingChange).toHaveBeenLastCalledWith(false);
   });
 
   it("does nothing when the newcomer path is pressed before it exists", async () => {

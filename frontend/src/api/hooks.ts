@@ -15,7 +15,7 @@ import type { ApiError, Feed, OperationState, ProgressEvent } from "./types";
 
 export type LoadState = "idle" | "loading" | "ready" | "error";
 
-export function useFeed(includeHidden = false) {
+export function useFeed(includeHidden = false, query = "") {
   const [feed, setFeed] = useState<Feed | null>(null);
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState<ApiError | null>(null);
@@ -23,12 +23,19 @@ export function useFeed(includeHidden = false) {
   // Only the newest read may land: a superseded response carries a whole
   // local state that could revert a decision saved after it was served.
   const latest = useRef(0);
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  const ephemeral = useRef(false);
+  const [loadedQuery, setLoadedQuery] = useState("");
   const load = useCallback(async (options?: { quiet?: boolean }) => {
     const request = ++latest.current;
     if (!options?.quiet) setState("loading");
     try {
-      const next = await api.feed(includeHidden);
+      const requestedQuery = queryRef.current;
+      const next = await api.feed(includeHidden, requestedQuery);
       if (request !== latest.current) return;
+      ephemeral.current = next.ephemeral;
+      setLoadedQuery(requestedQuery);
       setFeed(next);
       setError(null);
       setState("ready");
@@ -43,7 +50,14 @@ export function useFeed(includeHidden = false) {
     void load();
   }, [load]);
 
-  return { feed, state, error, reload: load, setFeed };
+  const previousQuery = useRef(query);
+  useEffect(() => {
+    if (previousQuery.current === query) return;
+    previousQuery.current = query;
+    if (!ephemeral.current) void load();
+  }, [query, load]);
+
+  return { feed, state, error, reload: load, setFeed, loadedQuery };
 }
 
 export interface OperationProgress {

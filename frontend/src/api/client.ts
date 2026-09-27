@@ -15,7 +15,7 @@
  * `api.feed()` either way.
  */
 
-import type { AccountImports, AccountResult, PasswordResetResult, PreferencesWrite, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
+import type { AccountImports, AccountResult, PasswordResetResult, PreferencesWrite, ActivityEvent, ActivityStatus, ActivityReceipt, ApiError, EvidenceArtwork, Feed, FeedbackResponse, MalImport, OperationList, OperationSnapshot, SystemState } from "./types";
 import type { BackendConnection } from "../platform";
 import type { ProfileRead, CompareRead, SettingsRead, SettingsWrite, LibraryRead, RecommendationViewModel } from "./types";
 
@@ -131,8 +131,16 @@ export const api = {
   operations: () => request<OperationList>("/api/operations"),
   operation: (id: string) => request<OperationSnapshot>(`/api/operations/${encodeURIComponent(id)}`),
 
-  feed: (includeHidden = false) =>
-    request<Feed>(`/api/discover/feed?include_hidden=${includeHidden ? "true" : "false"}`),
+  feed: (includeHidden = false, query = "") =>
+    request<Feed>(`/api/discover/feed?include_hidden=${includeHidden ? "true" : "false"}${query ? `&query=${encodeURIComponent(query)}` : ""}`),
+  pageMetadata: (malIds: number[]) =>
+    request<RecommendationViewModel[]>("/api/discover/page-metadata", {
+      method: "POST", body: JSON.stringify({ mal_ids: malIds }),
+    }),
+  evidenceArtwork: (pickMalId: number, rankingId: string | null) =>
+    request<EvidenceArtwork>("/api/discover/evidence-artwork", {
+      method: "POST", body: JSON.stringify({ pick_mal_id: pickMalId, ranking_id: rankingId }),
+    }),
 
   feedback: (payload: {
     profile_id: string;

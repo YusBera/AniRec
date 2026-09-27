@@ -20,10 +20,10 @@ export const DISCOVER_TEXT = {
   updating: "Updating your recommendations…",
 } as const;
 
-export function DiscoverHeader({ busy, detail }: { busy: boolean; detail?: string | null }) {
+export function DiscoverHeader({ busy, detail, count }: { busy: boolean; detail?: string | null; count?: string }) {
   return <header className="page-header">
     <h1>{DISCOVER_TEXT.title}</h1>
-    <p className="workspace-intro">{DISCOVER_TEXT.intro}</p>
+    <p className="workspace-intro">{DISCOVER_TEXT.intro}{count ? <> <span aria-hidden="true">·</span> {count}</> : null}</p>
     {/* Announced once when an update starts; the progress bar carries each
         stage, so the stage text is not live here. */}
     <p className="page-status" role="status">{busy ? DISCOVER_TEXT.updating : ""}
